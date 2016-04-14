@@ -29,6 +29,15 @@ from manila import utils
 
 LOG = log.getLogger(__name__)
 
+neutron_network_plugin_opts = [
+    cfg.StrOpt(
+        'neutron_physical_net_name',
+        help="The name of the physical network to determine which net segment "
+             "is used.",
+        default=None,
+        deprecated_group='DEFAULT'),
+]
+
 neutron_single_network_plugin_opts = [
     cfg.StrOpt(
         'neutron_net_id',
@@ -92,6 +101,9 @@ class NeutronNetworkPlugin(network.NetworkBaseAPI):
         self._neutron_api_args = args
         self._neutron_api_kwargs = kwargs
         self._label = kwargs.pop('label', 'user')
+        CONF.register_opts(
+            neutron_network_plugin_opts,
+            group=self.neutron_api.config_group_name)
 
     @property
     def label(self):
@@ -104,6 +116,10 @@ class NeutronNetworkPlugin(network.NetworkBaseAPI):
             self._neutron_api = neutron_api.API(*self._neutron_api_args,
                                                 **self._neutron_api_kwargs)
         return self._neutron_api
+
+    def _store_neutron_net_info(self, context, share_network):
+        self._save_neutron_network_data(context, share_network)
+        self._save_neutron_subnet_data(context, share_network)
 
     def allocate_network(self, context, share_server, share_network=None,
                          **kwargs):
@@ -125,8 +141,7 @@ class NeutronNetworkPlugin(network.NetworkBaseAPI):
             raise exception.NetworkBadConfigurationException(reason=msg)
 
         self._verify_share_network(share_server['id'], share_network)
-        self._save_neutron_network_data(context, share_network)
-        self._save_neutron_subnet_data(context, share_network)
+        self._store_neutron_net_info(context, share_network)
 
         allocation_count = kwargs.get('count', 1)
         device_owner = kwargs.get('device_owner', 'share')
@@ -178,8 +193,8 @@ class NeutronNetworkPlugin(network.NetworkBaseAPI):
             'mac_address': port['mac_address'],
             'status': constants.STATUS_ACTIVE,
             'label': self.label,
-            'network_type': share_network['network_type'],
-            'segmentation_id': share_network['segmentation_id'],
+            'network_type': share_network.get('network_type'),
+            'segmentation_id': share_network.get('segmentation_id'),
             'ip_version': share_network['ip_version'],
             'cidr': share_network['cidr'],
             'mtu': share_network['mtu'],
@@ -200,13 +215,43 @@ class NeutronNetworkPlugin(network.NetworkBaseAPI):
         extensions = self.neutron_api.list_extensions()
         return neutron_constants.PROVIDER_NW_EXT in extensions
 
+    def _is_neutron_multi_segment(self, share_network, net_info=None):
+        if net_info is None:
+            net_info = self.neutron_api.get_network(
+                share_network['neutron_net_id'])
+        return 'segments' in net_info
+
     def _save_neutron_network_data(self, context, share_network):
         net_info = self.neutron_api.get_network(
             share_network['neutron_net_id'])
+        segmentation_id = None
+        network_type = None
+
+        if self._is_neutron_multi_segment(share_network, net_info):
+            # we have a multi segment network and need to identify the
+            # lowest segment used for binding
+            phy_nets = []
+            phy = self.neutron_api.configuration.neutron_physical_net_name
+            if not phy:
+                raise exception.NetworkBadConfigurationException(
+                    "Cannot identify segment used for binding. Please "
+                    "add neutron_physical_net_name in configuration.")
+            for segment in net_info['segments']:
+                phy_nets.append(segment['provider:physical_network'])
+                if segment['provider:physical_network'] == phy:
+                    segmentation_id = segment['provider:segmentation_id']
+                    network_type = segment['provider:network_type']
+            if not segmentation_id or not network_type:
+                raise exception.NetworkBadConfigurationException(
+                    "No matching neutron_physical_net_name found %s (found:"
+                    "%s)" % (phy, phy_nets))
+        else:
+            network_type = net_info['provider:network_type']
+            segmentation_id = net_info['provider:segmentation_id']
 
         provider_nw_dict = {
-            'network_type': net_info['provider:network_type'],
-            'segmentation_id': net_info['provider:segmentation_id'],
+            'network_type': network_type,
+            'segmentation_id': segmentation_id,
             'mtu':  net_info['mtu'],
         }
         share_network.update(provider_nw_dict)
@@ -375,6 +420,23 @@ class NeutronBindNetworkPlugin(NeutronNetworkPlugin):
                 "local_link_information": local_links}
         return arguments
 
+    def _store_neutron_net_info(self, context, share_network):
+        """Store the Neutron network info.
+
+        In case of dynamic multi segment the segment is determined while
+        binding the port. Therefore this method will return for multi segment
+        networks without storing network information.
+
+        Instead, multi segment networks will wait until ports are bound and
+        then store network information (see allocate_network()).
+        """
+        if self._is_neutron_multi_segment(share_network):
+            # In case of dynamic multi segment the segment is determined while
+            # binding the port
+            return
+        super(NeutronBindNetworkPlugin, self)._store_neutron_net_info(
+            context, share_network)
+
     def allocate_network(self, context, share_server, share_network=None,
                          **kwargs):
         ports = super(NeutronBindNetworkPlugin, self).allocate_network(
@@ -387,6 +449,19 @@ class NeutronBindNetworkPlugin(NeutronNetworkPlugin):
         # order to update the ports with the correct binding.
         if self.config.neutron_vnic_type != 'normal':
             self._wait_for_ports_bind(ports, share_server)
+            if self._is_neutron_multi_segment(share_network):
+                # update segment information after port bind
+                self._save_neutron_network_data(context, share_network)
+                self._save_neutron_subnet_data(context, share_network)
+                for num, port in enumerate(ports):
+                    port_info = {
+                        'network_type': share_network['network_type'],
+                        'segmentation_id': share_network['segmentation_id'],
+                        'cidr': share_network['cidr'],
+                        'ip_version': share_network['ip_version']
+                    }
+                    ports[num] = self.db.network_allocation_update(
+                        context, port['id'], port_info)
         return ports
 
 
