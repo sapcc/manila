@@ -64,6 +64,26 @@ neutron_bind_network_plugin_opts = [
         default=None),
 ]
 
+neutron_binding_profile = [
+    cfg.ListOpt(
+        "neutron_binding_profiles",
+        help="A list of binding profiles to add while doing a port bind "
+             "action.",
+        default=None)
+    ]
+
+neutron_binding_profile_opts = [
+    cfg.StrOpt(
+        'neutron_switch_id',
+        help="Switch ID for binding profile."),
+    cfg.StrOpt(
+        'neutron_port_id',
+        help="Port ID on the given switch.",),
+    cfg.DictOpt(
+        'neutron_switch_info',
+        help="Switch label.",),
+]
+
 CONF = cfg.CONF
 
 
@@ -285,6 +305,17 @@ class NeutronSingleNetworkPlugin(NeutronNetworkPlugin):
 class NeutronBindNetworkPlugin(NeutronNetworkPlugin):
     def __init__(self, *args, **kwargs):
         super(NeutronBindNetworkPlugin, self).__init__(*args, **kwargs)
+
+        self.binding_profiles = []
+        CONF.register_opts(
+            neutron_binding_profile,
+            group=self.neutron_api.config_group_name)
+        conf = CONF[self.neutron_api.config_group_name]
+        if conf.neutron_binding_profiles:
+            for profile in conf.neutron_binding_profiles:
+                CONF.register_opts(neutron_binding_profile_opts, group=profile)
+                self.binding_profiles.append(profile)
+
         CONF.register_opts(
             neutron_bind_network_plugin_opts,
             group=self.neutron_api.config_group_name)
@@ -338,6 +369,17 @@ class NeutronBindNetworkPlugin(NeutronNetworkPlugin):
             arguments['host_id'] = socket.gethostname()
         arguments['binding:vnic_type'] = (
             self.config.neutron_vnic_type)
+        if self.binding_profiles:
+            local_links = []
+            for profile in self.binding_profiles:
+                local_links.append({
+                    'switch_id': CONF[profile]['neutron_switch_id'],
+                    'port_id': CONF[profile]['neutron_port_id'],
+                    'switch_info': CONF[profile]['neutron_switch_info'],
+                })
+
+            arguments['binding:profile'] = {
+                "local_link_information": local_links}
         return arguments
 
     def allocate_network(self, context, share_server, share_network=None,
