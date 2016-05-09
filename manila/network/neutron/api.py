@@ -164,7 +164,8 @@ class API(object):
 
     def create_port(self, tenant_id, network_id, host_id=None, subnet_id=None,
                     fixed_ip=None, device_owner=None, device_id=None,
-                    mac_address=None, security_group_ids=None, dhcp_opts=None):
+                    mac_address=None, security_group_ids=None, dhcp_opts=None,
+                    **kwargs):
         try:
             port_req_body = {'port': {}}
             port_req_body['port']['network_id'] = network_id
@@ -174,7 +175,7 @@ class API(object):
                 port_req_body['port']['security_groups'] = security_group_ids
             if mac_address:
                 port_req_body['port']['mac_address'] = mac_address
-            if self._has_port_binding_extension() and host_id:
+            if self.has_port_binding_extension() and host_id:
                 port_req_body['port']['binding:host_id'] = host_id
             if dhcp_opts is not None:
                 port_req_body['port']['extra_dhcp_opts'] = dhcp_opts
@@ -187,6 +188,8 @@ class API(object):
                 port_req_body['port']['device_owner'] = device_owner
             if device_id:
                 port_req_body['port']['device_id'] = device_id
+            if kwargs:
+                port_req_body['port'].update(kwargs)
             port = self.client.create_port(port_req_body).get('port', {})
             return port
         except neutron_client_exc.NeutronClientException as e:
@@ -248,7 +251,7 @@ class API(object):
         extensions_list = self.client.list_extensions().get('extensions')
         return {ext['name']: ext for ext in extensions_list}
 
-    def _has_port_binding_extension(self):
+    def has_port_binding_extension(self):
         if not self.extensions:
             self.extensions = self.list_extensions()
         return neutron_constants.PORTBINDING_EXT in self.extensions
