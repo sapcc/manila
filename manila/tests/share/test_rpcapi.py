@@ -391,7 +391,7 @@ class ShareRpcAPITestCase(test.TestCase):
     def test_update_share_from_metadata(self):
         self._test_share_api('update_share_from_metadata',
                              rpc_method='cast',
-                             version='1.26',
+                             version='1.28',
                              share=self.fake_share,
                              metadata={'fake': 'fake'})
 
