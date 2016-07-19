@@ -306,6 +306,7 @@ class Share(BASE, ManilaBase):
     display_name = Column(String(255))
     display_description = Column(String(255))
     snapshot_id = Column(String(36))
+    source_backup_id = Column(String(36))
     snapshot_support = Column(Boolean, default=True)
     create_share_from_snapshot_support = Column(Boolean, default=True)
     revert_to_snapshot_support = Column(Boolean, default=False)
@@ -1492,6 +1493,32 @@ class AsynchronousOperationData(BASE, ManilaBase):
     entity_uuid = Column(String(36), nullable=False, primary_key=True)
     key = Column(String(255), nullable=False, primary_key=True)
     value = Column(String(1023), nullable=False)
+
+
+class ShareBackup(BASE, ManilaBase):
+    """Represents a backup of a share."""
+    __tablename__ = 'share_backups'
+    id = Column(String(36), primary_key=True)
+
+    @property
+    def name(self):
+        return CONF.share_backup_name_template % self.id
+
+    deleted = Column(String(36), default='False')
+    user_id = Column(String(255), nullable=False)
+    project_id = Column(String(255), nullable=False)
+
+    share_id = Column(String(36), ForeignKey('shares.id'))
+    size = Column(Integer)
+    host = Column(String(255))
+    topic = Column(String(255))
+    availability_zone = Column(String(255))
+    display_name = Column(String(255))
+    display_description = Column(String(255))
+    progress = Column(String(32))
+    restore_progress = Column(String(32))
+    status = Column(String(255))
+    fail_reason = Column(String(1023))
 
 
 def register_models():
