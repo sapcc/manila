@@ -175,8 +175,8 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         except Exception:
             with excutils.save_and_reraise_exception():
                 LOG.error(_LE("Failed to configure Vserver."))
-                self._delete_vserver(vserver_name,
-                                     security_services=security_services)
+        #        self._delete_vserver(vserver_name,
+        #                             security_services=security_services)
 
     def _get_valid_ipspace_name(self, network_id):
         """Get IPspace name according to network id."""
