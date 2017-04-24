@@ -502,6 +502,26 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         self.send_request('net-interface-create', api_args)
 
     @na_utils.trace
+    def create_network_route(self, destination, gateway):
+        """Creates a static route."""
+        LOG.debug('Creating route to destination %(destination)s '
+                  'with gateway %(gateway)s ',
+                  {'destination': destination, 'gateway': gateway})
+
+        api_args = {
+            'destination': destination,
+            'gateway': gateway,
+        }
+        try:
+            self.send_request('net-routes-create', api_args)
+        except netapp_api.NaApiError as e:
+            if e.code == netapp_api.EONTAPI_EEXIST:
+                LOG.error(_LE("Route exists for Vserver."))
+            else:
+                msg = _("Failed to configure Route. %s")
+                raise exception.NetAppException(msg % e.message)
+
+    @na_utils.trace
     def _create_vlan(self, node, port, vlan):
         try:
             api_args = {
@@ -1097,6 +1117,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
     def configure_active_directory(self, security_service, vserver_name):
         """Configures AD on Vserver."""
         self.configure_dns(security_service)
+        """TODO: make destination + gateway dynamic"""
+        self.create_network_route("0.0.0.0/0", "10.180.0.1")
 
         # 'cifs-server' is CIFS Server NetBIOS Name, max length is 15.
         # Should be unique within each domain (data['domain']).
