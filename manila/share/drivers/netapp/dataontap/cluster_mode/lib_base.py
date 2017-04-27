@@ -67,6 +67,7 @@ class NetAppCmodeFileStorageLibrary(object):
         'netapp:snapshot_policy': 'snapshot_policy',
         'netapp:language': 'language',
         'netapp:max_files': 'max_files',
+        'netapp:security_style': 'security_style',
     }
     # Maps standard extra spec keys to legacy NetApp keys
     STANDARD_BOOLEAN_EXTRA_SPECS_MAP = {
@@ -393,6 +394,9 @@ class NetAppCmodeFileStorageLibrary(object):
         extra_specs = self._remap_standard_boolean_extra_specs(extra_specs)
         self._check_extra_specs_validity(share, extra_specs)
         provisioning_options = self._get_provisioning_options(extra_specs)
+
+        if share['share_proto'].lower() == 'cifs':
+            provisioning_options['security_style'] = 'mixed'
         if replica:
             # If this volume is intended to be a replication destination,
             # create it as the 'data-protection' type

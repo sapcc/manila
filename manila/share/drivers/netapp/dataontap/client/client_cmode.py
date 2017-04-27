@@ -1219,13 +1219,15 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                       thin_provisioned=False, snapshot_policy=None,
                       language=None, dedup_enabled=False,
                       compression_enabled=False, max_files=None,
-                      snapshot_reserve=None, volume_type='rw'):
+                      snapshot_reserve=None, volume_type='rw',
+                      security_style='unix'):
 
         """Creates a volume."""
         api_args = {
             'containing-aggr-name': aggregate_name,
             'size': six.text_type(size_gb) + 'g',
             'volume': volume_name,
+            'volume-security-style': security_style,
             'volume-type': volume_type,
         }
         if volume_type != 'dp':
