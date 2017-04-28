@@ -1117,8 +1117,6 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
     def configure_active_directory(self, security_service, vserver_name):
         """Configures AD on Vserver."""
         self.configure_dns(security_service)
-        """TODO: make destination + gateway dynamic"""
-        self.create_network_route("0.0.0.0/0", "10.180.0.1")
 
         # 'cifs-server' is CIFS Server NetBIOS Name, max length is 15.
         # Should be unique within each domain (data['domain']).
