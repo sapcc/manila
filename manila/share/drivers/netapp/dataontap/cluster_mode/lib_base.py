@@ -68,7 +68,6 @@ class NetAppCmodeFileStorageLibrary(object):
         'netapp:snapshot_policy': 'snapshot_policy',
         'netapp:language': 'language',
         'netapp:max_files': 'max_files',
-        'netapp:security_style': 'security_style',
     }
     # Maps standard extra spec keys to legacy NetApp keys
     STANDARD_BOOLEAN_EXTRA_SPECS_MAP = {
