@@ -168,7 +168,13 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             vserver_client.enable_nfs()
 
             security_services = network_info.get('security_services')
+
             if security_services:
+                for security_service in security_services:
+                    # TODO (carthaca) move from config to real
+                    # additional attribute at security service
+                    security_service['ou'] = self.configuration.netapp_cifs_ou
+                self._create_vserver_route(vserver_client, network_info)
                 self._client.setup_security_services(security_services,
                                                      vserver_client,
                                                      vserver_name)
@@ -205,6 +211,16 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             self._client.create_ipspace(ipspace_name)
 
         return ipspace_name
+
+    @na_utils.trace
+    def _create_vserver_route(self, vserver_client, network_info):
+        """Create Vserver network route."""
+        neutron_subnet = self.neutron_api().get_subnet(
+            network_info['neutron_subnet_id'])
+
+        vserver_client.create_network_route("0.0.0.0/0",
+                                            neutron_subnet['gateway_ip'])
+
 
     @na_utils.trace
     def _create_vserver_lifs(self, vserver_name, vserver_client, network_info,

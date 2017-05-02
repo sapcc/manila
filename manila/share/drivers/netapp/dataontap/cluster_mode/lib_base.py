@@ -33,6 +33,7 @@ import six
 from manila.common import constants
 from manila import exception
 from manila.i18n import _, _LE, _LI, _LW
+from manila.network.neutron import api as neutron
 from manila.share.drivers.netapp.dataontap.client import api as netapp_api
 from manila.share.drivers.netapp.dataontap.client import client_cmode
 from manila.share.drivers.netapp.dataontap.cluster_mode import data_motion
@@ -97,6 +98,7 @@ class NetAppCmodeFileStorageLibrary(object):
         self._clients = {}
         self._ssc_stats = {}
         self._have_cluster_creds = None
+        self._neutron_api = None
 
         self._app_version = kwargs.get('app_version', 'unknown')
 
@@ -113,6 +115,12 @@ class NetAppCmodeFileStorageLibrary(object):
     def check_for_setup_error(self):
         self._licenses = self._get_licenses()
         self._start_periodic_tasks()
+
+    @na_utils.trace
+    def neutron_api(self):
+        if not self._neutron_api:
+            self._neutron_api = neutron.API()
+        return self._neutron_api
 
     def _get_vserver(self, share_server=None):
         raise NotImplementedError()
@@ -393,6 +401,9 @@ class NetAppCmodeFileStorageLibrary(object):
         extra_specs = self._remap_standard_boolean_extra_specs(extra_specs)
         self._check_extra_specs_validity(share, extra_specs)
         provisioning_options = self._get_provisioning_options(extra_specs)
+
+        if share['share_proto'].lower() == 'cifs':
+            provisioning_options['security_style'] = 'ntfs'
         if replica:
             # If this volume is intended to be a replication destination,
             # create it as the 'data-protection' type

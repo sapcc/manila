@@ -502,6 +502,26 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         self.send_request('net-interface-create', api_args)
 
     @na_utils.trace
+    def create_network_route(self, destination, gateway):
+        """Creates a static route."""
+        LOG.debug('Creating route to destination %(destination)s '
+                  'with gateway %(gateway)s ',
+                  {'destination': destination, 'gateway': gateway})
+
+        api_args = {
+            'destination': destination,
+            'gateway': gateway,
+        }
+        try:
+            self.send_request('net-routes-create', api_args)
+        except netapp_api.NaApiError as e:
+            if e.code == netapp_api.EONTAPI_EEXIST:
+                LOG.error(_LE("Route exists for Vserver."))
+            else:
+                msg = _("Failed to configure Route. %s")
+                raise exception.NetAppException(msg % e.message)
+
+    @na_utils.trace
     def _create_vlan(self, node, port, vlan):
         try:
             api_args = {
@@ -1106,6 +1126,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'admin-password': security_service['password'],
             'force-account-overwrite': 'true',
             'cifs-server': cifs_server,
+            'organizational-unit': security_service['ou'],
             'domain': security_service['domain'],
         }
         try:
@@ -1196,13 +1217,15 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                       thin_provisioned=False, snapshot_policy=None,
                       language=None, dedup_enabled=False,
                       compression_enabled=False, max_files=None,
-                      snapshot_reserve=None, volume_type='rw'):
+                      snapshot_reserve=None, volume_type='rw',
+                      security_style='unix'):
 
         """Creates a volume."""
         api_args = {
             'containing-aggr-name': aggregate_name,
             'size': six.text_type(size_gb) + 'g',
             'volume': volume_name,
+            'volume-security-style': security_style,
             'volume-type': volume_type,
         }
         if volume_type != 'dp':
