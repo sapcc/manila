@@ -781,6 +781,7 @@ class BaseSharesTest(test.BaseTestCase):
             "description": data_utils.rand_name("ss-desc"),
             "dns_ip": utils.rand_ip(),
             "server": utils.rand_ip(),
+            "ou": data_utils.rand_name("ss-ou"),
             "domain": data_utils.rand_name("ss-domain"),
             "user": data_utils.rand_name("ss-user"),
             "password": data_utils.rand_name("ss-password"),

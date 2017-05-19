@@ -50,7 +50,7 @@ class ViewBuilder(common.ViewBuilder):
         view = self.summary(request, security_service)
         keys = (
             'created_at', 'updated_at', 'description', 'dns_ip', 'server',
-            'domain', 'user', 'password', 'project_id')
+            'ou', 'domain', 'user', 'password', 'project_id')
         for key in keys:
             view['security_service'][key] = security_service.get(key)
         return view

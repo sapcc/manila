@@ -47,7 +47,7 @@ class SecurityServiceListMixin(object):
 
         # verify keys
         keys = [
-            "name", "id", "status", "description",
+            "name", "id", "status", "description", "ou",
             "domain", "server", "dns_ip", "user", "password", "type",
             "created_at", "updated_at", "project_id",
         ]
@@ -88,6 +88,7 @@ class SecurityServiceListMixin(object):
             'server': 'fake_server_1',
             'dns_ip': '1.1.1.1',
             'domain': 'fake_domain_1',
+            'ou': 'OU=fake_unit_1',
         }
         listed = self.shares_client.list_security_services(
             detailed=True,
@@ -107,6 +108,7 @@ class SecurityServicesTest(base.BaseSharesTest,
             'dns_ip': '1.1.1.1',
             'server': 'fake_server_1',
             'domain': 'fake_domain_1',
+            'ou': 'OU=fake_unit_1',
             'user': 'fake_user',
             'password': 'pass',
         }
@@ -115,6 +117,7 @@ class SecurityServicesTest(base.BaseSharesTest,
             'dns_ip': '2.2.2.2',
             'server': 'fake_server_2',
             'domain': 'fake_domain_2',
+            'ou': 'OU=fake_unit_2',
             'user': 'test_user',
             'password': 'word',
         }

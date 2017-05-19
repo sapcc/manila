@@ -1979,6 +1979,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'admin-password': fake.CIFS_SECURITY_SERVICE['password'],
             'force-account-overwrite': 'true',
             'cifs-server': cifs_server,
+            'organizational-unit': fake.CIFS_SECURITY_SERVICE['ou'],
             'domain': fake.CIFS_SECURITY_SERVICE['domain'],
         }
 
