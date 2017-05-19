@@ -497,7 +497,7 @@ class SharesClient(rest_client.RestClient):
 
     def create_security_service(self, ss_type="ldap", **kwargs):
         # ss_type: ldap, kerberos, active_directory
-        # kwargs: name, description, dns_ip, server, domain, user, password
+        # kwargs: name, description, dns_ip, server, ou, domain, user, password
         post_body = {"type": ss_type}
         post_body.update(kwargs)
         body = json.dumps({"security_service": post_body})
@@ -507,7 +507,7 @@ class SharesClient(rest_client.RestClient):
 
     def update_security_service(self, ss_id, **kwargs):
         # ss_id - id of security-service entity
-        # kwargs: dns_ip, server, domain, user, password, name, description
+        # kwargs: dns_ip, server, ou, domain, user, password, name, description
         # for 'active' status can be changed
         # only 'name' and 'description' fields
         body = json.dumps({"security_service": kwargs})

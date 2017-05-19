@@ -28,6 +28,7 @@ class SecurityServiceAdminTest(
         ss_ldap_data = {
             'name': 'ss_ldap',
             'dns_ip': '1.1.1.1',
+            'ou': 'OU=fake_unit_1',
             'server': 'fake_server_1',
             'domain': 'fake_domain_1',
             'user': 'fake_user',
@@ -36,6 +37,7 @@ class SecurityServiceAdminTest(
         ss_kerberos_data = {
             'name': 'ss_kerberos',
             'dns_ip': '2.2.2.2',
+            'ou': 'OU=fake_unit_2',
             'server': 'fake_server_2',
             'domain': 'fake_domain_2',
             'user': 'test_user',
