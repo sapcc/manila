@@ -875,6 +875,7 @@ class SecurityService(BASE, ManilaBase):
     password = Column(String(255), nullable=True)
     name = Column(String(255), nullable=True)
     description = Column(String(255), nullable=True)
+    ou = Column(String(255), nullable=True)
 
 
 class ShareNetwork(BASE, ManilaBase):
