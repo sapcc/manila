@@ -226,3 +226,15 @@ user documentation.
 2.40
 ----
   Added share group and share group snapshot quotas.
+
+2.41
+----
+  Added 'description' in share type create/list APIs.
+
+2.42
+----
+  Added ``with_count`` in share list API to get total count info.
+
+2.43
+----
+  Added 'ou' field to 'security_service' object.
