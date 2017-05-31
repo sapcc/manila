@@ -170,10 +170,6 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             security_services = network_info.get('security_services')
 
             if security_services:
-                for security_service in security_services:
-                    # TODO (carthaca) move from config to real
-                    # additional attribute at security service
-                    security_service['ou'] = self.configuration.netapp_cifs_ou
                 self._create_vserver_route(vserver_client, network_info)
                 self._client.setup_security_services(security_services,
                                                      vserver_client,
