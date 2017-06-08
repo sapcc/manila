@@ -1341,6 +1341,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'admin-password': security_service['password'],
             'force-account-overwrite': 'true',
             'cifs-server': cifs_server,
+            'organizational-unit': security_service['ou'],
             'domain': security_service['domain'],
         }
         try:
