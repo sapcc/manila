@@ -165,12 +165,13 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                                            network_info,
                                            ipspace_name)
 
+            self._create_vserver_route(vserver_client, network_info)
+
             vserver_client.enable_nfs()
 
             security_services = network_info.get('security_services')
 
             if security_services:
-                self._create_vserver_route(vserver_client, network_info)
                 self._client.setup_security_services(security_services,
                                                      vserver_client,
                                                      vserver_name)
