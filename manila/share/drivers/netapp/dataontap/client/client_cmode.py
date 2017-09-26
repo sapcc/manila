@@ -1119,8 +1119,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         self.configure_dns(security_service)
 
         # 'cifs-server' is CIFS Server NetBIOS Name, max length is 15.
-        # Should be unique within each domain (data['domain']).
-        cifs_server = (vserver_name[0:7] + '..' + vserver_name[-6:]).upper()
+        # Should be unique within each domain (data['domain'])
+        # and a valid DNS hostname.
+        cifs_server = vserver_name[-36:-23].upper()
         api_args = {
             'admin-username': security_service['user'],
             'admin-password': security_service['password'],
