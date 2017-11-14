@@ -30,6 +30,7 @@ from manila.i18n import _
 
 LOG = log.getLogger(__name__)
 
+EONTAPI_EEXIST = '17'
 EONTAPI_EINVAL = '22'
 EAPIERROR = '13001'
 EAPINOTFOUND = '13005'
