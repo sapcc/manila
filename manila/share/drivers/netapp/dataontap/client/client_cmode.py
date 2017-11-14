@@ -503,6 +503,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
 
     @na_utils.trace
     def create_network_route(self, destination, gateway):
+        if not gateway:
+            return
         """Creates a static route."""
         LOG.debug('Creating route to destination %(destination)s '
                   'with gateway %(gateway)s ',
