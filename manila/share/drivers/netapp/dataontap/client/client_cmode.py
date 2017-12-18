@@ -1244,11 +1244,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 snapshot_reserve)
         self.send_request('volume-create', api_args)
 
-        # cDOT compression requires that deduplication be enabled.
-        if dedup_enabled or compression_enabled:
-            self.enable_dedup(volume_name)
-        if compression_enabled:
-            self.enable_compression(volume_name)
+        self.update_volume_efficiency_attributes(volume_name,
+                                                 dedup_enabled,
+                                                 compression_enabled)
         if max_files is not None:
             self.set_volume_max_files(volume_name, max_files)
 
@@ -1423,17 +1421,18 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         """Update dedupe & compression attributes to match desired values."""
         efficiency_status = self.get_volume_efficiency_status(volume_name)
 
-        if efficiency_status['compression'] != compression_enabled:
-            if compression_enabled:
-                self.enable_compression(volume_name)
-            else:
-                self.disable_compression(volume_name)
-
+        # cDOT compression requires that deduplication be enabled.
         if efficiency_status['dedupe'] != dedup_enabled:
             if dedup_enabled:
                 self.enable_dedup(volume_name)
             else:
                 self.disable_dedup(volume_name)
+
+        if efficiency_status['compression'] != compression_enabled:
+            if compression_enabled:
+                self.enable_compression(volume_name)
+            else:
+                self.disable_compression(volume_name)
 
     @na_utils.trace
     def volume_exists(self, volume_name):
