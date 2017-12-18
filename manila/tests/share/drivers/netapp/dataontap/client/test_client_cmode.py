@@ -2670,6 +2670,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
     def test_create_volume(self):
 
         self.mock_object(self.client, 'send_request')
+        self.mock_object(self.client, 'update_volume_efficiency_attributes')
 
         self.client.create_volume(
             fake.SHARE_AGGREGATE_NAME, fake.SHARE_NAME, 100)
@@ -2693,6 +2694,10 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.mock_object(self.client, 'enable_dedup')
         self.mock_object(self.client, 'enable_compression')
         self.mock_object(self.client, 'send_request')
+        self.mock_object(
+            self.client,
+            'get_volume_efficiency_status',
+            mock.Mock(return_value={'dedupe': False, 'compression': False}))
 
         self.client.create_volume(
             fake.SHARE_AGGREGATE_NAME, fake.SHARE_NAME, 100,
@@ -2728,6 +2733,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
     def test_create_encrypted_volume(self):
 
         self.mock_object(self.client, 'send_request')
+        self.mock_object(self.client, 'update_volume_efficiency_attributes')
         self.client.features.add_feature('FLEXVOL_ENCRYPTION')
 
         self.client.create_volume(
@@ -2749,6 +2755,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
     def test_create_non_encrypted_volume(self):
 
         self.mock_object(self.client, 'send_request')
+        self.mock_object(self.client, 'update_volume_efficiency_attributes')
         self.client.features.add_feature('FLEXVOL_ENCRYPTION')
 
         self.client.create_volume(
