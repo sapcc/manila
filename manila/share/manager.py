@@ -22,6 +22,7 @@
 import copy
 import datetime
 import functools
+import os
 
 from oslo_config import cfg
 from oslo_log import log
@@ -287,6 +288,12 @@ class ShareManager(manager.SchedulerDependentManager):
     def init_host(self):
         """Initialization for a standalone service."""
 
+        # mark service alive by creating a probe
+        try:
+            open('/etc/manila/probe', 'a')
+        except Exception as e:
+            LOG.error("Probe not created: %(e)s", {'e': six.text_type(e)})
+
         ctxt = context.get_admin_context()
         driver_host_pair = "{}@{}".format(
             self.driver.__class__.__name__,
@@ -306,6 +313,13 @@ class ShareManager(manager.SchedulerDependentManager):
             except Exception:
                 LOG.exception("Error encountered during initialization of "
                               "driver %s", driver_host_pair)
+                # init failed, mark service dead by removing the probe
+                try:
+                    os.remove('/etc/manila/probe')
+                except Exception as e:
+                    LOG.error("Not removed: %(e)s", {'e': six.text_type(e)})
+                # we don't want to continue since we failed
+                # to initialize the driver correctly.
                 raise
             else:
                 self.driver.initialized = True
@@ -401,6 +415,12 @@ class ShareManager(manager.SchedulerDependentManager):
                  "@%(host)s'",
                  {"driver": self.driver.__class__.__name__,
                   "host": self.host})
+        # init done, mark service ready
+        try:
+            with open('/etc/manila/probe', 'w+') as f:
+                f.write('ready\n')
+        except Exception as e:
+            LOG.error("Probe not written: %(e)s", {'e': six.text_type(e)})
 
     def _provide_share_server_for_share(self, context, share_network_id,
                                         share_instance, snapshot=None,
