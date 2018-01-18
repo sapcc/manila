@@ -27,6 +27,7 @@ from oslo_service import periodic_task
 from oslo_utils import excutils
 from oslo_utils import importutils
 from oslo_utils import timeutils
+import six
 
 from manila.common import constants
 from manila import context
@@ -87,8 +88,19 @@ class SchedulerManager(manager.Manager):
         super(SchedulerManager, self).__init__(*args, **kwargs)
 
     def init_host_with_rpc(self):
+        # mark service alive by creating a probe
+        try:
+            open('/etc/manila/probe', 'a')
+        except Exception as e:
+            LOG.error("Probe not created: %(e)s", {'e': six.text_type(e)})
         ctxt = context.get_admin_context()
         self.request_service_capabilities(ctxt)
+        # init done, mark service ready
+        try:
+            with open('/etc/manila/probe', 'w+') as f:
+                f.write('ready\n')
+        except Exception as e:
+            LOG.error("Probe not written: %(e)s", {'e': six.text_type(e)})
 
     def get_host_list(self, context):
         """Get a list of hosts from the HostManager."""
