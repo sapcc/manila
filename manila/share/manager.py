@@ -320,6 +320,12 @@ class ShareManager(manager.SchedulerDependentManager):
                     )
 
         self.publish_service_capabilities(ctxt)
+        # init done, mark service ready
+        try:
+            with open('/etc/manila/probe', 'w+') as f:
+                f.write('ready\n')
+        except Exception as e:
+            LOG.error("Probe not written: %(e)s", {'e': six.text_type(e)})
 
     def _provide_share_server_for_share(self, context, share_network_id,
                                         share_instance, snapshot=None,
