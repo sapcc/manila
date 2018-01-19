@@ -21,6 +21,7 @@
 
 import copy
 import datetime
+import os
 
 from oslo_config import cfg
 from oslo_log import log
@@ -243,6 +244,12 @@ class ShareManager(manager.SchedulerDependentManager):
     def init_host(self):
         """Initialization for a standalone service."""
 
+        # mark service alive by creating a probe
+        try:
+            open('/etc/manila/probe', 'a')
+        except Exception as e:
+            LOG.error("Probe not created: %(e)s", {'e': six.text_type(e)})
+
         ctxt = context.get_admin_context()
         try:
             self.driver.do_setup(ctxt)
@@ -257,6 +264,11 @@ class ShareManager(manager.SchedulerDependentManager):
                 }
             )
             self.driver.initialized = False
+            # init failed, mark service dead by removing the probe
+            try:
+                os.remove('/etc/manila/probe')
+            except Exception as e:
+                LOG.error("Probe not removed: %(e)s", {'e': six.text_type(e)})
             # we don't want to continue since we failed
             # to initialize the driver correctly.
             return
