@@ -161,8 +161,10 @@ class NeutronNetworkPlugin(network.NetworkBaseAPI):
 
         return ports
 
-    def _get_matched_ip_address(self, fixed_ips, ip_version):
+    def _get_matched_ip_address(self, fixed_ips, ip_version=None):
         """Get first ip address which matches the specified ip_version."""
+        if ip_version is None:
+            ip_version = 4
 
         for ip in fixed_ips:
             try:
