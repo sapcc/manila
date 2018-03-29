@@ -2594,6 +2594,32 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.client.send_request.assert_has_calls([
             mock.call('net-dns-create', net_dns_create_args)])
 
+    def test_configure_dns_multiple_dns_ip(self):
+
+        self.mock_object(self.client, 'send_request')
+        dns_ip1 = '10.0.0.1'
+        dns_ip2 = '10.0.0.2'
+        dns_ip3 = '10.0.0.3'
+        ss = fake.CIFS_SECURITY_SERVICE
+        # join together comma separated, put some whitespce in
+        # '10.0.0.1 ,10.0.0.2, 10.0.0.3'
+        ss['dns_ip'] = ",".join([dns_ip1 + ' ', dns_ip2, ' ' + dns_ip3])
+
+        self.client.configure_dns(ss)
+
+        net_dns_create_args = {
+            'domains': {'string': ss['domain']},
+            'name-servers': [
+                {'ip-address': dns_ip1},
+                {'ip-address': dns_ip2},
+                {'ip-address': dns_ip3}
+            ],
+            'dns-state': 'enabled'
+        }
+
+        self.client.send_request.assert_has_calls([
+            mock.call('net-dns-create', net_dns_create_args)])
+
     def test_configure_dns_for_kerberos(self):
 
         self.mock_object(self.client, 'send_request')
