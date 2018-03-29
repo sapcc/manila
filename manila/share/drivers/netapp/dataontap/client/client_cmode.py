@@ -1465,11 +1465,15 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'domains': {
                 'string': security_service['domain'],
             },
-            'name-servers': {
-                'ip-address': security_service['dns_ip'],
-            },
+            'name-servers': [],
             'dns-state': 'enabled',
         }
+        dns_ip = security_service['dns_ip']
+        if dns_ip:
+            dns_ips = [x.strip() for x in dns_ip.split(',')]
+            for ip in dns_ips:
+                api_args['name-servers'].append({'ip-address': ip})
+
         try:
             self.send_request('net-dns-create', api_args)
         except netapp_api.NaApiError as e:
