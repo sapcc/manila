@@ -1414,11 +1414,16 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'domains': {
                 'string': security_service['domain'],
             },
-            'name-servers': {
-                'ip-address': security_service['dns_ip'],
-            },
+            'name-servers': [],
             'dns-state': 'enabled',
         }
+        dns_ips = [x.strip() for x in security_service['dns_ip'].split(',')]
+        if len(dns_ips) == 1:
+            api_args['name-servers'] = {'ip-address': dns_ips[0]}
+        else:
+            for ip in dns_ips:
+                api_args['name-servers'].append({'ip-address': ip})
+
         try:
             self.send_request('net-dns-create', api_args)
         except netapp_api.NaApiError as e:
