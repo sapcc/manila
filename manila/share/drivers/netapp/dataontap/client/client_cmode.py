@@ -1380,6 +1380,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
     def configure_active_directory(self, security_service, vserver_name):
         """Configures AD on Vserver."""
         self.configure_dns(security_service)
+        self.set_preferred_dc(security_service)
 
         # 'cifs-server' is CIFS Server NetBIOS Name, max length is 15.
         # Should be unique within each domain (data['domain']).
@@ -1477,6 +1478,26 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             else:
                 msg = _("Failed to configure DNS. %s")
                 raise exception.NetAppException(msg % e.message)
+
+    @na_utils.trace
+    def set_preferred_dc(self, security_service):
+        # server is optional
+        if not security_service['server']:
+            return
+
+        api_args = {
+            'preferred-dc': [],
+            'domain': security_service['domain'],
+        }
+        dc_ips = [x.strip() for x in security_service['server'].split(',')]
+        for ip in dc_ips:
+            api_args['preferred-dc'].append({'string': ip})
+
+        try:
+            self.send_request('cifs-domain-preferred-dc-add', api_args)
+        except netapp_api.NaApiError as e:
+            msg = _("Failed to set preferred DC. %s")
+            raise exception.NetAppException(msg % e.message)
 
     @na_utils.trace
     def create_volume(self, aggregate_name, volume_name, size_gb,
