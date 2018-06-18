@@ -1505,7 +1505,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                       language=None, dedup_enabled=False,
                       compression_enabled=False, max_files=None,
                       snapshot_reserve=None, volume_type='rw',
-                      qos_policy_group=None,
+                      qos_policy_group=None, comment='',
                       encrypt=False, **options):
         """Creates a volume."""
         api_args = {
@@ -1513,6 +1513,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'size': six.text_type(size_gb) + 'g',
             'volume': volume_name,
             'volume-type': volume_type,
+            'volume-comment': comment,
         }
         if volume_type != 'dp':
             api_args['junction-path'] = '/%s' % volume_name
@@ -1736,7 +1737,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                       language=None, dedup_enabled=False,
                       compression_enabled=False, max_files=None,
                       qos_policy_group=None, hide_snapdir=None,
-                      **options):
+                      comment=None, **options):
         """Update backend volume for a share as necessary."""
         api_args = {
             'query': {
@@ -1749,6 +1750,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             },
             'attributes': {
                 'volume-attributes': {
+                    'volume-id-attributes': {},
                     'volume-inode-attributes': {},
                     'volume-language-attributes': {},
                     'volume-snapshot-attributes': {},
@@ -1780,6 +1782,10 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 'volume-snapshot-attributes'][
                 'snapdir-access-enabled'] = six.text_type(
                 not hide_snapdir).lower()
+        if comment:
+            api_args['attributes']['volume-attributes'][
+                'volume-id-attributes'][
+                    'comment'] = comment
 
         self.send_request('volume-modify-iter', api_args)
 
