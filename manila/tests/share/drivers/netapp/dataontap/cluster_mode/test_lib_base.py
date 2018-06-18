@@ -1452,6 +1452,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         provisioning_options['hide_snapdir'] = hide_snapdir
         self.mock_object(self.library, '_get_backend_share_name', mock.Mock(
             return_value=fake.SHARE_NAME))
+        self.mock_object(self.library, '_get_backend_share_comment', mock.Mock(
+            return_value=fake.VOLUME_COMMENT))
         self.mock_object(share_utils, 'extract_host', mock.Mock(
             return_value=fake.POOL_NAME))
         mock_get_provisioning_opts = self.mock_object(
@@ -1486,6 +1488,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             mock_get_aggr_flexgroup.assert_not_called()
             vserver_client.create_volume.assert_called_once_with(
                 fake.POOL_NAME, fake.SHARE_NAME, fake.SHARE['size'],
+                comment=fake.VOLUME_COMMENT,
                 snapshot_reserve=8, **provisioning_options)
 
         if hide_snapdir:
@@ -1512,6 +1515,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
     def test_allocate_container_as_replica(self):
         self.mock_object(self.library, '_get_backend_share_name', mock.Mock(
             return_value=fake.SHARE_NAME))
+        self.mock_object(self.library, '_get_backend_share_comment', mock.Mock(
+            return_value=fake.VOLUME_COMMENT))
         self.mock_object(share_utils, 'extract_host', mock.Mock(
             return_value=fake.POOL_NAME))
         mock_get_provisioning_opts = self.mock_object(
@@ -1532,7 +1537,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             language='en-US', dedup_enabled=True, split=True,
             compression_enabled=False, max_files=5000, encrypt=False,
             snapshot_reserve=8, volume_type='dp',
-            adaptive_qos_policy_group=None)
+            adaptive_qos_policy_group=None, comment=fake.VOLUME_COMMENT)
 
     def test_allocate_container_no_pool_name(self):
         self.mock_object(self.library, '_get_backend_share_name', mock.Mock(

@@ -3108,7 +3108,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
         }
 
         self.client._get_create_volume_api_args.assert_called_once_with(
-            fake.SHARE_NAME, False, None, None, None, 'rw', None, False, None)
+            fake.SHARE_NAME, False, None, None, None,
+            'rw', '', None, False, None)
         self.client.send_request.assert_called_with('volume-create',
                                                     volume_create_args)
         (self.client.update_volume_efficiency_attributes.
@@ -3162,7 +3163,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
         }
 
         self.client._get_create_volume_api_args.assert_called_once_with(
-            fake.SHARE_NAME, False, None, None, None, 'rw', None, False, None)
+            fake.SHARE_NAME, False, None, None, None, 'rw', None, None,
+            False, None)
         self.client.send_request.assert_called_with('volume-create-async',
                                                     volume_create_args)
         self.assertEqual(expected_result, result)
@@ -3193,10 +3195,12 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         result_api_args = self.client._get_create_volume_api_args(
             fake.SHARE_NAME, thin_provisioned, snapshot_policy, language,
-            reserve, volume_type, qos_name, encrypt, qos_adaptive_name)
+            reserve, volume_type, fake.VOLUME_COMMENT, qos_name, encrypt,
+            qos_adaptive_name)
 
         expected_api_args = {
             'volume-type': volume_type,
+            'volume-comment': fake.VOLUME_COMMENT,
             'junction-path': '/fake_share',
             'space-reserve': thin_provisioned,
             'snapshot-policy': snapshot_policy,
@@ -3219,13 +3223,16 @@ class NetAppClientCmodeTestCase(test.TestCase):
         qos_name = None
         encrypt = False
         qos_adaptive_name = None
+        volume_comment = None
 
         result_api_args = self.client._get_create_volume_api_args(
             fake.SHARE_NAME, thin_provisioned, snapshot_policy, language,
-            reserve, volume_type, qos_name, encrypt, qos_adaptive_name)
+            reserve, volume_type, volume_comment, qos_name, encrypt,
+            qos_adaptive_name)
 
         expected_api_args = {
             'volume-type': volume_type,
+            'volume-comment': volume_comment,
         }
         self.assertEqual(expected_api_args, result_api_args)
 
@@ -3235,7 +3242,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.assertRaises(exception.NetAppException,
                           self.client._get_create_volume_api_args,
                           fake.SHARE_NAME, True, 'default', 'en-US',
-                          15, 'rw', 'fake_qos', encrypt, 'fake_qos_adaptive')
+                          15, 'rw', 'fake_comment', 'fake_qos',
+                          encrypt, 'fake_qos_adaptive')
 
     def test_is_flexvol_encrypted_unsupported(self):
 
@@ -3540,6 +3548,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
             },
             'attributes': {
                 'volume-attributes': {
+                    'volume-id-attributes': {},
                     'volume-inode-attributes': {},
                     'volume-language-attributes': {},
                     'volume-snapshot-attributes': {},
@@ -3584,6 +3593,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
             dedup_enabled=True,
             compression_enabled=False,
             max_files=fake.MAX_FILES,
+            comment=fake.VOLUME_COMMENT,
             qos_policy_group=qos_group,
             adaptive_qos_policy_group=adaptive_qos_group,
             autosize_attributes=fake.VOLUME_AUTOSIZE_ATTRS,
@@ -3600,6 +3610,9 @@ class NetAppClientCmodeTestCase(test.TestCase):
             },
             'attributes': {
                 'volume-attributes': {
+                    'volume-id-attributes': {
+                        'comment': fake.VOLUME_COMMENT,
+                    },
                     'volume-inode-attributes': {
                         'files-total': fake.MAX_FILES,
                     },
