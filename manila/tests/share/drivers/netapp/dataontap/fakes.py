@@ -34,11 +34,13 @@ VSERVER2 = 'fake_vserver_2'
 LICENSES = ('base', 'cifs', 'fcp', 'flexclone', 'iscsi', 'nfs', 'snapmirror',
             'snaprestore', 'snapvault')
 VOLUME_NAME_TEMPLATE = 'share_%(share_id)s'
+VOLUME_COMMENT = 'fake_comment'
 VSERVER_NAME_TEMPLATE = 'os_%s'
 AGGREGATE_NAME_SEARCH_PATTERN = '(.*)'
 SHARE_NAME = 'share_7cf7c200_d3af_4e05_b87e_9167c95dfcad'
 SHARE_NAME2 = 'share_d24e7257_124e_4fb6_b05b_d384f660bc85'
 SHARE_INSTANCE_NAME = 'share_d24e7257_124e_4fb6_b05b_d384f660bc85'
+SHARE_DISPLAY_NAME = 'fake_share_display_name'
 FLEXVOL_NAME = 'fake_volume'
 FLEXVOL_NAME_1 = 'fake_volume_1'
 JUNCTION_PATH = '/%s' % FLEXVOL_NAME
@@ -198,6 +200,28 @@ SHARE_FLEXGROUP = {
     'share_id': SHARE_ID,
 }
 
+EXTRA_SPEC = {
+    'netapp:thin_provisioned': 'true',
+    'netapp:snapshot_policy': 'default',
+    'netapp:language': 'en-US',
+    'netapp:dedup': 'True',
+    'netapp:compression': 'false',
+    'netapp:max_files': 5000,
+    'netapp:split_clone_on_create': 'true',
+    'netapp_disk_type': 'FCAL',
+    'netapp_raid_type': 'raid4',
+    'netapp_flexvol_encryption': 'true',
+    'netapp:tcp_max_xfer_size': 100,
+    'netapp:udp_max_xfer_size': 100,
+    'netapp:adaptive_qos_policy_group': None,
+}
+
+SHARE_TYPE = {
+    'id': SHARE_TYPE_ID,
+    'name': SHARE_TYPE_NAME,
+    'extra_specs': EXTRA_SPEC
+}
+
 SHARE_INSTANCE = {
     'id': SHARE_INSTANCE_ID,
     'share_id': SHARE_ID,
@@ -205,8 +229,10 @@ SHARE_INSTANCE = {
     'project_id': TENANT_ID,
     'mount_point_name': MOUNT_POINT_NAME,
     'name': SHARE_INSTANCE_NAME,
+    'display_name': SHARE_DISPLAY_NAME,
     'size': SHARE_SIZE,
     'share_proto': 'fake',
+    'share_type': SHARE_TYPE,
     'share_type_id': SHARE_TYPE_ID,
     'share_network_id': '5dfe0898-e2a1-4740-9177-81c7d26713b0',
     'share_server_id': '7e6a2cc8-871f-4b1d-8364-5aad0f98da86',
@@ -502,12 +528,6 @@ INVALID_UDP_MAX_XFER_SIZE_EXTRA_SPEC = {
 }
 
 EMPTY_EXTRA_SPEC = {}
-
-SHARE_TYPE = {
-    'id': SHARE_TYPE_ID,
-    'name': SHARE_TYPE_NAME,
-    'extra_specs': EXTRA_SPEC
-}
 
 OVERLAPPING_EXTRA_SPEC = {
     'compression': '<is> True',
