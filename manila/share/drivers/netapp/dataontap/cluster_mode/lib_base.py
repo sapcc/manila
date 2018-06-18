@@ -302,6 +302,18 @@ class NetAppCmodeFileStorageLibrary(object):
         return self.configuration.netapp_volume_name_template % {
             'share_id': share_id.replace('-', '_')}
 
+    def _get_backend_share_comment(self, share):
+        """Get share comment."""
+        # caution: share_type is nullable
+        if share.get('share_type'):
+            type = share.get('share_type').get('name')
+        else:
+            type = share.get('share_type_name')
+
+        return 'share_id: {share_id}, share_name: {display_name}, ' \
+               'project: {project_id}, share_type: {type}'.format(
+                   type=type, **share)
+
     def _get_backend_snapshot_name(self, snapshot_id):
         """Get snapshot name according to snapshot name template."""
         return 'share_snapshot_' + snapshot_id.replace('-', '_')
@@ -1056,6 +1068,7 @@ class NetAppCmodeFileStorageLibrary(object):
                             set_qos=True):
         """Create new share on aggregate."""
         share_name = self._get_backend_share_name(share['id'])
+        share_comment = self._get_backend_share_comment(share)
 
         # Get Data ONTAP aggregate name as pool name.
         pool_name = share_utils.extract_host(share['host'], level='pool')
@@ -1083,10 +1096,10 @@ class NetAppCmodeFileStorageLibrary(object):
                 vserver_client, aggr_list, share_name,
                 share['size'],
                 self.configuration.netapp_volume_snapshot_reserve_percent,
-                **provisioning_options)
+                comment=share_comment, **provisioning_options)
         else:
             vserver_client.create_volume(
-                pool_name, share_name, share['size'],
+                pool_name, share_name, share['size'], comment=share_comment,
                 snapshot_reserve=self.configuration.
                 netapp_volume_snapshot_reserve_percent, **provisioning_options)
 
@@ -1116,14 +1129,14 @@ class NetAppCmodeFileStorageLibrary(object):
     def _create_flexgroup_share(self, vserver_client, aggr_list, share_name,
                                 size, snapshot_reserve, dedup_enabled=False,
                                 compression_enabled=False, max_files=None,
-                                **provisioning_options):
+                                comment='', **provisioning_options):
         """Create a FlexGroup share using async API with job."""
 
         start_timeout = (
             self.configuration.netapp_flexgroup_aggregate_not_busy_timeout)
         job_info = self.wait_for_start_create_flexgroup(
             start_timeout, vserver_client, aggr_list, share_name, size,
-            snapshot_reserve, **provisioning_options)
+            snapshot_reserve, comment=comment, **provisioning_options)
 
         if not job_info['jobid'] or job_info['error-code']:
             msg = "Error creating FlexGroup share: %s."
@@ -1143,6 +1156,7 @@ class NetAppCmodeFileStorageLibrary(object):
     def wait_for_start_create_flexgroup(self, start_timeout, vserver_client,
                                         aggr_list, share_name, size,
                                         snapshot_reserve,
+                                        comment=None,
                                         **provisioning_options):
         """Wait for starting create FlexGroup volume succeed.
 
@@ -1168,7 +1182,7 @@ class NetAppCmodeFileStorageLibrary(object):
             try:
                 return vserver_client.create_volume_async(
                     aggr_list, share_name, size, is_flexgroup=True,
-                    snapshot_reserve=snapshot_reserve,
+                    snapshot_reserve=snapshot_reserve, comment=comment,
                     auto_provisioned=self._is_flexgroup_auto,
                     **provisioning_options)
             except netapp_api.NaApiError as e:
@@ -1538,6 +1552,8 @@ class NetAppCmodeFileStorageLibrary(object):
         """Clones existing share."""
         share_name = self._get_backend_share_name(share['id'])
         parent_share_name = self._get_backend_share_name(snapshot['share_id'])
+        aggregate_name = share_utils.extract_host(share['host'], level='pool')
+        share_comment = self._get_backend_share_comment(share)
         if snapshot.get('provider_location') is None:
             parent_snapshot_name = snapshot_name_func(self, snapshot['id'])
         else:
@@ -1552,6 +1568,11 @@ class NetAppCmodeFileStorageLibrary(object):
         vserver_client.create_volume_clone(
             share_name, parent_share_name, parent_snapshot_name,
             **provisioning_options)
+
+        # ccloud: set share comment
+        vserver_client.modify_volume(aggregate_name, share_name,
+                                     comment=share_comment,
+                                     **provisioning_options)
 
         if share['size'] > snapshot['size']:
             vserver_client.set_volume_size(share_name, share['size'])
@@ -2335,6 +2356,35 @@ class NetAppCmodeFileStorageLibrary(object):
             helper.update_access(share, share_name, access_rules)
         else:
             raise exception.ShareResourceNotFound(share_id=share['id'])
+
+    @na_utils.trace
+    def update_share(self, share, share_comment=None, share_server=None):
+        """Updates comment for a share."""
+        vserver, vserver_client = self._get_vserver(share_server=share_server)
+        share_name = self._get_backend_share_name(share['id'])
+        aggregate_name = share_utils.extract_host(share['host'], level='pool')
+        if share_comment is None:
+            share_comment = self._get_backend_share_comment(share)
+
+        extra_specs = share_types.get_extra_specs_from_share(share)
+        provisioning_options = self._get_provisioning_options_for_share(
+            share, vserver, vserver_client=vserver_client, set_qos=False)
+
+        debug_args = {
+            'share': share_name,
+            'aggr': aggregate_name,
+            'options': provisioning_options
+        }
+        LOG.debug('update share %(share)s on aggregate %(aggr)s with '
+                  'provisioning options %(options)s', debug_args)
+
+        qos_policy_group_name = self._modify_or_create_qos_for_existing_share(
+            share, extra_specs, vserver, vserver_client)
+        if qos_policy_group_name:
+            provisioning_options['qos_policy_group'] = qos_policy_group_name
+        vserver_client.modify_volume(aggregate_name, share_name,
+                                     comment=share_comment,
+                                     **provisioning_options)
 
     def setup_server(self, network_info, metadata=None):
         raise NotImplementedError()

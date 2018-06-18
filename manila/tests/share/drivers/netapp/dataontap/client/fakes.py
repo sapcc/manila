@@ -101,6 +101,7 @@ SNAPMIRROR_POLICY_NAME = 'fake_snapmirror_policy'
 SNAPMIRROR_POLICY_TYPE = 'async_mirror'
 
 USER_NAME = 'fake_user'
+VOLUME_COMMENT = 'fake_comment'
 
 PORT = 'e0a'
 VLAN = '1001'
