@@ -29,10 +29,12 @@ VSERVER2 = 'fake_vserver_2'
 LICENSES = ('base', 'cifs', 'fcp', 'flexclone', 'iscsi', 'nfs', 'snapmirror',
             'snaprestore', 'snapvault')
 VOLUME_NAME_TEMPLATE = 'share_%(share_id)s'
+VOLUME_COMMENT = 'fake_comment'
 VSERVER_NAME_TEMPLATE = 'os_%s'
 AGGREGATE_NAME_SEARCH_PATTERN = '(.*)'
 SHARE_NAME = 'share_7cf7c200_d3af_4e05_b87e_9167c95dfcad'
 SHARE_INSTANCE_NAME = 'share_d24e7257_124e_4fb6_b05b_d384f660bc85'
+SHARE_DISPLAY_NAME = 'fake_share_display_name'
 FLEXVOL_NAME = 'fake_volume'
 JUNCTION_PATH = '/%s' % FLEXVOL_NAME
 EXPORT_LOCATION = '%s:%s' % (HOST_NAME, JUNCTION_PATH)
@@ -114,6 +116,7 @@ SHARE_INSTANCE = {
     'host': MANILA_HOST_NAME,
     'project_id': TENANT_ID,
     'name': SHARE_INSTANCE_NAME,
+    'display_name': SHARE_DISPLAY_NAME,
     'size': SHARE_SIZE,
     'share_proto': 'fake',
     'share_type_id': SHARE_TYPE_ID,
