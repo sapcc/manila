@@ -962,7 +962,7 @@ class NetAppRestClient(object):
                       thin_provisioned=False, snapshot_policy=None,
                       language=None, dedup_enabled=False,
                       compression_enabled=False, max_files=None,
-                      snapshot_reserve=None, volume_type='rw',
+                      snapshot_reserve=None, volume_type='rw', comment='',
                       qos_policy_group=None, adaptive_qos_policy_group=None,
                       encrypt=False, mount_point_name=None,
                       snaplock_type=None, **options):
@@ -975,7 +975,7 @@ class NetAppRestClient(object):
         self.create_volume_async(
             [aggregate_name], volume_name, size_gb, is_flexgroup=False,
             thin_provisioned=thin_provisioned, snapshot_policy=snapshot_policy,
-            language=language, max_files=max_files,
+            language=language, max_files=max_files, comment=comment,
             snapshot_reserve=snapshot_reserve, volume_type=volume_type,
             qos_policy_group=qos_policy_group, encrypt=encrypt,
             adaptive_qos_policy_group=adaptive_qos_policy_group,
@@ -998,8 +998,9 @@ class NetAppRestClient(object):
                             is_flexgroup=False, thin_provisioned=False,
                             snapshot_policy=None,
                             language=None, snapshot_reserve=None,
-                            volume_type='rw', qos_policy_group=None,
-                            encrypt=False, adaptive_qos_policy_group=None,
+                            volume_type='rw', comment='',
+                            qos_policy_group=None, encrypt=False,
+                            adaptive_qos_policy_group=None,
                             auto_provisioned=False, mount_point_name=None,
                             snaplock_type=None, **options):
         """Creates FlexGroup/FlexVol volumes.
@@ -1022,7 +1023,8 @@ class NetAppRestClient(object):
         body.update(self._get_create_volume_body(
             volume_name, thin_provisioned, snapshot_policy, language,
             snapshot_reserve, volume_type, qos_policy_group, encrypt,
-            adaptive_qos_policy_group, mount_point_name, snaplock_type))
+            adaptive_qos_policy_group, mount_point_name, snaplock_type,
+            comment))
 
         # NOTE(nahimsouza): When a volume is not a FlexGroup, volume creation
         # is made synchronously to replicate old ZAPI behavior. When ZAPI is
@@ -1045,7 +1047,7 @@ class NetAppRestClient(object):
                                 snapshot_policy, language, snapshot_reserve,
                                 volume_type, qos_policy_group, encrypt,
                                 adaptive_qos_policy_group,
-                                mount_point_name, snaplock_type):
+                                mount_point_name, snaplock_type, comment):
         """Builds the body to volume creation request."""
 
         body = {
@@ -1066,6 +1068,8 @@ class NetAppRestClient(object):
             body['qos.policy.name'] = qos_policy_group
         if adaptive_qos_policy_group is not None:
             body['qos.policy.name'] = adaptive_qos_policy_group
+        if comment is not None:
+            body['comment'] = comment
 
         if encrypt is True:
             if not self.features.FLEXVOL_ENCRYPTION:
@@ -2499,7 +2503,7 @@ class NetAppRestClient(object):
                       language=None, dedup_enabled=False,
                       compression_enabled=False, max_files=None,
                       qos_policy_group=None, hide_snapdir=None,
-                      autosize_attributes=None,
+                      autosize_attributes=None, comment=None,
                       adaptive_qos_policy_group=None, **options):
         """Update backend volume for a share as necessary.
 
@@ -2535,6 +2539,9 @@ class NetAppRestClient(object):
 
         if language:
             body['language'] = language
+
+        if comment:
+            body['comment'] = comment
 
         if max_files:
             body['files'] = {'maximum': max_files}

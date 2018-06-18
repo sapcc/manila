@@ -1049,7 +1049,7 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
         mock_create_volume_async.assert_called_once_with(
             [fake.SHARE_AGGREGATE_NAME], fake.VOLUME_NAMES[0], fake.SHARE_SIZE,
             is_flexgroup=False, thin_provisioned=False, snapshot_policy=None,
-            language=None, max_files=1, snapshot_reserve=None,
+            language=None, max_files=1, comment='', snapshot_reserve=None,
             volume_type='rw', qos_policy_group=None, encrypt=False,
             adaptive_qos_policy_group=None, mount_point_name=None,
             efficiency_policy=fake.VOLUME_EFFICIENCY_POLICY_NAME,
@@ -1087,7 +1087,7 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
 
         self.client._get_create_volume_body.assert_called_once_with(
             fake.VOLUME_NAMES[0], False, None, None, None, 'rw', None, False,
-            None, None, None)
+            None, None, None, '')
         self.client.send_request.assert_called_once_with(
             '/storage/volumes', 'post', body=body, wait_on_accepted=True)
         self.assertEqual(expected_result, result)
@@ -2783,6 +2783,7 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             'nas.path': '/%s' % fake.SHARE_MOUNT_POINT,
             'snapshot_policy.name': fake.SNAPSHOT_POLICY_NAME,
             'language': 'fake_language',
+            'comment': 'fake_comment',
             'space.snapshot.reserve_percent': 'fake_percent',
             'qos.policy.name': fake.QOS_POLICY_GROUP_NAME,
             'svm.name': 'fake_vserver',
@@ -2802,7 +2803,8 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
                                                   True,
                                                   fake.QOS_POLICY_GROUP_NAME,
                                                   fake.SHARE_MOUNT_POINT,
-                                                  "compliance")
+                                                  "compliance",
+                                                  'fake_comment')
         self.assertEqual(expected, res)
 
     def test_get_job_state(self):
