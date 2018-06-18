@@ -71,6 +71,7 @@ QOS_POLICY_GROUP_NAME = 'fake_qos_policy_group_name'
 QOS_MAX_THROUGHPUT = '5000B/s'
 
 USER_NAME = 'fake_user'
+VOLUME_COMMENT = 'fake_comment'
 
 PORT = 'e0a'
 VLAN = '1001'

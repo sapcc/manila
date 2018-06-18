@@ -29,6 +29,7 @@ VSERVER2 = 'fake_vserver_2'
 LICENSES = ('base', 'cifs', 'fcp', 'flexclone', 'iscsi', 'nfs', 'snapmirror',
             'snaprestore', 'snapvault')
 VOLUME_NAME_TEMPLATE = 'share_%(share_id)s'
+VOLUME_COMMENT = 'fake_comment'
 VSERVER_NAME_TEMPLATE = 'os_%s'
 AGGREGATE_NAME_SEARCH_PATTERN = '(.*)'
 SHARE_NAME = 'share_7cf7c200_d3af_4e05_b87e_9167c95dfcad'

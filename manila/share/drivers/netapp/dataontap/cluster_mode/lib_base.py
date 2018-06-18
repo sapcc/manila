@@ -208,6 +208,11 @@ class NetAppCmodeFileStorageLibrary(object):
         return self.configuration.netapp_volume_name_template % {
             'share_id': share_id.replace('-', '_')}
 
+    def _get_backend_share_comment(self, share):
+        """Get share comment."""
+        return 'share_id: %(share)s in project: %(project)s' % {
+            'share': share['share_id'], 'project': share['project_id']}
+
     def _get_backend_snapshot_name(self, snapshot_id):
         """Get snapshot name according to snapshot name template."""
         return 'share_snapshot_' + snapshot_id.replace('-', '_')
@@ -462,6 +467,7 @@ class NetAppCmodeFileStorageLibrary(object):
                             replica=False):
         """Create new share on aggregate."""
         share_name = self._get_backend_share_name(share['id'])
+        share_comment = self._get_backend_share_comment(share)
 
         # Get Data ONTAP aggregate name as pool name.
         pool_name = share_utils.extract_host(share['host'], level='pool')
@@ -483,6 +489,7 @@ class NetAppCmodeFileStorageLibrary(object):
                    'options': provisioning_options})
         vserver_client.create_volume(
             pool_name, share_name, share['size'],
+            comment=share_comment,
             snapshot_reserve=self.configuration.
             netapp_volume_snapshot_reserve_percent, **provisioning_options)
 
@@ -1333,6 +1340,35 @@ class NetAppCmodeFileStorageLibrary(object):
             helper.update_access(share, share_name, access_rules)
         else:
             raise exception.ShareResourceNotFound(share_id=share['id'])
+
+    @na_utils.trace
+    def update_share(self, share, share_comment=None, share_server=None):
+        """Updates comment for a share."""
+        vserver, vserver_client = self._get_vserver(share_server=share_server)
+        share_name = self._get_backend_share_name(share['id'])
+        aggregate_name = share_utils.extract_host(share['host'], level='pool')
+        if share_comment is None:
+            share_comment = self._get_backend_share_comment(share)
+
+        extra_specs = share_types.get_extra_specs_from_share(share)
+        provisioning_options = self._get_provisioning_options_for_share(
+            share, vserver, replica=True)
+
+        debug_args = {
+            'share': share_name,
+            'aggr': aggregate_name,
+            'options': provisioning_options
+        }
+        LOG.debug('update share %(share)s on aggregate %(aggr)s with '
+                  'provisioning options %(options)s', debug_args)
+
+        qos_policy_group_name = self._modify_or_create_qos_for_existing_share(
+            share, extra_specs, vserver, vserver_client)
+        if qos_policy_group_name:
+            provisioning_options['qos_policy_group'] = qos_policy_group_name
+        vserver_client.modify_volume(aggregate_name, share_name,
+                                     comment=share_comment,
+                                     **provisioning_options)
 
     def setup_server(self, network_info, metadata=None):
         raise NotImplementedError()
