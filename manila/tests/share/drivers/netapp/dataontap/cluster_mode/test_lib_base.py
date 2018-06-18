@@ -1431,6 +1431,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         provisioning_options['hide_snapdir'] = hide_snapdir
         self.mock_object(self.library, '_get_backend_share_name', mock.Mock(
             return_value=fake.SHARE_NAME))
+        self.mock_object(self.library, '_get_backend_share_comment', mock.Mock(
+            return_value=fake.VOLUME_COMMENT))
         self.mock_object(share_utils, 'extract_host', mock.Mock(
             return_value=fake.POOL_NAME))
         mock_get_provisioning_opts = self.mock_object(
@@ -1460,12 +1462,14 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             mock_get_aggr_flexgroup.assert_called_once_with(fake.POOL_NAME)
             mock_create_flexgroup.assert_called_once_with(
                 vserver_client, [fake.AGGREGATE], fake.SHARE_NAME,
-                fake.SHARE['size'], 8, **provisioning_options)
+                fake.SHARE['size'], 8, comment=fake.VOLUME_COMMENT,
+                **provisioning_options)
         else:
             mock_get_aggr_flexgroup.assert_not_called()
             vserver_client.create_volume.assert_called_once_with(
                 fake.POOL_NAME, fake.SHARE_NAME, fake.SHARE['size'],
-                snapshot_reserve=8, **provisioning_options)
+                snapshot_reserve=8, comment=fake.VOLUME_COMMENT,
+                **provisioning_options)
 
         if hide_snapdir:
             vserver_client.set_volume_snapdir_access.assert_called_once_with(
@@ -1491,6 +1495,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
     def test_allocate_container_as_replica(self):
         self.mock_object(self.library, '_get_backend_share_name', mock.Mock(
             return_value=fake.SHARE_NAME))
+        self.mock_object(self.library, '_get_backend_share_comment', mock.Mock(
+            return_value=fake.VOLUME_COMMENT))
         self.mock_object(share_utils, 'extract_host', mock.Mock(
             return_value=fake.POOL_NAME))
         mock_get_provisioning_opts = self.mock_object(
@@ -1511,7 +1517,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             language='en-US', dedup_enabled=True, split=True,
             compression_enabled=False, max_files=5000, encrypt=False,
             snapshot_reserve=8, volume_type='dp',
-            adaptive_qos_policy_group=None)
+            adaptive_qos_policy_group=None, comment=fake.VOLUME_COMMENT)
 
     def test_allocate_container_no_pool_name(self):
         self.mock_object(self.library, '_get_backend_share_name', mock.Mock(
@@ -1553,7 +1559,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         start_timeout = (self.library.configuration.
                          netapp_flexgroup_aggregate_not_busy_timeout)
         mock_wait_for_start.assert_called_once_with(
-            start_timeout, vserver_client, aggr_list, fake.SHARE_NAME, 100, 10)
+            start_timeout, vserver_client, aggr_list, fake.SHARE_NAME, 100, 10,
+            comment=None)
         mock_wait_for_flexgroup_deployment.assert_called_once_with(
             vserver_client, fake.JOB_ID, 2)
         (vserver_client.update_volume_efficiency_attributes.
@@ -1585,12 +1592,13 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         aggr_list = [fake.AGGREGATE]
 
         result = self.library.wait_for_start_create_flexgroup(
-            20, vserver_client, aggr_list, fake.SHARE_NAME, 1, 10)
+            20, vserver_client, aggr_list, fake.SHARE_NAME, 1, 10,
+            fake.VOLUME_COMMENT)
 
         self.assertEqual(job, result)
         vserver_client.create_volume_async.assert_called_once_with(
             aggr_list, fake.SHARE_NAME, 1, is_flexgroup=True,
-            snapshot_reserve=10,
+            snapshot_reserve=10, comment=fake.VOLUME_COMMENT,
             auto_provisioned=self.library._is_flexgroup_auto)
 
     def test_wait_for_start_create_flexgroup_timeout(self):
@@ -1603,7 +1611,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.assertRaises(
             exception.NetAppException,
             self.library.wait_for_start_create_flexgroup, 10,
-            vserver_client, aggr_list, fake.SHARE_NAME, 1, 10)
+            vserver_client, aggr_list, fake.SHARE_NAME, 1, 10,
+            fake.VOLUME_COMMENT)
 
     def test_wait_for_flexgroup_deployment(self):
         vserver_client = mock.Mock()
