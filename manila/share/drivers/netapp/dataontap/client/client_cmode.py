@@ -2091,7 +2091,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                       thin_provisioned=False, snapshot_policy=None,
                       language=None, dedup_enabled=False,
                       compression_enabled=False, max_files=None,
-                      snapshot_reserve=None, volume_type='rw',
+                      snapshot_reserve=None, volume_type='rw', comment='',
                       qos_policy_group=None, adaptive_qos_policy_group=None,
                       encrypt=False, **options):
         """Creates a volume."""
@@ -2106,7 +2106,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         }
         api_args.update(self._get_create_volume_api_args(
             volume_name, thin_provisioned, snapshot_policy, language,
-            snapshot_reserve, volume_type, qos_policy_group, encrypt,
+            snapshot_reserve, volume_type, comment, qos_policy_group, encrypt,
             adaptive_qos_policy_group))
 
         self.send_request('volume-create', api_args)
@@ -2121,8 +2121,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
     def create_volume_async(self, aggregate_list, volume_name, size_gb,
                             thin_provisioned=False, snapshot_policy=None,
                             language=None, snapshot_reserve=None,
-                            volume_type='rw', qos_policy_group=None,
-                            encrypt=False, adaptive_qos_policy_group=None,
+                            volume_type='rw', comment='',
+                            qos_policy_group=None, encrypt=False,
+                            adaptive_qos_policy_group=None,
                             auto_provisioned=False, **options):
         """Creates a volume asynchronously."""
 
@@ -2141,7 +2142,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                                      for aggr in aggregate_list]
         api_args.update(self._get_create_volume_api_args(
             volume_name, thin_provisioned, snapshot_policy, language,
-            snapshot_reserve, volume_type, qos_policy_group, encrypt,
+            snapshot_reserve, volume_type, comment, qos_policy_group, encrypt,
             adaptive_qos_policy_group))
 
         result = self.send_request('volume-create-async', api_args)
@@ -2155,11 +2156,12 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
 
     def _get_create_volume_api_args(self, volume_name, thin_provisioned,
                                     snapshot_policy, language,
-                                    snapshot_reserve, volume_type,
+                                    snapshot_reserve, volume_type, comment,
                                     qos_policy_group, encrypt,
                                     adaptive_qos_policy_group):
         api_args = {
             'volume-type': volume_type,
+            'volume-comment': comment,
             'space-reserve': ('none' if thin_provisioned else 'volume'),
         }
         if volume_type != 'dp':
@@ -2447,7 +2449,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                       language=None, dedup_enabled=False,
                       compression_enabled=False, max_files=None,
                       qos_policy_group=None, hide_snapdir=None,
-                      autosize_attributes=None,
+                      autosize_attributes=None, comment=None,
                       adaptive_qos_policy_group=None, **options):
         """Update backend volume for a share as necessary.
 
@@ -2481,6 +2483,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             },
             'attributes': {
                 'volume-attributes': {
+                    'volume-id-attributes': {},
                     'volume-inode-attributes': {},
                     'volume-language-attributes': {},
                     'volume-snapshot-attributes': {},
@@ -2530,6 +2533,10 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 'volume-snapshot-attributes'][
                 'snapdir-access-enabled'] = str(
                 not hide_snapdir).lower()
+        if comment:
+            api_args['attributes']['volume-attributes'][
+                'volume-id-attributes'][
+                    'comment'] = comment
 
         self.send_request('volume-modify-iter', api_args)
 
