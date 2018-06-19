@@ -178,7 +178,7 @@ class ShareManagerTestCase(test.TestCase):
                          'share_instances_get_all_by_host',
                          mock.Mock(return_value=[]))
 
-        self.share_manager.init_host()
+        self.share_manager.init_host(reexport=True)
 
         self.assertTrue(self.share_manager.driver.initialized)
         (self.share_manager.db.share_instances_get_all_by_host.
@@ -328,7 +328,7 @@ class ShareManagerTestCase(test.TestCase):
         )
 
         # call of 'init_host' method
-        self.share_manager.init_host()
+        self.share_manager.init_host(reexport=True)
 
         # verification of call
         (self.share_manager.db.share_instances_get_all_by_host.
@@ -386,7 +386,7 @@ class ShareManagerTestCase(test.TestCase):
         self.mock_object(manager.LOG, 'info')
 
         # call of 'init_host' method
-        self.share_manager.init_host()
+        self.share_manager.init_host(reexport=True)
 
         # verification of call
         (self.share_manager.db.share_instances_get_all_by_host.
@@ -448,7 +448,7 @@ class ShareManagerTestCase(test.TestCase):
                          mock.Mock(side_effect=raise_exception))
 
         # call of 'init_host' method
-        smanager.init_host()
+        smanager.init_host(reexport=True)
 
         # verification of call
         (smanager.db.share_instances_get_all_by_host.

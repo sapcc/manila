@@ -285,7 +285,7 @@ class ShareManager(manager.SchedulerDependentManager):
         return pool
 
     @add_hooks
-    def init_host(self):
+    def init_host(self, reexport=False):
         """Initialization for a standalone service."""
 
         # mark service alive by creating a probe
@@ -326,6 +326,22 @@ class ShareManager(manager.SchedulerDependentManager):
 
         _driver_setup()
 
+        if reexport:
+            self._reexport_share_instances(ctxt)
+
+        self.publish_service_capabilities(ctxt)
+        LOG.info("Finished initialization of driver: '%(driver)s"
+                 "@%(host)s'",
+                 {"driver": self.driver.__class__.__name__,
+                  "host": self.host})
+        # init done, mark service ready
+        try:
+            with open('/etc/manila/probe', 'w+') as f:
+                f.write('ready\n')
+        except Exception as e:
+            LOG.error("Probe not written: %(e)s", {'e': six.text_type(e)})
+
+    def _reexport_share_instances(self, ctxt):
         share_instances = self.db.share_instances_get_all_by_host(ctxt,
                                                                   self.host)
         LOG.debug("Re-exporting %s shares", len(share_instances))
@@ -409,18 +425,6 @@ class ShareManager(manager.SchedulerDependentManager):
                             "Unexpected error occurred while updating "
                             "access rules for snapshot instance %s.",
                             snap_instance['id'])
-
-        self.publish_service_capabilities(ctxt)
-        LOG.info("Finished initialization of driver: '%(driver)s"
-                 "@%(host)s'",
-                 {"driver": self.driver.__class__.__name__,
-                  "host": self.host})
-        # init done, mark service ready
-        try:
-            with open('/etc/manila/probe', 'w+') as f:
-                f.write('ready\n')
-        except Exception as e:
-            LOG.error("Probe not written: %(e)s", {'e': six.text_type(e)})
 
     def _provide_share_server_for_share(self, context, share_network_id,
                                         share_instance, snapshot=None,
