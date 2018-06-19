@@ -286,7 +286,7 @@ class ShareManager(manager.SchedulerDependentManager):
         return pool
 
     @add_hooks
-    def init_host(self):
+    def init_host(self, reexport=False):
         """Initialization for a standalone service."""
 
         # mark service alive by creating a probe
@@ -338,6 +338,14 @@ class ShareManager(manager.SchedulerDependentManager):
                  "@%(host)s'",
                  {"driver": self.driver.__class__.__name__,
                   "host": self.host})
+
+        # init done, mark service ready
+        try:
+            with open('/etc/manila/probe', 'w+') as f:
+                f.write('ready\n')
+        except Exception as e:
+            LOG.error("Probe not written: %(e)s", {'e': six.text_type(e)})
+
 
     def ensure_driver_resources(self, ctxt):
         old_backend_info_hash = self.db.backend_info_get(ctxt, self.host)
