@@ -72,7 +72,8 @@ class NetAppCmodeMultiSvmShareDriver(driver.ShareDriver):
         self.library.shrink_share(share, new_size, **kwargs)
 
     def ensure_share(self, context, share, **kwargs):
-        pass
+        self.library.update_share(share, **kwargs)
+        # we don't return export locations
 
     def manage_existing(self, share, driver_options):
         raise NotImplementedError
