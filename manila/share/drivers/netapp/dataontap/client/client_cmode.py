@@ -3762,6 +3762,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
 
     @na_utils.trace
     def qos_policy_group_rename(self, qos_policy_group_name, new_name):
+        if qos_policy_group_name == new_name:
+            return
         """Renames a QoS policy group."""
         api_args = {
             'policy-group-name': qos_policy_group_name,
