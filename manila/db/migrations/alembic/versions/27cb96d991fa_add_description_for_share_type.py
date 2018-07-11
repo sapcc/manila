@@ -23,7 +23,7 @@ Create Date: 2017-09-16 03:07:15.548947
 
 # revision identifiers, used by Alembic.
 revision = '27cb96d991fa'
-down_revision = '829a09b0ddd4'
+down_revision = '097fad24d2fc'
 
 from alembic import op
 from oslo_log import log
