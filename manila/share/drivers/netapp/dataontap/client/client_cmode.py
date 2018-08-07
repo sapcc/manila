@@ -1744,7 +1744,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                       language=None, dedup_enabled=False,
                       compression_enabled=False, max_files=None,
                       qos_policy_group=None, hide_snapdir=None,
-                      comment=None, **options):
+                      comment=None, replica=False, **options):
         """Update backend volume for a share as necessary."""
         api_args = {
             'query': {
@@ -1796,10 +1796,11 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
 
         self.send_request('volume-modify-iter', api_args)
 
-        # Efficiency options must be handled separately
-        self.update_volume_efficiency_attributes(volume_name,
-                                                 dedup_enabled,
-                                                 compression_enabled)
+        if not replica:
+            # Efficiency options must be handled separately
+            self.update_volume_efficiency_attributes(volume_name,
+                                                     dedup_enabled,
+                                                     compression_enabled)
 
     @na_utils.trace
     def update_volume_efficiency_attributes(self, volume_name, dedup_enabled,
