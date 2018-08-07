@@ -2378,7 +2378,7 @@ class NetAppCmodeFileStorageLibrary(object):
 
     @na_utils.trace
     def update_share(self, share, share_comment=None, share_server=None):
-        """Updates comment for a share."""
+        """Updates a share: comment, qos settings, dedup and compression."""
         vserver, vserver_client = self._get_vserver(share_server=share_server)
         share_name = self._get_backend_share_name(share['id'])
         aggregate_name = share_utils.extract_host(share['host'], level='pool')
@@ -2397,12 +2397,13 @@ class NetAppCmodeFileStorageLibrary(object):
         modify_args = {
             'share': share_name,
             'aggr': aggregate_name,
-            'options': provisioning_options
+            'options': provisioning_options,
+            'replica': True,
         }
 
         try:
             vserver_client.modify_volume(aggregate_name, share_name,
-                                         comment=share_comment,
+                                         comment=share_comment, replica=True,
                                          **provisioning_options)
         except netapp_api.NaApiError:
             LOG.warning('update share %(share)s on aggregate %(aggr)s with '
