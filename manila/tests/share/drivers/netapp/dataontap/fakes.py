@@ -124,6 +124,21 @@ SHARE_INSTANCE = {
     'status': constants.STATUS_AVAILABLE,
 }
 
+SHARE_INSTANCE = {
+    'id': SHARE_INSTANCE_ID,
+    'share_id': SHARE_ID,
+    'host': MANILA_HOST_NAME,
+    'project_id': TENANT_ID,
+    'name': SHARE_NAME,
+    'size': SHARE_SIZE,
+    'share_proto': 'fake',
+    'share_type_id': SHARE_TYPE_ID,
+    'share_network_id': '5dfe0898-e2a1-4740-9177-81c7d26713b0',
+    'share_server_id': '7e6a2cc8-871f-4b1d-8364-5aad0f98da86',
+    'replica_state': constants.REPLICA_STATE_ACTIVE,
+    'status': constants.STATUS_AVAILABLE,
+}
+
 FLEXVOL_TO_MANAGE = {
     'aggregate': POOL_NAME,
     'junction-path': '/%s' % FLEXVOL_NAME,
