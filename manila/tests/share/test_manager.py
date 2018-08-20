@@ -186,7 +186,7 @@ class ShareManagerTestCase(test.TestCase):
                          'share_instances_get_all_by_host',
                          mock.Mock(return_value=[]))
 
-        self.share_manager.init_host()
+        self.share_manager.init_host(reexport=True)
 
         self.assertTrue(self.share_manager.driver.initialized)
         (self.share_manager.db.share_instances_get_all_by_host.
@@ -369,7 +369,7 @@ class ShareManagerTestCase(test.TestCase):
             instance, share_server=share_server) for instance in instances]
 
         # call of 'init_host' method
-        self.share_manager.init_host()
+        self.share_manager.init_host(reexport=True)
 
         # verification of call
         exports_update = self.share_manager.db.share_export_locations_update
@@ -409,9 +409,9 @@ class ShareManagerTestCase(test.TestCase):
                 mock.call(utils.IsAMatcher(context.RequestContext),
                           instances[2]),
             ])
-            (self.share_manager.publish_service_capabilities.
-                assert_called_once_with(
-                    utils.IsAMatcher(context.RequestContext)))
+            # (self.share_manager.publish_service_capabilities.
+            #     assert_called_once_with(
+            #         utils.IsAMatcher(context.RequestContext)))
             (self.share_manager.access_helper.update_access_rules.
              assert_has_calls([
                  mock.call(mock.ANY, instances[0]['id'],
@@ -449,7 +449,7 @@ class ShareManagerTestCase(test.TestCase):
             mock.Mock(return_value=[]))
 
         # call of 'init_host' method
-        self.share_manager.init_host()
+        self.share_manager.init_host(reexport=True)
         if new_backend_info_hash == old_backend_info_hash:
             mock_backend_info_update.assert_not_called()
             mock_ensure_shares.assert_not_called()
@@ -502,7 +502,7 @@ class ShareManagerTestCase(test.TestCase):
             instance, share_server=share_server) for instance in instances]
 
         # call of 'init_host' method
-        self.share_manager.init_host()
+        self.share_manager.init_host(reexport=True)
 
         # verification of call
         (self.share_manager.db.share_instances_get_all_by_host.
@@ -530,9 +530,9 @@ class ShareManagerTestCase(test.TestCase):
                       dict_instances[2],
                       share_server=share_server),
         ])
-        (self.share_manager.publish_service_capabilities.
-            assert_called_once_with(
-                utils.IsAMatcher(context.RequestContext)))
+        # (self.share_manager.publish_service_capabilities.
+        #     assert_called_once_with(
+        #         utils.IsAMatcher(context.RequestContext)))
         manager.LOG.info.assert_any_call(
             mock.ANY,
             {'task': constants.TASK_STATE_MIGRATION_IN_PROGRESS,
@@ -607,7 +607,7 @@ class ShareManagerTestCase(test.TestCase):
                           for instance in instances]
 
         # call of 'init_host' method
-        self.share_manager.init_host()
+        self.share_manager.init_host(reexport=True)
 
         # verification of call
         (self.share_manager.db.share_instances_get_all_by_host.
@@ -644,6 +644,7 @@ class ShareManagerTestCase(test.TestCase):
         self.assertRaises(
             exception.ManilaException,
             self.share_manager.init_host,
+            reexport=True
         )
 
         # verification of call
@@ -692,7 +693,7 @@ class ShareManagerTestCase(test.TestCase):
             instance, share_server=share_server) for instance in instances]
 
         # call of 'init_host' method
-        smanager.init_host()
+        smanager.init_host(reexport=True)
 
         # verification of call
         (smanager.db.share_instances_get_all_by_host.
@@ -708,9 +709,9 @@ class ShareManagerTestCase(test.TestCase):
         smanager.driver.ensure_shares.assert_called_once_with(
             utils.IsAMatcher(context.RequestContext),
             [dict_instances[0], dict_instances[2], dict_instances[4]])
-        (self.share_manager.publish_service_capabilities.
-            assert_called_once_with(
-                utils.IsAMatcher(context.RequestContext)))
+        # (self.share_manager.publish_service_capabilities.
+        #     assert_called_once_with(
+        #         utils.IsAMatcher(context.RequestContext)))
         manager.LOG.info.assert_any_call(
             mock.ANY,
             {'task': constants.TASK_STATE_MIGRATION_IN_PROGRESS,
