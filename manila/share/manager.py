@@ -337,7 +337,7 @@ class ShareManager(manager.SchedulerDependentManager):
         return pool
 
     @add_hooks
-    def init_host(self, service_id=None):
+    def init_host(self, service_id=None, reexport=False):
         """Initialization for a standalone service."""
 
         self.service_id = service_id
@@ -383,9 +383,11 @@ class ShareManager(manager.SchedulerDependentManager):
             (self.driver.service_instance_manager.network_helper.
              setup_connectivity_with_service_instances())
 
-        self.ensure_driver_resources(ctxt)
+        if reexport:
+            self.ensure_driver_resources(ctxt)
+        else:
+            self.publish_service_capabilities(ctxt)
 
-        self.publish_service_capabilities(ctxt)
         LOG.info("Finished initialization of driver: '%(driver)s"
                  "@%(host)s'",
                  {"driver": self.driver.__class__.__name__,
