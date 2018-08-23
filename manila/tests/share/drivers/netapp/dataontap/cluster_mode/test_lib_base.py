@@ -4746,7 +4746,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                 mock_qos_policy_modify.assert_called_once_with(
                     fake.QOS_POLICY_GROUP_NAME, expected_iops + 'iops')
             else:
-                self.library._client.qos_policy_group_modify.assert_not_called()
+                mock_qos_policy_modify.assert_not_called()
 
             mock_qos_policy_rename.assert_called_once_with(
                 fake.QOS_POLICY_GROUP_NAME, new_qos_policy_name)

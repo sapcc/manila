@@ -2557,7 +2557,6 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.client.enable_dedup.assert_called_once_with(fake.SHARE_NAME)
         self.client.enable_compression.assert_called_once_with(fake.SHARE_NAME)
 
-
     def test_enable_dedup(self):
 
         self.mock_object(self.client, 'send_request')
