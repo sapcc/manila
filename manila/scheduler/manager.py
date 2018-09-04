@@ -132,9 +132,9 @@ class SchedulerManager(manager.Manager):
                     'create_share', {'status': constants.STATUS_ERROR},
                     context, ex, request_spec)
 
-    def get_pools(self, context, filters=None):
+    def get_pools(self, context, filters=None, cached=False):
         """Get active pools from the scheduler's cache."""
-        return self.driver.get_pools(context, filters)
+        return self.driver.get_pools(context, filters, cached)
 
     def manage_share(self, context, share_id, driver_options, request_spec,
                      filter_properties=None):

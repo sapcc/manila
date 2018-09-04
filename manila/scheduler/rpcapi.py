@@ -69,9 +69,10 @@ class SchedulerAPI(object):
                           host=host,
                           capabilities=capabilities)
 
-    def get_pools(self, context, filters=None):
+    def get_pools(self, context, filters=None, cached=False):
         call_context = self.client.prepare(version='1.1')
-        return call_context.call(context, 'get_pools', filters=filters)
+        return call_context.call(context, 'get_pools', filters=filters,
+                                 cached=cached)
 
     def create_share_group(self, context, share_group_id, request_spec=None,
                            filter_properties=None):
