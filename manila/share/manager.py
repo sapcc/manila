@@ -2139,7 +2139,7 @@ class ShareManager(manager.SchedulerDependentManager):
                 with excutils.save_and_reraise_exception():
                     error = ("Creation of share instance %s failed: "
                              "failed to get share server.")
-                    LOG.error(error, share_instance_id)
+                    LOG.warning(error, share_instance_id)
                     self.db.share_instance_update(
                         context, share_instance_id,
                         {'status': constants.STATUS_ERROR}
@@ -2234,8 +2234,8 @@ class ShareManager(manager.SchedulerDependentManager):
 
         except Exception as e:
             with excutils.save_and_reraise_exception():
-                LOG.error("Share instance %s failed on creation.",
-                          share_instance_id)
+                LOG.warning("Share instance %s failed on creation.",
+                            share_instance_id)
                 detail_data = getattr(e, 'detail_data', {})
 
                 def get_export_location(details):
@@ -2388,8 +2388,8 @@ class ShareManager(manager.SchedulerDependentManager):
                 )
             except Exception:
                 with excutils.save_and_reraise_exception():
-                    LOG.error("Failed to get share server "
-                              "for share replica creation.")
+                    LOG.warning("Failed to get share server "
+                                "for share replica creation.")
                     self.db.share_replica_update(
                         context, share_replica['id'],
                         {'status': constants.STATUS_ERROR,
@@ -2438,8 +2438,8 @@ class ShareManager(manager.SchedulerDependentManager):
 
         except Exception as excep:
             with excutils.save_and_reraise_exception():
-                LOG.error("Share replica %s failed on creation.",
-                          share_replica['id'])
+                LOG.warning("Share replica %s failed on creation.",
+                            share_replica['id'])
                 self.db.share_replica_update(
                     context, share_replica['id'],
                     {'status': constants.STATUS_ERROR,
@@ -4510,7 +4510,7 @@ class ShareManager(manager.SchedulerDependentManager):
                     security_services=security_services)
             except Exception:
                 with excutils.save_and_reraise_exception():
-                    LOG.error(
+                    LOG.warning(
                         "Share server '%s' failed on deletion.",
                         server_id)
                     self.db.share_server_update(
@@ -4611,7 +4611,7 @@ class ShareManager(manager.SchedulerDependentManager):
                     resource_type=message_field.Resource.SHARE,
                     resource_id=share['id'],
                     detail=message_field.Detail.DRIVER_FAILED_SHRINK)
-            LOG.exception(msg, resource=share)
+            LOG.warning(msg, resource=share)
             self.db.share_update(context, share['id'], {'status': status})
 
             raise exception.ShareShrinkingError(
@@ -4748,8 +4748,8 @@ class ShareManager(manager.SchedulerDependentManager):
                 )
             except Exception:
                 with excutils.save_and_reraise_exception():
-                    LOG.error("Failed to get share server"
-                              " for share group creation.")
+                    LOG.warning("Failed to get share server"
+                                " for share group creation.")
                     self.db.share_group_update(
                         context, share_group_id,
                         {'status': constants.STATUS_ERROR})
@@ -4820,7 +4820,7 @@ class ShareManager(manager.SchedulerDependentManager):
                     self.db.share_instance_update(
                         context, share['id'],
                         {'status': constants.STATUS_ERROR})
-                LOG.error("Share group %s: create failed", share_group_id)
+                LOG.warning("Share group %s: create failed", share_group_id)
 
         now = timeutils.utcnow()
         for share in shares:
@@ -4877,8 +4877,8 @@ class ShareManager(manager.SchedulerDependentManager):
                     context,
                     share_group_ref['id'],
                     {'status': constants.STATUS_ERROR})
-                LOG.error("Share group %s: delete failed",
-                          share_group_ref['id'])
+                LOG.warning("Share group %s: delete failed",
+                            share_group_ref['id'])
 
         self.db.share_group_destroy(context, share_group_id)
         LOG.info("Share group %s: deleted successfully", share_group_id)
@@ -4965,8 +4965,8 @@ class ShareManager(manager.SchedulerDependentManager):
                     context,
                     snap_ref['id'],
                     {'status': constants.STATUS_ERROR})
-                LOG.error("Share group snapshot %s: create failed",
-                          share_group_snapshot_id)
+                LOG.warning("Share group snapshot %s: create failed",
+                            share_group_snapshot_id)
 
         for member in (snap_ref.get('share_group_snapshot_members') or []):
             if member['id'] in updated_members_ids:
@@ -5023,8 +5023,8 @@ class ShareManager(manager.SchedulerDependentManager):
                     context,
                     snap_ref['id'],
                     {'status': constants.STATUS_ERROR})
-                LOG.error("Share group snapshot %s: delete failed",
-                          snap_ref['name'])
+                LOG.warning("Share group snapshot %s: delete failed",
+                            snap_ref['name'])
 
         self.db.share_group_snapshot_destroy(context, share_group_snapshot_id)
 

@@ -101,7 +101,7 @@ class ShareNetworkController(wsgi.Controller, wsgi.AdminActionsMixin):
             msg = _("Can not delete share network %(id)s, it has "
                     "%(len)s share(s).") % {'id': id,
                                             'len': len(share_instances)}
-            LOG.error(msg)
+            LOG.warning(msg)
             raise exc.HTTPConflict(explanation=msg)
 
         # NOTE(ameade): Do not allow deletion of share network used by share
@@ -110,7 +110,7 @@ class ShareNetworkController(wsgi.Controller, wsgi.AdminActionsMixin):
         if sg_count:
             msg = _("Can not delete share network %(id)s, it has %(len)s "
                     "share group(s).") % {'id': id, 'len': sg_count}
-            LOG.error(msg)
+            LOG.warning(msg)
             raise exc.HTTPConflict(explanation=msg)
 
         # NOTE(silvacarlose): Do not allow the deletion of share networks
@@ -119,7 +119,7 @@ class ShareNetworkController(wsgi.Controller, wsgi.AdminActionsMixin):
             msg = _("The share network %(id)s has more than one subnet "
                     "attached. Please remove the subnets untill you have one "
                     "or no subnets remaining.") % {'id': id}
-            LOG.error(msg)
+            LOG.warning(msg)
             raise exc.HTTPConflict(explanation=msg)
 
         for subnet in share_network['share_network_subnets']:
