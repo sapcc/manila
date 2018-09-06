@@ -405,7 +405,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             vserver_name,
             security_services=None)
         self.assertFalse(vserver_client.enable_nfs.called)
-        self.assertEqual(1, lib_multi_svm.LOG.error.call_count)
+        self.assertEqual(1, lib_multi_svm.LOG.warning.call_count)
 
     def test_get_valid_ipspace_name(self):
 

@@ -78,7 +78,7 @@ class ShareNetworkController(wsgi.Controller):
             msg = _("Can not delete share network %(id)s, it has "
                     "%(len)s share(s).") % {'id': id,
                                             'len': len(share_instances)}
-            LOG.error(msg)
+            LOG.warning(msg)
             raise exc.HTTPConflict(explanation=msg)
 
         # NOTE(ameade): Do not allow deletion of share network used by share
@@ -87,7 +87,7 @@ class ShareNetworkController(wsgi.Controller):
         if sg_count:
             msg = _("Can not delete share network %(id)s, it has %(len)s "
                     "share group(s).") % {'id': id, 'len': sg_count}
-            LOG.error(msg)
+            LOG.warning(msg)
             raise exc.HTTPConflict(explanation=msg)
 
         for share_server in share_network['share_servers']:

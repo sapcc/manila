@@ -202,7 +202,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                                                      vserver_name)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.error("Failed to configure Vserver.")
+                LOG.warning("Failed to configure Vserver.")
                 self._delete_vserver(vserver_name,
                                      security_services=security_services)
 

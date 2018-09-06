@@ -819,7 +819,7 @@ class API(base.Base):
                 'd_quota': quotas['gigabytes'],
             }
             message = msg % msg_args
-            LOG.error(message)
+            LOG.warning(message)
             raise exception.ShareSizeExceedsAvailableQuota(message=message)
 
     def _revert_to_snapshot(self, context, share, snapshot, reservations):
@@ -1806,10 +1806,10 @@ class API(base.Base):
             msg = ("Quota exceeded for %(s_pid)s, tried to extend share "
                    "by %(s_size)sG, (%(d_consumed)dG of %(d_quota)dG "
                    "already consumed).")
-            LOG.error(msg, {'s_pid': context.project_id,
-                            's_size': size_increase,
-                            'd_consumed': _consumed('gigabytes'),
-                            'd_quota': quotas['gigabytes']})
+            LOG.warning(msg, {'s_pid': context.project_id,
+                              's_size': size_increase,
+                              'd_consumed': _consumed('gigabytes'),
+                              'd_quota': quotas['gigabytes']})
             raise exception.ShareSizeExceedsAvailableQuota(
                 requested=size_increase,
                 consumed=_consumed('gigabytes'),
