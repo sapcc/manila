@@ -1030,7 +1030,7 @@ class API(base.Base):
                 'd_quota': quotas['gigabytes'],
             }
             message = msg % msg_args
-            LOG.error(message)
+            LOG.warning(message)
             raise exception.ShareSizeExceedsAvailableQuota(message=message)
 
     def _revert_to_snapshot(self, context, share, snapshot, reservations):
