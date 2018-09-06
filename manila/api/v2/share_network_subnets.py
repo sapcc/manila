@@ -93,7 +93,7 @@ class ShareNetworkSubnetController(wsgi.Controller,
                 msg = _("Cannot delete share network subnet %(id)s, it has "
                         "one or more shares.") % {
                     'id': share_network_subnet_id}
-                LOG.error(msg)
+                LOG.warning(msg)
                 raise exc.HTTPConflict(explanation=msg)
 
             share_groups = db_api.share_group_get_all_by_share_server(

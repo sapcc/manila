@@ -4279,7 +4279,7 @@ class ShareAPITestCase(test.TestCase):
         self.assertRaises(exception.Conflict, self.api.migration_start,
                           self.context, share, host, False, True, True, True,
                           True)
-        self.assertTrue(mock_log.error.called)
+        self.assertTrue(mock_log.warning.called)
         self.assertFalse(mock_snapshot_get_call.called)
 
     def test_migration_start_is_member_of_group(self):
@@ -4292,7 +4292,7 @@ class ShareAPITestCase(test.TestCase):
         self.assertRaises(exception.InvalidShare, self.api.migration_start,
                           self.context, share, 'fake_host', False, True, True,
                           True, True)
-        self.assertTrue(mock_log.error.called)
+        self.assertTrue(mock_log.warning.called)
 
     def test_migration_start_invalid_host(self):
         host = 'fake@backend#pool'
