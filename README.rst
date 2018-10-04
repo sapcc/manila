@@ -2,6 +2,9 @@
 Team and repository tags
 ========================
 
+.. image:: https://travis-ci.com/sapcc/manila.svg?branch=stable%2Frocky-m3
+    :target: https://travis-ci.com/sapcc/manila
+
 .. image:: https://governance.openstack.org/tc/badges/manila.svg
     :target: https://governance.openstack.org/tc/reference/tags/index.html
 
@@ -38,4 +41,3 @@ https://github.com/openstack/python-manilaclient.git
 * Release notes for the project can be found at:
 
 https://docs.openstack.org/releasenotes/manila/
-
