@@ -29,6 +29,10 @@
         - manila-rally-multibackend-no-ss:
             voting: false
         - openstack-tox-lower-constraints
+        - openstack-tox-pylint:
+            voting: false
+        - openstack-tox-cover:
+            voting: false
     gate:
       jobs:
         - manila-tox-genconfig
