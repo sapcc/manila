@@ -2354,6 +2354,8 @@ class NetAppCmodeFileStorageLibrary(object):
             raise exception.NetAppException(message=msg)
 
     def get_backend_info(self, context):
+        # ccloud wants to always run this
+        raise NotImplementedError()
         snapdir_visibility = self.configuration.netapp_reset_snapdir_visibility
         return {
             'snapdir_visibility': snapdir_visibility,

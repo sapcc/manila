@@ -4966,14 +4966,14 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                                                 snap_dict,
                                                 share_server=fake.SHARE_SERVER)
 
-    @ddt.data('default', 'hidden', 'visible')
-    def test_get_backend_info(self, snapdir):
-
-        self.library.configuration.netapp_reset_snapdir_visibility = snapdir
-        expected = {'snapdir_visibility': snapdir}
-
-        result = self.library.get_backend_info(self.context)
-        self.assertEqual(expected, result)
+    # @ddt.data('default', 'hidden', 'visible')
+    # def test_get_backend_info(self, snapdir):
+    #
+    #     self.library.configuration.netapp_reset_snapdir_visibility = snapdir
+    #     expected = {'snapdir_visibility': snapdir}
+    #
+    #     result = self.library.get_backend_info(self.context)
+    #     self.assertEqual(expected, result)
 
     # @ddt.data('default', 'hidden')
     # def test_ensure_shares(self, snapdir_cfg):
