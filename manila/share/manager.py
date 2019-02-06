@@ -443,6 +443,32 @@ class ShareManager(manager.SchedulerDependentManager):
                 {'host': self.host})
             return
 
+        share_servers = self.db.share_server_get_all_by_host(ctxt, self.host)
+        LOG.debug("Re-exporting %s share servers", len(share_servers))
+        for share_server in share_servers:
+            if share_server['status'] != constants.STATUS_ACTIVE:
+                LOG.info(
+                    "Share server %(id)s: skipping export, "
+                    "because it has '%(status)s' status.",
+                    {'id': share_server['id'],
+                     'status': share_server['status']},
+                )
+                continue
+
+            share_network = self.db.share_network_get(
+                context, share_server.share_network_id)
+
+            share_network_subnets = (
+                self.db.share_network_subnet_get_all_by_share_server_id(
+                    context, share_server['id']))
+
+            network_info_list = self._form_server_setup_info(
+                context, share_server, share_network, share_network_subnets,
+                add_gateways=True)
+
+            self.driver.ensure_share_server(
+                ctxt, share_server, network_info_list)
+
         share_instances = self.db.share_instances_get_all_by_host(
             ctxt, self.host)
         LOG.debug("Re-exporting %s shares", len(share_instances))
@@ -4205,7 +4231,7 @@ class ShareManager(manager.SchedulerDependentManager):
         self._publish_service_capabilities(context)
 
     def _form_server_setup_info(self, context, share_server, share_network,
-                                share_network_subnets):
+                                share_network_subnets, add_gateways=False):
         share_server_id = share_server['id']
         # Network info is used by driver for setting up share server
         # and getting server info on share creation.
@@ -4222,6 +4248,18 @@ class ShareManager(manager.SchedulerDependentManager):
                 self.db.network_allocations_get_for_share_server(
                     context, share_server_id, label='user',
                     subnet_id=share_network_subnet['id']))
+            if add_gateways:
+                # add missing gateways to net_allocation
+                for net_allocation in network_allocations:
+                    if not net_allocation['gateway']:
+                        LOG.debug(
+                            ("Adding gateway %(gateway)s to net allocation "
+                             "%(net_allocation)s"),
+                            {'gateway': share_network_subnet['gateway'],
+                             'net_allocation': net_allocation['id']})
+                        self.db.network_allocation_update(
+                            context, net_allocation['id'],
+                            {'gateway': share_network_subnet['gateway']})
             # NOTE(vponomaryov): following network_info fields are deprecated:
             # 'segmentation_id', 'cidr' and 'network_type'.
             # And they should be used from network allocations directly.
