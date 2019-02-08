@@ -54,12 +54,15 @@ def main(argv):
     if os.environ.get('VENV'):
         venv = os.environ['VENV']
 
+    if os.environ.get('UPPER_CONSTRAINTS_FILE'):
+        upper_constraints = os.environ['UPPER_CONSTRAINTS_FILE']
+
     pip_requires = os.path.join(root, 'requirements.txt')
     test_requires = os.path.join(root, 'test-requirements.txt')
     py_version = "python%s.%s" % (sys.version_info[0], sys.version_info[1])
     project = 'OpenStack'
     install = install_venv.InstallVenv(root, venv, pip_requires, test_requires,
-                                       py_version, project)
+                                       py_version, project, upper_constraints)
     options = install.parse_args(argv)
     install.check_python_version()
     install.check_dependencies()
