@@ -29,18 +29,23 @@ import os
 import subprocess
 import sys
 
+UPPER_CONSTRAINTS = ("https://git.openstack.org/cgit/openstack"
+                     "/requirements/plain/upper-constraints.txt?h="
+                     "stable/train")
+
 
 class InstallVenv(object):
 
     def __init__(self, root, venv, requirements,
                  test_requirements, py_version,
-                 project):
+                 project, upper_constraints=UPPER_CONSTRAINTS):
         self.root = root
         self.venv = venv
         self.requirements = requirements
         self.test_requirements = test_requirements
         self.py_version = py_version
         self.project = project
+        self.upper_constraints = upper_constraints
 
     def die(self, message, *args):
         print(message % args, file=sys.stderr)
@@ -117,7 +122,8 @@ class InstallVenv(object):
         self.pip_install('setuptools')
         self.pip_install('pbr')
 
-        self.pip_install('-r', self.requirements, '-r', self.test_requirements)
+        self.pip_install('-r', self.requirements, '-r', self.test_requirements,
+                         '-c', self.upper_constraints)
 
     def parse_args(self, argv):
         """Parses command-line arguments."""
