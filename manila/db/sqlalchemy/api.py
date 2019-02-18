@@ -359,7 +359,6 @@ def service_destroy(context, service_id):
         service_ref.soft_delete(session)
 
 
-@require_admin_context
 def service_get(context, service_id, session=None):
     result = (model_query(
         context,
@@ -373,7 +372,6 @@ def service_get(context, service_id, session=None):
     return result
 
 
-@require_admin_context
 def service_get_all(context, disabled=None):
     query = model_query(context, models.Service)
 
@@ -383,7 +381,6 @@ def service_get_all(context, disabled=None):
     return query.all()
 
 
-@require_admin_context
 def service_get_all_by_topic(context, topic):
     return (model_query(
         context, models.Service, read_deleted="no").
@@ -392,7 +389,6 @@ def service_get_all_by_topic(context, topic):
         all())
 
 
-@require_admin_context
 def service_get_by_host_and_topic(context, host, topic):
     result = (model_query(
         context, models.Service, read_deleted="no").
@@ -405,7 +401,6 @@ def service_get_by_host_and_topic(context, host, topic):
     return result
 
 
-@require_admin_context
 def _service_get_all_topic_subquery(context, session, topic, subq, label):
     sort_value = getattr(subq.c, label)
     return (model_query(context, models.Service,
@@ -418,7 +413,6 @@ def _service_get_all_topic_subquery(context, session, topic, subq, label):
             all())
 
 
-@require_admin_context
 def service_get_all_share_sorted(context):
     session = get_session()
     with session.begin():
@@ -438,7 +432,6 @@ def service_get_all_share_sorted(context):
                                                label)
 
 
-@require_admin_context
 def service_get_by_args(context, host, binary):
     result = (model_query(context, models.Service).
               filter_by(host=host).
@@ -1415,7 +1408,6 @@ def share_instance_get(context, share_instance_id, session=None,
     return result
 
 
-@require_admin_context
 def share_instances_get_all(context, filters=None):
     session = get_session()
     query = model_query(
@@ -1507,7 +1499,6 @@ def _set_instances_share_data(context, instances, session):
     return instances_with_share_data
 
 
-@require_admin_context
 def share_instances_get_all_by_host(context, host, with_share_data=False,
                                     session=None):
     """Retrieves all share instances hosted on a host."""
@@ -1763,7 +1754,6 @@ def share_create(context, share_values, create_share_instance=True):
         return share_get(context, share_ref['id'], session=session)
 
 
-@require_admin_context
 def share_data_get_for_project(context, project_id, user_id,
                                share_type_id=None, session=None):
     query = (model_query(context, models.Share,
@@ -1904,7 +1894,6 @@ def _share_get_all_with_filters(context, project_id=None, share_server_id=None,
     return query
 
 
-@require_admin_context
 def share_get_all(context, filters=None, sort_key=None, sort_dir=None):
     query = _share_get_all_with_filters(
         context, filters=filters, sort_key=sort_key, sort_dir=sort_dir)
@@ -2510,7 +2499,6 @@ def share_snapshot_create(context, create_values,
             context, snapshot_values['id'], session=session)
 
 
-@require_admin_context
 def snapshot_data_get_for_project(context, project_id, user_id,
                                   share_type_id=None, session=None):
     query = (model_query(context, models.ShareSnapshot,
@@ -2601,7 +2589,6 @@ def _share_snapshot_get_all_with_filters(context, project_id=None,
     return query.all()
 
 
-@require_admin_context
 def share_snapshot_get_all(context, filters=None, sort_key=None,
                            sort_dir=None):
     return _share_snapshot_get_all_with_filters(
@@ -4087,7 +4074,6 @@ def _share_type_access_query(context, session=None):
                        read_deleted="no")
 
 
-@require_admin_context
 def share_type_access_get_all(context, type_id):
     share_type_id = _share_type_get_id_from_share_type(context, type_id)
     return (_share_type_access_query(context).
@@ -4391,7 +4377,6 @@ def _share_group_get_all(context, project_id=None, share_server_id=None,
         return values
 
 
-@require_admin_context
 def share_group_get_all(context, detailed=True, filters=None, sort_key=None,
                         sort_dir=None):
     return _share_group_get_all(
@@ -4399,7 +4384,6 @@ def share_group_get_all(context, detailed=True, filters=None, sort_key=None,
         sort_key=sort_key, sort_dir=sort_dir)
 
 
-@require_admin_context
 def share_group_get_all_by_host(context, host, detailed=True):
     return _share_group_get_all(context, host=host, detailed=detailed)
 
@@ -4636,7 +4620,6 @@ def share_group_snapshot_get(context, share_group_snapshot_id, session=None):
         context, share_group_snapshot_id, session=session)
 
 
-@require_admin_context
 def share_group_snapshot_get_all(
         context, detailed=True, filters=None, sort_key=None, sort_dir=None):
     return _share_group_snapshot_get_all(
@@ -4947,7 +4930,6 @@ def _share_group_type_access_query(context, session=None):
                        read_deleted="no")
 
 
-@require_admin_context
 def share_group_type_access_get_all(context, type_id):
     share_group_type_id = _share_group_type_get_id_from_share_group_type(
         context, type_id)
