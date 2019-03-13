@@ -233,8 +233,8 @@ class NetAppCmodeFileStorageLibrary(object):
 
     def _get_backend_share_comment(self, share):
         """Get share comment."""
-        return 'share_id: %(share)s in project: %(project)s' % {
-            'share': share['share_id'], 'project': share['project_id']}
+        return 'share_id: %(share_id)s, share_name: %(display_name)s, ' \
+               'project: %(project_id)s' % share
 
     def _get_backend_snapshot_name(self, snapshot_id):
         """Get snapshot name according to snapshot name template."""
