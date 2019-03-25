@@ -628,7 +628,7 @@ class HostManager(object):
 
     def get_pools(self, context, filters=None, cached=False):
         """Returns a dict of all pools on all hosts HostManager knows about."""
-        if not cached:
+        if not cached or not self.host_state_map:
             self._update_host_state_map(context)
 
         all_pools = []
