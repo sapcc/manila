@@ -128,8 +128,6 @@ class ShareMixin(object):
         search_opts.update(req.GET)
 
         # Remove keys that are not related to share attrs
-        search_opts.pop('limit', None)
-        search_opts.pop('offset', None)
         sort_key = search_opts.pop('sort_key', 'created_at')
         sort_dir = search_opts.pop('sort_dir', 'desc')
 
@@ -174,13 +172,13 @@ class ShareMixin(object):
         if show_count:
             total_count = len(shares)
 
-        limited_list = common.limited(shares, req)
+        import pdb; pdb.set_trace()
 
         if is_detail:
-            shares = self._view_builder.detail_list(req, limited_list,
+            shares = self._view_builder.detail_list(req, shares,
                                                     total_count)
         else:
-            shares = self._view_builder.summary_list(req, limited_list,
+            shares = self._view_builder.summary_list(req, shares,
                                                      total_count)
         return shares
 

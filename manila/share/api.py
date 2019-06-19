@@ -1498,6 +1498,10 @@ class API(base.Base):
                 msg = _("Wrong extra specs filter provided: "
                         "%s.") % six.text_type(filters['extra_specs'])
                 raise exception.InvalidInput(reason=msg)
+        if 'limit' in search_opts:
+            filters['limit'] = search_opts['limit']
+        if 'offset' in search_opts:
+            filters['offset'] = search_opts['offset']
         if not (isinstance(sort_key, six.string_types) and sort_key):
             msg = _("Wrong sort_key filter provided: "
                     "'%s'.") % six.text_type(sort_key)
@@ -1510,6 +1514,7 @@ class API(base.Base):
         is_public = search_opts.pop('is_public', False)
         is_public = strutils.bool_from_string(is_public, strict=True)
 
+        import pdb; pdb.set_trace()
         # Get filtered list of shares
         if 'host' in search_opts:
             policy.check_policy(context, 'share', 'list_by_host')
@@ -1520,8 +1525,15 @@ class API(base.Base):
                 context, search_opts.pop('share_server_id'), filters=filters,
                 sort_key=sort_key, sort_dir=sort_dir)
         elif (context.is_admin and utils.is_all_tenants(search_opts)):
-            shares = self.db.share_get_all(
-                context, filters=filters, sort_key=sort_key, sort_dir=sort_dir)
+            if 'project_id' in search_opts:
+                shares = self.db.share_get_all_by_project(
+                    context, project_id=search_opts['project_id'], 
+                    filters=filters, sort_key=sort_key, 
+                    sort_dir=sort_dir)
+            else:
+                shares = self.db.share_get_all(
+                    context, filters=filters, sort_key=sort_key, 
+                    sort_dir=sort_dir)
         else:
             shares = self.db.share_get_all_by_project(
                 context, project_id=context.project_id, filters=filters,
@@ -1529,6 +1541,8 @@ class API(base.Base):
 
         # NOTE(vponomaryov): we do not need 'all_tenants' opt anymore
         search_opts.pop('all_tenants', None)
+        search_opts.pop('limit', None)
+        search_opts.pop('offset', None)
 
         if search_opts:
             results = []

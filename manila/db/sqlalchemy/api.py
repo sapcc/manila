@@ -1801,6 +1801,7 @@ def _share_get_all_with_filters(context, project_id=None, share_server_id=None,
         )
     )
 
+    import pdb; pdb.set_trace()
     if project_id:
         if is_public:
             query = query.filter(or_(models.Share.project_id == project_id,
@@ -1848,7 +1849,6 @@ def _share_get_all_with_filters(context, project_id=None, share_server_id=None,
         for k, v in filters['extra_specs'].items():
             query = query.filter(or_(models.ShareTypeExtraSpecs.key == k,
                                      models.ShareTypeExtraSpecs.value == v))
-
     try:
         query = apply_sorting(models.Share, query, sort_key, sort_dir)
     except AttributeError:
@@ -1858,7 +1858,10 @@ def _share_get_all_with_filters(context, project_id=None, share_server_id=None,
         except AttributeError:
             msg = _("Wrong sorting key provided - '%s'.") % sort_key
             raise exception.InvalidInput(reason=msg)
-
+    if 'limit' in filters:
+        query = query.limit(filters['limit'])
+    if 'offset' in filters:
+        query = query.offset(filters['offset'])
     # Returns list of shares that satisfy filters.
     query = query.all()
     return query
