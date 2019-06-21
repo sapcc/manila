@@ -775,7 +775,7 @@ class ShareSnapshotInstance(BASE, ManilaBase):
 
     export_locations = orm.relationship(
         "ShareSnapshotInstanceExportLocation",
-        lazy='immediate',
+        lazy='subquery',
         primaryjoin=(
             'and_('
             'ShareSnapshotInstance.id == '
@@ -785,7 +785,7 @@ class ShareSnapshotInstance(BASE, ManilaBase):
     )
     share_instance = orm.relationship(
         ShareInstance, backref="snapshot_instances",
-        lazy='immediate',
+        lazy='subquery',
         primaryjoin=(
             'and_('
             'ShareSnapshotInstance.share_instance_id == ShareInstance.id,'
@@ -793,7 +793,7 @@ class ShareSnapshotInstance(BASE, ManilaBase):
     )
     snapshot = orm.relationship(
         "ShareSnapshot",
-        lazy="immediate",
+        lazy="subquery",
         foreign_keys=snapshot_id,
         backref="instances",
         primaryjoin=(
@@ -806,7 +806,7 @@ class ShareSnapshotInstance(BASE, ManilaBase):
     )
     share_group_snapshot = orm.relationship(
         "ShareGroupSnapshot",
-        lazy="immediate",
+        lazy="subquery",
         foreign_keys=share_group_snapshot_id,
         backref="share_group_snapshot_members",
         primaryjoin=('ShareGroupSnapshot.id == '
