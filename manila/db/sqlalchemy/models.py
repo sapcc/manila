@@ -421,7 +421,6 @@ class ShareInstance(BASE, ManilaBase):
                     'ShareTypes.deleted == "False")')
     share = orm.relationship(
         'Share',
-        lazy='subquery',
         foreign_keys=share_id,
         primaryjoin='ShareInstance.share_id == Share.id'
     )
