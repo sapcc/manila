@@ -1473,12 +1473,10 @@ def _set_instances_share_data(context, instances, session):
 def share_instances_get_all_by_host(context, host, with_share_data=False,
                                     session=None):
     """Retrieves all share instances hosted on a host."""
-    query = model_query(context, models.ShareInstance).filter(
-            or_(
-                models.ShareInstance.host == host,
-                models.ShareInstance.host.like("{0}#%".format(host))
-            )
-        )
+    query = model_query(context, models.ShareInstance).filter(or_(
+        models.ShareInstance.host == host,
+        models.ShareInstance.host.like("{0}#%".format(host))
+    ))
     if with_share_data:
         instances = query.options(joinedload('share')).all()
         instances = [s for s in instances if s.share]
