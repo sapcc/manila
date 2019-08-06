@@ -2812,10 +2812,7 @@ class ShareManager(manager.SchedulerDependentManager):
 
         self.db.share_update(
             context, share_id,
-            {'status': constants.STATUS_AVAILABLE})
-        # Note:  backend driver does not necessarilly resize the share,
-        # therefore do not update share size to the snapshot size.
-
+            {'status': constants.STATUS_AVAILABLE, 'size': snapshot['size']})
         self.db.share_snapshot_update(
             context, snapshot_id, {'status': constants.STATUS_AVAILABLE})
 
