@@ -5902,7 +5902,7 @@ class ShareManagerTestCase(test.TestCase):
 
         mock_share_update.assert_called_once_with(
             mock.ANY, share_id,
-            {'status': constants.STATUS_AVAILABLE})
+            {'status': constants.STATUS_AVAILABLE, 'size': snapshot['size']})
         mock_share_snapshot_update.assert_called_once_with(
             mock.ANY, 'fake_snapshot_id',
             {'status': constants.STATUS_AVAILABLE})
