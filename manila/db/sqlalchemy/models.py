@@ -563,7 +563,7 @@ class ShareAccessMapping(BASE, ManilaBase):
 
     instance_mappings = orm.relationship(
         "ShareInstanceAccessMapping",
-        lazy='immediate',
+        lazy='subquery',
         primaryjoin=(
             'and_('
             'ShareAccessMapping.id == '
@@ -585,7 +585,7 @@ class ShareAccessRulesMetadata(BASE, ManilaBase):
     access = orm.relationship(
         ShareAccessMapping, backref="share_access_rules_metadata",
         foreign_keys=access_id,
-        lazy='immediate',
+        lazy='subquery',
         primaryjoin='and_('
         'ShareAccessRulesMetadata.access_id == ShareAccessMapping.id,'
         'ShareAccessRulesMetadata.deleted == "False")')
@@ -610,7 +610,7 @@ class ShareInstanceAccessMapping(BASE, ManilaBase):
 
     instance = orm.relationship(
         "ShareInstance",
-        lazy='immediate',
+        lazy='subquery',
         primaryjoin=(
             'and_('
             'ShareInstanceAccessMapping.share_instance_id == '
@@ -830,7 +830,7 @@ class ShareSnapshotAccessMapping(BASE, ManilaBase):
 
     instance_mappings = orm.relationship(
         "ShareSnapshotInstanceAccessMapping",
-        lazy='immediate',
+        lazy='subquery',
         primaryjoin=(
             'and_('
             'ShareSnapshotAccessMapping.id == '
@@ -861,7 +861,7 @@ class ShareSnapshotInstanceAccessMapping(BASE, ManilaBase):
 
     instance = orm.relationship(
         "ShareSnapshotInstance",
-        lazy='immediate',
+        lazy='subquery',
         primaryjoin=(
             'and_('
             'ShareSnapshotInstanceAccessMapping.share_snapshot_instance_id == '
