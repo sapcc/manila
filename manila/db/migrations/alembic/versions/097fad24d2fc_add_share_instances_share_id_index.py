@@ -82,17 +82,6 @@ INDEXES_TO_CREATE = {
             'share_type_id',
         ),
     },
-    'share_group_snapshot_members': {
-        'share_group_snapshot_members_share_group_snapshot_id_idx': (
-            'share_group_snapshot_id',
-        ),
-        'share_group_snapshot_members_share_id_idx': (
-            'share_id',
-        ),
-        'share_group_snapshot_members_share_instance_id_idx': (
-            'share_instance_id',
-        ),
-    },
     'share_group_snapshots': {
         'share_group_snapshots_share_group_id_idx': (
             'share_group_id',
