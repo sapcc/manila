@@ -197,16 +197,20 @@ def require_share_instance_exists(f):
     return wrapper
 
 
-def apply_sorting(model, query, sort_key, sort_dir):
+def apply_sorting(model, query, sort_keys, sort_dir):
     if sort_dir.lower() not in ('desc', 'asc'):
-        msg = _("Wrong sorting data provided: sort key is '%(sort_key)s' "
+        msg = _("Wrong sorting data provided: sort keys are '%(sort_keys)s' "
                 "and sort direction is '%(sort_dir)s'.") % {
-                    "sort_key": sort_key, "sort_dir": sort_dir}
+                    "sort_keys": sort_keys, "sort_dir": sort_dir}
         raise exception.InvalidInput(reason=msg)
 
-    sort_attr = getattr(model, sort_key)
-    sort_method = getattr(sort_attr, sort_dir.lower())
-    return query.order_by(sort_method())
+    sort_methods = []
+    for sort_key in sort_keys:
+        sort_attr = getattr(model, sort_key)
+        sort_method = getattr(sort_attr, sort_dir.lower())
+        sort_methods.append(sort_method())
+
+    return query.order_by(*sort_methods)
 
 
 def model_query(context, model, *args, **kwargs):
@@ -1789,8 +1793,11 @@ def _share_get_all_with_filters(context, project_id=None, share_server_id=None,
     :returns: list -- models.Share
     :raises: exception.InvalidInput
     """
-    if not sort_key:
-        sort_key = 'created_at'
+    if sort_key:
+        sort_keys = [sort_key]
+    else:
+        sort_keys = ['created_at', 'id']
+
     if not sort_dir:
         sort_dir = 'desc'
     query = (
@@ -1849,13 +1856,13 @@ def _share_get_all_with_filters(context, project_id=None, share_server_id=None,
                                      models.ShareTypeExtraSpecs.value == v))
 
     try:
-        query = apply_sorting(models.Share, query, sort_key, sort_dir)
+        query = apply_sorting(models.Share, query, sort_keys, sort_dir)
     except AttributeError:
         try:
             query = apply_sorting(
-                models.ShareInstance, query, sort_key, sort_dir)
+                models.ShareInstance, query, sort_keys, sort_dir)
         except AttributeError:
-            msg = _("Wrong sorting key provided - '%s'.") % sort_key
+            msg = _("Wrong sorting key or keys provided - '%s'.") % sort_keys
             raise exception.InvalidInput(reason=msg)
 
     # Returns list of shares that satisfy filters.
@@ -4225,7 +4232,12 @@ def _share_group_get_all(context, project_id=None, share_server_id=None,
                          host=None, detailed=True, filters=None,
                          sort_key=None, sort_dir=None, session=None):
     session = session or get_session()
-    sort_key = sort_key or 'created_at'
+
+    if sort_key:
+        sort_keys = [sort_key]
+    else:
+        sort_keys = ['created_at', 'id']
+
     sort_dir = sort_dir or 'desc'
 
     query = model_query(
@@ -4259,9 +4271,9 @@ def _share_group_get_all(context, project_id=None, share_server_id=None,
             models.ShareGroup.share_server_id == share_server_id)
 
     try:
-        query = apply_sorting(models.ShareGroup, query, sort_key, sort_dir)
+        query = apply_sorting(models.ShareGroup, query, sort_keys, sort_dir)
     except AttributeError:
-        msg = _("Wrong sorting key provided - '%s'.") % sort_key
+        msg = _("Wrong sorting key or keys provided - '%s'.") % sort_keys
         raise exception.InvalidInput(reason=msg)
 
     if detailed:
@@ -4466,8 +4478,12 @@ def _share_group_snapshot_get_all(
         context, project_id=None, detailed=True, filters=None,
         sort_key=None, sort_dir=None, session=None):
     session = session or get_session()
-    if not sort_key:
-        sort_key = 'created_at'
+
+    if sort_key:
+        sort_keys = [sort_key]
+    else:
+        sort_keys = ['created_at', 'id']
+
     if not sort_dir:
         sort_dir = 'desc'
 
@@ -4495,9 +4511,9 @@ def _share_group_snapshot_get_all(
 
     try:
         query = apply_sorting(
-            models.ShareGroupSnapshot, query, sort_key, sort_dir)
+            models.ShareGroupSnapshot, query, sort_keys, sort_dir)
     except AttributeError:
-        msg = _("Wrong sorting key provided - '%s'.") % sort_key
+        msg = _("Wrong sorting key or keys provided - '%s'.") % sort_keys
         raise exception.InvalidInput(reason=msg)
 
     if detailed:
@@ -4951,7 +4967,7 @@ def message_get(context, message_id):
 
 
 @require_context
-def message_get_all(context, filters=None, sort_key='created_at',
+def message_get_all(context, filters=None, sort_key=None,
                     sort_dir='asc'):
     messages = models.Message
     query = model_query(context,
@@ -4965,11 +4981,16 @@ def message_get_all(context, filters=None, sort_key='created_at',
     if not filters:
         filters = {}
 
+    if sort_key:
+        sort_keys = [sort_key]
+    else:
+        sort_keys = ['created_at', 'id']
+
     query = exact_filter(query, messages, filters, legal_filter_keys)
     try:
-        query = apply_sorting(messages, query, sort_key, sort_dir)
+        query = apply_sorting(messages, query, sort_keys, sort_dir)
     except AttributeError:
-        msg = _("Wrong sorting key provided - '%s'.") % sort_key
+        msg = _("Wrong sorting key or keys provided - '%s'.") % sort_keys
         raise exception.InvalidInput(reason=msg)
 
     return query.all()
