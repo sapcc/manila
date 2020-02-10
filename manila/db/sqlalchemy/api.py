@@ -1348,6 +1348,7 @@ def _share_instance_create(context, share_id, values, session):
 
 
 @require_admin_context
+@oslo_db_api.wrap_db_retry(max_retries=5, retry_on_deadlock=True)
 def share_instances_host_update(context, current_host, new_host):
     session = get_session()
     host_field = models.ShareInstance.host
@@ -1362,6 +1363,7 @@ def share_instances_host_update(context, current_host, new_host):
 
 
 @require_context
+@oslo_db_api.wrap_db_retry(max_retries=5, retry_on_deadlock=True)
 def share_instance_update(context, share_instance_id, values,
                           with_share_data=False):
     session = get_session()
@@ -1995,6 +1997,7 @@ def _share_access_metadata_get_query(context, access_id, session=None):
 
 
 @require_context
+@oslo_db_api.wrap_db_retry(max_retries=5, retry_on_deadlock=True)
 def share_access_metadata_update(context, access_id, metadata):
     session = get_session()
 
@@ -2332,6 +2335,7 @@ def share_snapshot_instance_create(context, snapshot_id, values, session=None):
 
 
 @require_context
+@oslo_db_api.wrap_db_retry(max_retries=5, retry_on_deadlock=True)
 def share_snapshot_instance_update(context, instance_id, values):
     session = get_session()
     instance_ref = share_snapshot_instance_get(context, instance_id,
@@ -2768,6 +2772,7 @@ def share_snapshot_access_get_all_for_snapshot_instance(
 
 
 @require_context
+@oslo_db_api.wrap_db_retry(max_retries=5, retry_on_deadlock=True)
 def share_snapshot_instance_access_update(
         context, access_id, instance_id, updates):
 
@@ -3394,6 +3399,7 @@ def share_network_delete(context, id):
 
 
 @require_context
+@oslo_db_api.wrap_db_retry(max_retries=5, retry_on_deadlock=True)
 def share_network_update(context, id, values):
     session = get_session()
     with session.begin():
@@ -3540,6 +3546,7 @@ def share_server_delete(context, id):
 
 
 @require_context
+@oslo_db_api.wrap_db_retry(max_retries=5, retry_on_deadlock=True)
 def share_server_update(context, id, values):
     session = get_session()
     with session.begin():
@@ -3718,6 +3725,7 @@ def driver_private_data_get(context, entity_id, key=None,
 
 
 @require_context
+@oslo_db_api.wrap_db_retry(max_retries=5, retry_on_deadlock=True)
 def driver_private_data_update(context, entity_id, details,
                                delete_existing=False, session=None):
     # NOTE(u_glide): following code modifies details dict, that's why we should
@@ -3842,6 +3850,7 @@ def network_allocations_get_for_share_server(context, share_server_id,
 
 
 @require_context
+@oslo_db_api.wrap_db_retry(max_retries=5, retry_on_deadlock=True)
 def network_allocation_update(context, id, values, read_deleted=None):
     session = get_session()
     with session.begin():
@@ -4430,6 +4439,7 @@ def share_group_create(context, values):
 
 
 @require_context
+@oslo_db_api.wrap_db_retry(max_retries=5, retry_on_deadlock=True)
 def share_group_update(context, share_group_id, values):
     session = get_session()
     with session.begin():
@@ -4654,6 +4664,7 @@ def share_group_snapshot_create(context, values):
 
 
 @require_context
+@oslo_db_api.wrap_db_retry(max_retries=5, retry_on_deadlock=True)
 def share_group_snapshot_update(context, share_group_snapshot_id, values):
     session = get_session()
     with session.begin():
@@ -4715,6 +4726,7 @@ def share_group_snapshot_member_create(context, values):
 
 
 @require_context
+@oslo_db_api.wrap_db_retry(max_retries=5, retry_on_deadlock=True)
 def share_group_snapshot_member_update(context, member_id, values):
     session = get_session()
     _change_size_to_instance_size(values)
@@ -5134,6 +5146,7 @@ def backend_info_create(context, host, value):
 
 
 @require_context
+@oslo_db_api.wrap_db_retry(max_retries=5, retry_on_deadlock=True)
 def backend_info_update(context, host, value=None, delete_existing=False):
     """Remove backend info for host name."""
     session = get_session()
