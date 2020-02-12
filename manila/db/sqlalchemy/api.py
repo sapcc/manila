@@ -4271,11 +4271,11 @@ def purge_deleted_records(context, age_in_days):
     metadata = MetaData()
     metadata.reflect(get_engine())
     session = get_session()
-    session.begin()
     deleted_age = timeutils.utcnow() - datetime.timedelta(days=age_in_days)
 
     for table in reversed(metadata.sorted_tables):
         if 'deleted' in table.columns.keys():
+            session.begin()
             try:
                 mds = [m for m in models.__dict__.values() if
                        (hasattr(m, '__tablename__') and
@@ -4305,7 +4305,7 @@ def purge_deleted_records(context, age_in_days):
             except db_exc.DBError:
                 LOG.warning("Querying table %s's soft-deleted records "
                             "failed, skipping.", table)
-    session.commit()
+            session.commit()
 
 
 ####################
