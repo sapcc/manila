@@ -2409,9 +2409,12 @@ class NetAppCmodeFileStorageLibrary(object):
         }
 
     def ensure_shares(self, context, shares):
+        updates = {}
         for share in shares:
             share_server = share.get('share_server')
             self.update_share(share, share_server=share_server)
+            updates[share['id']] = {'status': constants.STATUS_AVAILABLE}
+        return updates
 
     def ensure_share_server(self, context, share_server, network_info):
         server_details = share_server['backend_details']
