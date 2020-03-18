@@ -401,8 +401,10 @@ class ShareManager(manager.SchedulerDependentManager):
                 )
                 continue
 
+            share_network_subnet = self.db.share_network_subnet_get(
+                ctxt, share_server['share_network_subnet_id'])
             share_network = self.db.share_network_get(
-                ctxt, share_server['share_network_id'])
+                ctxt, share_network_subnet['share_network_id'])
             network_allocations = (
                 self.db.network_allocations_get_for_share_server(
                     ctxt, share_server['id'], label='user'))
@@ -412,13 +414,13 @@ class ShareManager(manager.SchedulerDependentManager):
                     LOG.debug(
                         ("Adding gateway %(gateway)s to net allocation "
                          "%(net_allocation)s"),
-                        {'gateway': share_network['gateway'],
+                        {'gateway': share_network_subnet['gateway'],
                          'net_allocation': net_allocation['id']})
                     self.db.network_allocation_update(
                         ctxt, net_allocation['id'],
-                        {'gateway': share_network['gateway']})
+                        {'gateway': share_network_subnet['gateway']})
             network_info = self._form_server_setup_info(
-                ctxt, share_server, share_network)
+                ctxt, share_server, share_network, share_network_subnet)
             self.driver.ensure_share_server(
                 ctxt, share_server, network_info)
 
