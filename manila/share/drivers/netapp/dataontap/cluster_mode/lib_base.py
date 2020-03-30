@@ -2263,7 +2263,8 @@ class NetAppCmodeFileStorageLibrary(object):
         # Modify volume properties per share type extra-specs
         extra_specs = share_types.get_extra_specs_from_share(
             destination_share)
-        provisioning_options = self._get_provisioning_options(extra_specs)
+        provisioning_options = self._get_provisioning_options_for_share(
+            destination_share, vserver, replica=True)
         qos_policy_group_name = self._modify_or_create_qos_for_existing_share(
             destination_share, extra_specs, vserver, vserver_client)
         if qos_policy_group_name:
