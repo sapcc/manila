@@ -768,6 +768,8 @@ class NetAppCmodeFileStorageLibrary(object):
         """Clones existing share."""
         share_name = self._get_backend_share_name(share['id'])
         parent_share_name = self._get_backend_share_name(snapshot['share_id'])
+        aggregate_name = share_utils.extract_host(share['host'], level='pool')
+        share_comment = self._get_backend_share_comment(share)
         if snapshot.get('provider_location') is None:
             parent_snapshot_name = snapshot_name_func(self, snapshot['id'])
         else:
@@ -782,6 +784,12 @@ class NetAppCmodeFileStorageLibrary(object):
         vserver_client.create_volume_clone(share_name, parent_share_name,
                                            parent_snapshot_name,
                                            **provisioning_options)
+
+        # ccloud: set share comment
+        vserver_client.modify_volume(aggregate_name, share_name,
+                                     comment=share_comment,
+                                     **provisioning_options)
+
         if share['size'] > snapshot['size']:
             vserver_client.set_volume_size(share_name, share['size'])
 
