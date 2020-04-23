@@ -2211,10 +2211,6 @@ def _share_get_all_with_filters(context, project_id=None, share_server_id=None,
     if show_count:
         count = query.count()
 
-    if 'limit' in filters:
-        offset = filters.get('offset', 0)
-        query = query.limit(filters['limit']).offset(offset)
-
     # Returns list of shares that satisfy filters.
     query = query.all()
 

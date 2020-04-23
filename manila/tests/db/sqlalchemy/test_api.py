@@ -577,30 +577,8 @@ class ShareDatabaseAPITestCase(test.TestCase):
 
         self.assertEqual(0, len(actual_result))
 
-    @ddt.data((10, 5), (20, 5))
-    @ddt.unpack
-    def test_share_get_all_with_limit(self, limit, offset):
-        for i in range(limit + 5):
-            db_utils.create_share()
-
-        filters = {'limit': offset, 'offset': 0}
-        shares_not_requested = db_api.share_get_all(
-            self.ctxt, filters=filters)
-
-        filters = {'limit': limit, 'offset': offset}
-        shares_requested = db_api.share_get_all(self.ctxt, filters=filters)
-
-        shares_not_requested_ids = [s['id'] for s in shares_not_requested]
-        shares_requested_ids = [s['id'] for s in shares_requested]
-
-        self.assertEqual(offset, len(shares_not_requested_ids))
-        self.assertEqual(limit, len(shares_requested_ids))
-        self.assertEqual(0, len(
-            set(shares_requested_ids) & set(shares_not_requested_ids)))
-
     @ddt.data(
         ({'display_name~': 'fake_name'}, 3, 3),
-        ({'display_name~': 'fake_name', 'limit': 2}, 3, 2)
     )
     @ddt.unpack
     def test_share_get_all_with_count(self, filters, amount_of_shares,
