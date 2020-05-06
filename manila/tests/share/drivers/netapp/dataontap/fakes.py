@@ -667,6 +667,7 @@ POOLS = [
         'allocated_capacity_gb': 2.2,
         'qos': 'False',
         'reserved_percentage': 5,
+        'max_over_subscription_ratio': 2.0,
         'dedupe': [True, False],
         'compression': [True, False],
         'thin_provisioning': [True, False],
@@ -690,6 +691,7 @@ POOLS = [
         'allocated_capacity_gb': 4.0,
         'qos': 'False',
         'reserved_percentage': 5,
+        'max_over_subscription_ratio': 2.0,
         'dedupe': [True, False],
         'compression': [True, False],
         'thin_provisioning': [True, False],
@@ -716,6 +718,7 @@ POOLS_VSERVER_CREDS = [
         'allocated_capacity_gb': 0.0,
         'qos': 'False',
         'reserved_percentage': 5,
+        'max_over_subscription_ratio': 2.0,
         'dedupe': [True, False],
         'compression': [True, False],
         'thin_provisioning': [True, False],
@@ -736,6 +739,7 @@ POOLS_VSERVER_CREDS = [
         'allocated_capacity_gb': 0.0,
         'qos': 'False',
         'reserved_percentage': 5,
+        'max_over_subscription_ratio': 2.0,
         'dedupe': [True, False],
         'compression': [True, False],
         'thin_provisioning': [True, False],
@@ -1307,6 +1311,7 @@ def get_config_cmode():
     config = na_fakes.create_configuration_cmode()
     config.local_conf.set_override('share_backend_name', BACKEND_NAME)
     config.reserved_share_percentage = 5
+    config.max_over_subscription_ratio = 2.0
     config.netapp_login = CLIENT_KWARGS['username']
     config.netapp_password = CLIENT_KWARGS['password']
     config.netapp_server_hostname = CLIENT_KWARGS['hostname']
