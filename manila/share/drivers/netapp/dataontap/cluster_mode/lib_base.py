@@ -1815,7 +1815,8 @@ class NetAppCmodeFileStorageLibrary(object):
             # unreachable
             pass
         # 2. Break SnapMirror
-        dm_session.break_snapmirror(orig_active_replica, replica)
+        # ccloud: mount=False (we do this manually)
+        dm_session.break_snapmirror(orig_active_replica, replica, False)
 
         # 3. Setup access rules
         new_active_replica = replica.copy()
