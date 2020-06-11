@@ -4513,6 +4513,7 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             'protocol.v40_enabled': 'true' if v40 else 'false',
             'protocol.v41_enabled': 'true' if v41 else 'false',
             'showmount_enabled': 'true',
+            'vstorage_enabled': 'true',
             'windows.v3_ms_dos_client_enabled': 'true',
             'protocol.v3_features.connection_drop': 'false',
             'protocol.v3_features.ejukebox_enabled': 'false',
