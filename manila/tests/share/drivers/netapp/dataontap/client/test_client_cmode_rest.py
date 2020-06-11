@@ -4673,6 +4673,7 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             'windows.v3_ms_dos_client_enabled': 'true',
             'protocol.v3_features.connection_drop': 'false',
             'protocol.v3_features.ejukebox_enabled': 'false',
+            'vstorage_enabled': 'true',
         }
         self.client.send_request.assert_called_once_with(
             f'/protocols/nfs/services/{fake.FAKE_UUID}',

@@ -4836,6 +4836,7 @@ class NetAppRestClient(object):
             'windows.v3_ms_dos_client_enabled': 'true',
             'protocol.v3_features.connection_drop': 'false',
             'protocol.v3_features.ejukebox_enabled': 'false',
+            'vstorage_enabled': 'true',
         }
         self.send_request(f'/protocols/nfs/services/{svm_id}', 'patch',
                           body=body)
