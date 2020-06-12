@@ -364,6 +364,8 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         vserver_client = self._get_api_client(vserver=vserver)
 
         self._create_vserver_routes(vserver_client, network_info)
+        vserver_client.enable_nfs(
+            self.configuration.netapp_enabled_share_protocols)
 
     @na_utils.trace
     def teardown_server(self, server_details, security_services=None):
