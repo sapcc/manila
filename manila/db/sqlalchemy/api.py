@@ -4525,7 +4525,7 @@ def export_locations_update(
 
 
 def _export_locations_update(
-    context, share_instance_id, export_locations, delete,
+    context, share_instance_id, export_locations, delete
 ):
     # NOTE(u_glide):
     # Backward compatibility code for drivers,

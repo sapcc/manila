@@ -3772,7 +3772,11 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
     @na_utils.trace
     def create_cifs_share(self, share_name, path):
         api_args = {'path': path, 'share-name': share_name}
-        self.send_request('cifs-share-create', api_args)
+        try:
+            self.send_request('cifs-share-create', api_args)
+        except netapp_api.NaApiError as e:
+            if e.code != netapp_api.EDUPLICATEENTRY:
+                raise
 
     @na_utils.trace
     def cifs_share_exists(self, share_name):
