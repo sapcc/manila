@@ -604,6 +604,12 @@ class ShareManager(manager.SchedulerDependentManager):
                 share_instance_update_dict.get('export_locations')
             )
             if update_export_locations:
+                LOG.debug(
+                    "Share instance %(id)s: updating export "
+                    "location '%(export_location)s'.",
+                    {'id': share_instance['id'],
+                     'export_location': update_export_locations},
+                )
                 self.db.export_locations_update(
                     ctxt, share_instance['id'], update_export_locations)
 
