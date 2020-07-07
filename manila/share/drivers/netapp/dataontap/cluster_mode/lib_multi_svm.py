@@ -69,7 +69,8 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             check_for_setup_error())
 
     @na_utils.trace
-    def _get_vserver(self, share_server=None, vserver_name=None):
+    def _get_vserver(self, share_server=None, vserver_name=None,
+                     reexport=False):
 
         if share_server:
             backend_details = share_server.get('backend_details')
@@ -86,8 +87,9 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             msg = _('Share server not provided')
             raise exception.InvalidInput(reason=msg)
 
-        if not self._client.vserver_exists(vserver):
-            raise exception.VserverNotFound(vserver=vserver)
+        if not reexport:
+            if not self._client.vserver_exists(vserver):
+                raise exception.VserverNotFound(vserver=vserver)
 
         vserver_client = self._get_api_client(vserver)
         return vserver, vserver_client
