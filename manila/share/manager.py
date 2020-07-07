@@ -605,7 +605,8 @@ class ShareManager(manager.SchedulerDependentManager):
             )
             if update_export_locations:
                 self.db.export_locations_update(
-                    ctxt, share_instance['id'], update_export_locations)
+                    ctxt, share_instance['id'], update_export_locations,
+                    reexport=True)
 
             share_server = self._get_share_server(ctxt, share_instance)
             driver_has_to_reapply_access_rules = (

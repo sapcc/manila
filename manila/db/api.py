@@ -1000,11 +1000,12 @@ def export_location_get_all_by_share_instance_id(
 
 
 def export_locations_update(
-    context, share_instance_id, export_locations, delete=True,
+    context, share_instance_id, export_locations, delete=True, reexport=False
 ):
     """Update export locations of a share instance."""
     return IMPL.export_locations_update(
-        context, share_instance_id, export_locations, delete)
+        context, share_instance_id, export_locations, delete,
+        reexport=reexport)
 
 
 ####################

@@ -2562,7 +2562,10 @@ class NetAppCmodeFileStorageLibrary(object):
 
     @na_utils.trace
     def update_share(self, share, share_comment=None, share_server=None):
-        """Updates a share: comment, qos settings, dedup and compression."""
+        """Update a share: comment, qos settings, dedup and compression.
+
+        Returns updated export locations info.
+        """
         vserver, vserver_client = self._get_vserver(share_server=share_server)
         share_name = self._get_backend_share_name(share['id'])
         aggregate_name = share_utils.extract_host(share['host'], level='pool')
@@ -2591,6 +2594,17 @@ class NetAppCmodeFileStorageLibrary(object):
         except netapp_api.NaApiError:
             LOG.warning('update share %(share)s on aggregate %(aggr)s with '
                         'provisioning options %(options)s failed', modify_args)
+
+        # non-active replicas do not have export locations
+        replica_state = share.get('replica_state')
+        if (replica_state is not None and
+                replica_state != constants.REPLICA_STATE_ACTIVE):
+            return []
+
+        return self._create_export(share, share_server, vserver,
+                                   vserver_client,
+                                   clear_current_export_policy=False,
+                                   ensure_share_already_exists=True)
 
     def setup_server(self, network_info, metadata=None):
         raise NotImplementedError()
@@ -4142,10 +4156,30 @@ class NetAppCmodeFileStorageLibrary(object):
 
     def ensure_shares(self, context, shares):
         updates = {}
+
         for share in shares:
             share_server = share.get('share_server')
-            self.update_share(share, share_server=share_server)
-            updates[share['id']] = {'status': constants.STATUS_AVAILABLE}
+            try:
+                updates[share['id']] = {
+                    'export_locations': self.update_share(
+                        share,
+                        share_server=share_server
+                    )
+                }
+            except (exception.NetAppException, netapp_api.NaApiError) as e:
+                err_msg = e.message
+                msg_args = {
+                    'share': share['id'],
+                    'exception': err_msg,
+                }
+                msg = _('Failed to ensure share %(share)s: '
+                        '%(exception)s. ') % msg_args
+
+                if err_msg.startswith('Could not find export policy'):
+                    LOG.debug(msg)
+                else:
+                    LOG.warning(msg)
+
         return updates
 
     def ensure_share_server(self, context, share_server, network_info):
