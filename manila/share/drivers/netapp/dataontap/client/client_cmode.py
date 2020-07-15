@@ -1697,6 +1697,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
     def configure_active_directory(self, security_service, vserver_name):
         """Configures AD on Vserver."""
         self.configure_dns(security_service)
+        self.configure_cifs_encryption()
         self.set_preferred_dc(security_service)
 
         cifs_server = self._get_cifs_server_name(vserver_name)
@@ -1998,6 +1999,18 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             self.send_request(api_name, api_args)
         except netapp_api.NaApiError as e:
             msg = _("Failed to update DNS configuration. %s")
+            raise exception.NetAppException(msg % e.message)
+
+    @na_utils.trace
+    def configure_cifs_encryption(self):
+        api_args = {
+            'is-aes-encryption-enabled': 'true'
+        }
+
+        try:
+            self.send_request('cifs-security-modify', api_args)
+        except netapp_api.NaApiError as e:
+            msg = _("Failed to set aes encryption. %s")
             raise exception.NetAppException(msg % e.message)
 
     @na_utils.trace
