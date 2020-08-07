@@ -3686,6 +3686,11 @@ class ShareManager(manager.SchedulerDependentManager):
         context = context.elevated()
         share, share_instance, share_server = (
             self._get_share_details_from_instance(context, share_instance_id))
+        # explicitly load export location to prevent DetachedInstanceError
+        # see https://bugs.launchpad.net/manila/+bug/1700660
+        # on other possible workaround
+        share_instance.get('export_location')
+
         self._notify_about_share_usage(context, share,
                                        share_instance, "delete.start")
 
