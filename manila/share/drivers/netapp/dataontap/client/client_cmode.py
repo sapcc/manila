@@ -43,6 +43,8 @@ CUTOVER_ACTION_MAP = {
     'force': 'force',
     'wait': 'wait',
 }
+# ccloud 256 KB, system default for ONTAP 9.5 was 64 KB
+TCP_MAX_XFER_SIZE = 256 * 1024
 
 
 class NetAppCmodeClient(client_base.NetAppBaseClient):
@@ -71,6 +73,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         ontapi_1_30 = ontapi_version >= (1, 30)
         ontapi_1_110 = ontapi_version >= (1, 110)
         ontapi_1_150 = ontapi_version >= (1, 150)
+        ontapi_1_160 = ontapi_version >= (1, 160)
 
         self.features.add_feature('SNAPMIRROR_V2', supported=ontapi_1_20)
         self.features.add_feature('SYSTEM_METRICS', supported=ontapi_1_2x)
@@ -84,6 +87,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                                   supported=ontapi_1_30)
         self.features.add_feature('FLEXVOL_ENCRYPTION', supported=ontapi_1_110)
         self.features.add_feature('CIFS_CHECK', supported=ontapi_1_150)
+        self.features.add_feature('TCP_MAX_XFER_SIZE', supported=ontapi_1_160)
 
     def _invoke_vserver_api(self, na_element, vserver):
         server = copy.copy(self.connection)
@@ -1376,6 +1380,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'enable-ejukebox': 'false',
             'is-vstorage-enabled': 'true',
         }
+        if self.features.TCP_MAX_XFER_SIZE:
+            nfs_service_modify_args['tcp-max-xfer-size'] = TCP_MAX_XFER_SIZE
+
         self.send_request('nfs-service-modify', nfs_service_modify_args)
 
     @na_utils.trace

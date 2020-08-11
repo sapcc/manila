@@ -2415,6 +2415,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
     @ddt.unpack
     def test_enable_nfs_protocols(self, v3, v40, v41):
 
+        self.client.features.add_feature('TCP_MAX_XFER_SIZE')
         self.mock_object(self.client, 'send_request')
 
         versions = []
@@ -2436,6 +2437,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'is-nfsv3-connection-drop-enabled': 'false',
             'enable-ejukebox': 'false',
             'is-vstorage-enabled': 'true',
+            'tcp-max-xfer-size': client_cmode.TCP_MAX_XFER_SIZE,
         }
         self.client.send_request.assert_called_once_with(
             'nfs-service-modify', nfs_service_modify_args)
