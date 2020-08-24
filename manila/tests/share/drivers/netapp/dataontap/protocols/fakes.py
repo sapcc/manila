@@ -27,13 +27,15 @@ CIFS_SHARE_PATH = '/%s' % SHARE_NAME
 CIFS_SHARE_PATH_PARSED = '\\%s' % SHARE_NAME
 CIFS_SHARE = {
     'export_location': r'\\%s%s' % (SHARE_ADDRESS_1, CIFS_SHARE_PATH_PARSED),
-    'id': SHARE_ID
+    'id': SHARE_ID,
+    'share_proto': 'cifs'
 }
 
 NFS_SHARE_PATH = '/%s' % SHARE_NAME
 NFS_SHARE = {
     'export_location': '%s:%s' % (SHARE_ADDRESS_1, NFS_SHARE_PATH),
-    'id': SHARE_ID
+    'id': SHARE_ID,
+    'share_proto': 'nfs'
 }
 
 IP_ACCESS = {

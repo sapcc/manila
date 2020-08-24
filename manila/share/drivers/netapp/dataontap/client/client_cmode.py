@@ -2344,7 +2344,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         api_args.update(self._get_create_volume_api_args(
             volume_name, thin_provisioned, snapshot_policy, language,
             snapshot_reserve, volume_type, comment, qos_policy_group, encrypt,
-            adaptive_qos_policy_group, mount_point_name, snaplock_type))
+            adaptive_qos_policy_group, mount_point_name, snaplock_type,
+            **options))
 
         self.send_request('volume-create', api_args)
 
@@ -2386,7 +2387,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         api_args.update(self._get_create_volume_api_args(
             volume_name, thin_provisioned, snapshot_policy, language,
             snapshot_reserve, volume_type, comment, qos_policy_group, encrypt,
-            adaptive_qos_policy_group, mount_point_name, snaplock_type))
+            adaptive_qos_policy_group, mount_point_name, snaplock_type,
+            **options))
 
         result = self.send_request('volume-create-async', api_args)
         job_info = {
@@ -2402,7 +2404,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                                     qos_policy_group, encrypt,
                                     adaptive_qos_policy_group,
                                     mount_point_name=None,
-                                    snaplock_type=None):
+                                    snaplock_type=None, **options):
         api_args = {
             'volume-type': volume_type,
             'volume-comment': comment,
@@ -2422,6 +2424,11 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         if adaptive_qos_policy_group is not None:
             api_args['qos-adaptive-policy-group-name'] = (
                 adaptive_qos_policy_group)
+
+        if options.get('unix-permissions') is not None:
+            # special case for multi-protocol shares:
+            unix_perm = options.pop('unix-permissions')
+            api_args['unix-permissions'] = unix_perm
 
         if encrypt is not None:
             if encrypt is True and not self.features.FLEXVOL_ENCRYPTION:

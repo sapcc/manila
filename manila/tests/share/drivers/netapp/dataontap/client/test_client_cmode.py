@@ -3377,7 +3377,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         self.client._get_create_volume_api_args.assert_called_once_with(
             fake.SHARE_NAME, False, None, None, None, 'rw', '', None, None,
-            None, None, None)
+            None, None, None, **options)
         self.client.send_request.assert_called_with('volume-create',
                                                     volume_create_args)
         (
