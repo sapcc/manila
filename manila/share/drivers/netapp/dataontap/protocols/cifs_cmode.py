@@ -55,8 +55,9 @@ class NetAppCmodeCIFSHelper(base.NetAppBaseHelper):
             self._client.create_cifs_share(share_name, export_path)
             self._client.remove_cifs_share_access(share_name, 'Everyone')
 
-        # Ensure 'ntfs' security style for RW volume. DP volumes cannot set it.
-        if not replica:
+        # Ensure 'ntfs' security style if not a MULTI share protocol.
+        # DP volumes cannot set it.
+        if (not replica) and (share['share_proto'].lower() != 'multi'):
             self._client.set_volume_security_style(share_name,
                                                    security_style='ntfs')
 
@@ -76,14 +77,21 @@ class NetAppCmodeCIFSHelper(base.NetAppBaseHelper):
     def update_access(self, share, share_name, rules):
         """Replaces the list of access rules known to the backend storage."""
 
-        _, cifs_share_name = self._get_export_location(share)
         # Ensure rules are valid
+        valid_rules = []
         for rule in rules:
-            self._validate_access_rule(rule)
+            if share['share_proto'].lower() == 'multi':
+                # multi-export share case, filter ip rules:
+                if rule['access_type'] == 'ip':
+                    continue
 
-        new_rules = {rule['access_to']: rule['access_level'] for rule in rules}
+            self._validate_access_rule(rule)
+            valid_rules.append(rule)
+
+        new_rules = {r['access_to']: r['access_level'] for r in valid_rules}
 
         # Get rules from share
+        _, cifs_share_name = self._get_export_location(share)
         existing_rules = self._get_access_rules(share, cifs_share_name)
 
         # Update rules in an order that will prevent transient disruptions
