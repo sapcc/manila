@@ -451,7 +451,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             'vendor_name': 'NetApp',
             'driver_version': '1.0',
             'netapp_storage_family': 'ontap_cluster',
-            'storage_protocol': 'NFS_CIFS',
+            'storage_protocol': 'NFS_CIFS_MULTI',
             'pools': fake.POOLS,
             'share_group_stats': {'consistent_snapshot_support': 'host'},
         }
