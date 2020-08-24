@@ -2328,7 +2328,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                       snapshot_reserve=None, volume_type='rw', comment='',
                       qos_policy_group=None, adaptive_qos_policy_group=None,
                       encrypt=None, mount_point_name=None,
-                      snaplock_type=None, **options):
+                      snaplock_type=None, unix_permissions=None,
+                      **options):
         """Creates a volume."""
         if adaptive_qos_policy_group and not self.features.ADAPTIVE_QOS:
             msg = 'Adaptive QoS not supported on this backend ONTAP version.'
@@ -2342,7 +2343,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         api_args.update(self._get_create_volume_api_args(
             volume_name, thin_provisioned, snapshot_policy, language,
             snapshot_reserve, volume_type, comment, qos_policy_group, encrypt,
-            adaptive_qos_policy_group, mount_point_name, snaplock_type))
+            adaptive_qos_policy_group, mount_point_name, snaplock_type,
+            unix_permissions))
 
         self.send_request('volume-create', api_args)
 
@@ -2365,7 +2367,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                             qos_policy_group=None, encrypt=None,
                             adaptive_qos_policy_group=None,
                             auto_provisioned=False, mount_point_name=None,
-                            snaplock_type=None, **options):
+                            snaplock_type=None, unix_permissions=None,
+                            **options):
         """Creates a volume asynchronously."""
 
         if adaptive_qos_policy_group and not self.features.ADAPTIVE_QOS:
@@ -2384,7 +2387,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         api_args.update(self._get_create_volume_api_args(
             volume_name, thin_provisioned, snapshot_policy, language,
             snapshot_reserve, volume_type, comment, qos_policy_group, encrypt,
-            adaptive_qos_policy_group, mount_point_name, snaplock_type))
+            adaptive_qos_policy_group, mount_point_name, snaplock_type,
+            unix_permissions))
 
         result = self.send_request('volume-create-async', api_args)
         job_info = {
@@ -2400,7 +2404,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                                     qos_policy_group, encrypt,
                                     adaptive_qos_policy_group,
                                     mount_point_name=None,
-                                    snaplock_type=None):
+                                    snaplock_type=None,
+                                    unix_permissions=None):
         api_args = {
             'volume-type': volume_type,
             'volume-comment': comment,
@@ -2420,6 +2425,10 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         if adaptive_qos_policy_group is not None:
             api_args['qos-adaptive-policy-group-name'] = (
                 adaptive_qos_policy_group)
+
+        # special case for multi-protocol shares:
+        if unix_permissions is not None:
+            api_args['unix-permissions'] = unix_permissions
 
         if encrypt is not None:
             if encrypt is True and not self.features.FLEXVOL_ENCRYPTION:
