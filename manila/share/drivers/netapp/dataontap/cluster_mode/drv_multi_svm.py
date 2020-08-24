@@ -40,7 +40,8 @@ class NetAppCmodeMultiSvmShareDriver(driver.ShareDriver):
         self.security_service_update_support = True
         self.dhss_mandatory_security_service_association = {
             'nfs': None,
-            'cifs': ['active_directory', ]
+            'cifs': ['active_directory', ],
+            'multi': ['active_directory', 'ldap'],
         }
         # NetApp driver supports multiple subnets including update existing
         # share servers.
