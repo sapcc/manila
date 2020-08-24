@@ -1566,6 +1566,11 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         ldap_schema = 'RFC-2307'
 
         if ad_domain:
+            for conf in ('user', 'ou'):
+                if not security_service.get(conf):
+                    msg = _('Missing option %s for LDAP configuration.')
+                    raise exception.NetAppException(msg % conf)
+
             if ldap_servers:
                 msg = _("LDAP client cannot be configured with both 'server' "
                         "and 'domain' parameters. Use 'server' for Linux/Unix "
@@ -1589,16 +1594,19 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             self.configure_dns(security_service)
 
         config_name = hashlib.md5(six.b(security_service['id'])).hexdigest()
+        LOG.debug("Configuring LDAP Security Service: %s",
+                  security_service['id'])
+
         api_args = {
             'ldap-client-config': config_name,
             'tcp-port': '389',
             'schema': ldap_schema,
-            'bind-dn': bind_dn,
+            'bind-dn': bind_dn.lower(),
             'bind-password': security_service.get('password'),
         }
 
         if security_service.get('ou'):
-            api_args['base-dn'] = security_service['ou']
+            api_args['base-dn'] = security_service['ou'].lower()
         if ad_domain:
             # Active Directory LDAP server
             api_args['ad-domain'] = ad_domain
@@ -1737,12 +1745,18 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         if security_service['ou'] is not None:
             api_args['organizational-unit'] = security_service['ou']
 
-        try:
-            LOG.debug("Trying to setup CIFS server with data: %s", api_args)
-            self.send_request('cifs-server-create', api_args)
-        except netapp_api.NaApiError as e:
-            msg = _("Failed to create CIFS server entry. %s")
-            raise exception.NetAppException(msg % e.message)
+        for attempt in range(3):
+            try:
+                LOG.debug("Trying to setup CIFS server with args: %s",
+                          api_args)
+                self.send_request('cifs-server-create', api_args)
+                return
+            except netapp_api.NaApiError as e:
+                LOG.debug("Failed to create CIFS server entry. %s", e.message)
+                time.sleep(3)
+                continue
+        msg = _('Cannot setup CIFS server after 3 attempts.')
+        raise exception.NetAppException(msg)
 
     @na_utils.trace
     def modify_active_directory_security_service(
@@ -2117,6 +2131,11 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             size_b = size_gb * units.Gi
         api_args['size'] = six.text_type(size_b)
 
+        if options.get('unix-permissions') is not None:
+            # special case for multi-protocol shares:
+            unix_perm = options.pop('unix-permissions')
+            api_args['unix-permissions'] = unix_perm
+
         self.send_request('volume-create', api_args)
 
         self.update_volume_efficiency_attributes(volume_name,
@@ -2158,6 +2177,11 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         else:
             size_b = size_gb * units.Gi
         api_args['size'] = six.text_type(size_b)
+
+        if options.get('unix-permissions') is not None:
+            # special case for multi-protocol shares:
+            unix_perm = options.pop('unix-permissions')
+            api_args['unix-permissions'] = unix_perm
 
         result = self.send_request('volume-create-async', api_args)
         job_info = {

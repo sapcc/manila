@@ -504,11 +504,11 @@ LDAP_LINUX_SECURITY_SERVICE = {
 LDAP_AD_SECURITY_SERVICE = {
     'id': 'fake_id',
     'type': 'ldap',
-    'user': 'fake_user',
     'password': 'fake_password',
+    'dns_ip': 'fake_dns_ip',
+    'user': 'fake_user',
     'domain': 'fake_domain',
     'ou': 'fake_ou',
-    'dns_ip': 'fake_dns_ip',
     'server': None,
 }
 
