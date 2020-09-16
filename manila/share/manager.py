@@ -4385,6 +4385,11 @@ class ShareManager(manager.SchedulerDependentManager):
             'availability_zone': share_replica.get('availability_zone'),
         }
 
+        # share type is nullable
+        if share_replica.get('share_type'):
+            share_replica_ref['share_type_name'] = share_replica.get(
+                'share_type').get('name')
+
         return share_replica_ref
 
     def _get_snapshot_instance_dict(self, context, snapshot_instance,
