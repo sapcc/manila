@@ -110,6 +110,25 @@ SHARE = {
     'encrypt': False,
 }
 
+EXTRA_SPEC = {
+    'netapp:thin_provisioned': 'true',
+    'netapp:snapshot_policy': 'default',
+    'netapp:language': 'en-US',
+    'netapp:dedup': 'True',
+    'netapp:compression': 'false',
+    'netapp:max_files': 5000,
+    'netapp:split_clone_on_create': 'true',
+    'netapp_disk_type': 'FCAL',
+    'netapp_raid_type': 'raid4',
+    'netapp_flexvol_encryption': 'true',
+}
+
+SHARE_TYPE = {
+    'id': SHARE_TYPE_ID,
+    'name': SHARE_TYPE_NAME,
+    'extra_specs': EXTRA_SPEC
+}
+
 SHARE_INSTANCE = {
     'id': SHARE_INSTANCE_ID,
     'share_id': SHARE_ID,
@@ -119,6 +138,7 @@ SHARE_INSTANCE = {
     'display_name': SHARE_DISPLAY_NAME,
     'size': SHARE_SIZE,
     'share_proto': 'fake',
+    'share_type': SHARE_TYPE,
     'share_type_id': SHARE_TYPE_ID,
     'share_network_id': '5dfe0898-e2a1-4740-9177-81c7d26713b0',
     'share_server_id': '7e6a2cc8-871f-4b1d-8364-5aad0f98da86',
@@ -155,19 +175,6 @@ FLEXVOL = {
     'style': 'flex',
     'size': '1610612736',  # rounds down to 1 GB,
     'owning-vserver-name': VSERVER1,
-}
-
-EXTRA_SPEC = {
-    'netapp:thin_provisioned': 'true',
-    'netapp:snapshot_policy': 'default',
-    'netapp:language': 'en-US',
-    'netapp:dedup': 'True',
-    'netapp:compression': 'false',
-    'netapp:max_files': 5000,
-    'netapp:split_clone_on_create': 'true',
-    'netapp_disk_type': 'FCAL',
-    'netapp_raid_type': 'raid4',
-    'netapp_flexvol_encryption': 'true',
 }
 
 EXTRA_SPEC_WITH_QOS = copy.deepcopy(EXTRA_SPEC)
@@ -266,12 +273,6 @@ INVALID_MAX_FILE_EXTRA_SPEC = {
 }
 
 EMPTY_EXTRA_SPEC = {}
-
-SHARE_TYPE = {
-    'id': SHARE_TYPE_ID,
-    'name': SHARE_TYPE_NAME,
-    'extra_specs': EXTRA_SPEC
-}
 
 OVERLAPPING_EXTRA_SPEC = {
     'compression': '<is> True',
