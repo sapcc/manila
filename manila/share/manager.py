@@ -4398,7 +4398,11 @@ class ShareManager(manager.SchedulerDependentManager):
         except Exception as e:
             with excutils.save_and_reraise_exception():
                 self._handle_setup_server_error(context, share_server['id'], e)
-                self.driver.deallocate_network(context, share_server['id'])
+                if not context.is_admin:
+                    self.driver.deallocate_network(context, share_server['id'])
+                else:
+                    LOG.debug(f"keeping network allocations to debug failure"
+                              f" of share server {share_server['id']}")
 
     def _validate_segmentation_id(self, network_info):
         """Raises exception if the segmentation type is incorrect."""

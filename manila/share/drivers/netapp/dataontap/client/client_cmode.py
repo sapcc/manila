@@ -1184,7 +1184,20 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
     def create_ipspace(self, ipspace_name):
         """Creates an IPspace."""
         api_args = {'ipspace': ipspace_name}
-        self.send_request('net-ipspaces-create', api_args)
+        try:
+            self.send_request('net-ipspaces-create', api_args)
+        except netapp_api.NaApiError as e:
+            p = re.compile('.*is already in use.*', re.IGNORECASE)
+            if (e.code == netapp_api.EAPIERROR and re.match(p, e.message)):
+                LOG.debug('IPspace %(ipspace)s exists.',
+                          {'ipspace': ipspace_name})
+            else:
+                msg = _('Failed to create IPspace %(ipspace)s: %(err_msg)s')
+                msg_args = {
+                    'ipspace': ipspace_name,
+                    'err_msg': e.message,
+                }
+                raise exception.NetAppException(msg % msg_args)
 
     @na_utils.trace
     def delete_ipspace(self, ipspace_name):
@@ -1724,12 +1737,20 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         if security_service.get('default_ad_site'):
             api_args['default-site'] = security_service['default_ad_site']
 
-        try:
-            LOG.debug("Trying to setup CIFS server with data: %s", api_args)
-            self.send_request('cifs-server-create', api_args)
-        except netapp_api.NaApiError as e:
-            msg = _("Failed to create CIFS server entry. %s")
-            raise exception.NetAppException(msg % e.message)
+        for attempt in range(6):
+            try:
+                LOG.debug("Trying to setup CIFS server with data: %s",
+                          api_args)
+                self.send_request('cifs-server-create', api_args)
+                return
+            except netapp_api.NaApiError as e:
+                LOG.debug("Failed to create CIFS server entry. %s", e.message)
+                time.sleep(3)
+                if attempt == 2:
+                    self.configure_cifs_encryption(secure=False)
+                continue
+        msg = _('Cannot setup CIFS server after 6 attempts.')
+        raise exception.NetAppException(msg)
 
     @na_utils.trace
     def modify_active_directory_security_service(
@@ -2052,10 +2073,14 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             LOG.warning(msg, msg_args)
 
     @na_utils.trace
-    def configure_cifs_encryption(self):
+    def configure_cifs_encryption(self, secure=True):
         api_args = {
             'is-aes-encryption-enabled': 'true'
         }
+
+        if not secure:
+            api_args['use-ldaps-for-ad-ldap'] = 'false'
+            api_args['session-security-for-ad-ldap'] = 'none'
 
         try:
             self.send_request('cifs-security-modify', api_args)
