@@ -3733,8 +3733,11 @@ class ShareManagerTestCase(test.TestCase):
         self.share_manager.driver.allocate_network.assert_has_calls([
             mock.call(self.context, share_server, share_network,
                       share_net_subnets[0])])
-        self.share_manager.driver.deallocate_network.assert_has_calls([
-            mock.call(self.context, share_server['id'])])
+        if self.context.is_admin:
+            self.share_manager.driver.deallocate_network.assert_not_called()
+        else:
+            self.share_manager.driver.deallocate_network.assert_has_calls([
+                mock.call(self.context, share_server['id'])])
 
     def test_setup_server_incorrect_detail_data(self):
         self.setup_server_raise_exception(detail_data_proper=False)
@@ -3796,9 +3799,12 @@ class ShareManagerTestCase(test.TestCase):
             self.context,
             share_server['id'],
             {'status': constants.STATUS_ERROR})
-        self.share_manager.driver.deallocate_network.assert_called_once_with(
-            self.context, share_server['id']
-        )
+        if self.context.is_admin:
+            self.share_manager.driver.deallocate_network.assert_not_called()
+        else:
+            self.share_manager.driver.deallocate_network.assert_called_once_with(  # noqa: E501
+                self.context, share_server['id']
+            )
         self.assertFalse(manager.LOG.warning.called)
         if get_server_details_from_data(data):
             self.assertTrue(manager.LOG.debug.called)

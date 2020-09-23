@@ -21,6 +21,7 @@ as needed to provision shares.
 """
 import re
 
+from oslo_config import cfg
 from oslo_log import log
 from oslo_serialization import jsonutils
 from oslo_utils import excutils
@@ -39,6 +40,15 @@ from manila.share import share_types
 from manila.share import utils as share_utils
 from manila import utils
 
+lib_multi_svm_opts = [
+    cfg.BoolOpt('keep_share_server_on_failure',
+                default=False,
+                help='Whether share servers will '
+                     'be deleted on failures.'),
+]
+
+CONF = cfg.CONF
+CONF.register_opts(lib_multi_svm_opts)
 LOG = log.getLogger(__name__)
 SUPPORTED_NETWORK_TYPES = (None, 'flat', 'vlan')
 SEGMENTED_NETWORK_TYPES = ('vlan',)
@@ -358,9 +368,18 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                     LOG.warning("Failed to configure Vserver.")
                     # NOTE(dviroel): At this point, the lock was already
                     # acquired by the caller of _create_vserver.
-                    self._delete_vserver(vserver_name,
-                                         security_services=security_services,
-                                         needs_lock=False)
+                    # NOTE(carthaca): keep debris for analysis in debug
+                    if not (CONF.keep_share_server_on_failure or security_services):  # noqa: E501
+                        self._delete_vserver(vserver_name,
+                                             security_services=security_services,  # noqa: E501
+                                             needs_lock=False)
+                    # NOTE(carthaca): lifs need to be turned off to not provoke
+                    # duplicate IPs
+                    else:
+                        lifs = vserver_client.get_network_interfaces()
+                        for lif in lifs:
+                            self._client.disable_network_interface(
+                                vserver_name, lif['interface-name'])
 
     def _setup_network_for_vserver(self, vserver_name, vserver_client,
                                    network_info, ipspace_name,
@@ -603,6 +622,16 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         self._create_vserver_routes(vserver_client, network_info)
         vserver_client.enable_nfs(
             self.configuration.netapp_enabled_share_protocols)
+        security_services = network_info.get('security_services')
+        if security_services:
+            for security_service in security_services:
+                if security_service['type'].lower() == 'active_directory':
+                    try:
+                        vserver_client.configure_certificates()
+                        # vserver_client.configure_cifs_encryption()
+                        # vserver_client.configure_cifs_options(security_service) # noqa: E501
+                    except exception.NetAppException as e:
+                        LOG.warning(e.message)
 
     @na_utils.trace
     def teardown_server(self, server_details, security_services=None):
