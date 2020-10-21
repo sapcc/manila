@@ -396,12 +396,13 @@ class NetAppCmodeFileStorageLibrary(object):
         consistent_snapshot_support = 'host'
         if self._flexgroup_pools:
             consistent_snapshot_support = None
+        driver_version = self._client.get_system_version()['version-tuple']
 
         data = {
             'share_backend_name': self._backend_name,
             'driver_name': self.driver_name,
             'vendor_name': 'NetApp',
-            'driver_version': '1.0',
+            'driver_version': driver_version,
             'netapp_storage_family': 'ontap_cluster',
             'storage_protocol': 'NFS_CIFS_MULTI',
             'pools': self._get_pools(get_filter_function=get_filter_function,
