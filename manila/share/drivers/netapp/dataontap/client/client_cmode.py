@@ -18,9 +18,11 @@
 
 import copy
 import hashlib
+import os
 import re
 import time
 
+from oslo_config import cfg
 from oslo_log import log
 from oslo_utils import excutils
 from oslo_utils import strutils
@@ -35,6 +37,7 @@ from manila.share.drivers.netapp import utils as na_utils
 from manila import utils as manila_utils
 
 
+CONF = cfg.CONF
 LOG = log.getLogger(__name__)
 DELETED_PREFIX = 'deleted_manila_'
 DEFAULT_IPSPACE = 'Default'
@@ -45,6 +48,24 @@ CUTOVER_ACTION_MAP = {
     'force': 'force',
     'wait': 'wait',
 }
+
+client_cmode_opts = [
+    cfg.ListOpt(
+        "cifs_cert_pem_paths",
+        default=[
+            "/etc/ssl/certs/SAPNetCA_G2.pem",
+            "/etc/ssl/certs/SAP_Global_Root_CA.pem",
+            "/etc/ssl/certs/SAP_Global_Sub_CA_02.pem",
+            "/etc/ssl/certs/SAP_Global_Sub_CA_04.pem",
+            "/etc/ssl/certs/SAP_Global_Sub_CA_05.pem",
+            "/etc/ssl/certs/DigiCert_Global_Root_CA.pem",
+            "/etc/ssl/certs/DigiCert_Global_Root_G2.pem",
+            ],
+        help="Path to the x509 certificate used for secure ldap "
+             "connections.")
+]
+
+CONF.register_opts(client_cmode_opts)
 
 
 class NetAppCmodeClient(client_base.NetAppBaseClient):
@@ -60,6 +81,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         self.connection.set_api_version(major, minor)
         system_version = self.get_system_version(cached=False)
         self.connection.set_system_version(system_version)
+        self._cert_pem_paths = CONF.get('cifs_cert_pem_paths')
 
         self._init_features()
 
@@ -1630,6 +1652,11 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         self.send_request('vserver-modify', api_args)
 
         for security_service in security_services:
+            if (security_service.get('dns_ip') and
+                    security_service.get('domain')):
+                vserver_client.configure_dns(security_service)
+
+        for security_service in security_services:
             if security_service['type'].lower() == 'ldap':
                 vserver_client.configure_ldap(security_service,
                                               timeout=timeout)
@@ -1893,7 +1920,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
     def configure_active_directory(self, security_service,
                                    vserver_name, aes_encryption):
         """Configures AD on Vserver."""
-        self.configure_dns(security_service)
+        self.configure_certificates()
         self.configure_cifs_aes_encryption(aes_encryption)
         self.set_preferred_dc(security_service)
 
@@ -2040,7 +2067,6 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                     '8.3 or later.')
             raise exception.NetAppException(msg)
 
-        self.configure_dns(security_service)
         spn = self._get_kerberos_service_principal_name(
             security_service, vserver_name)
 
@@ -2270,6 +2296,42 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             LOG.warning(msg, msg_args)
 
     @na_utils.trace
+    def configure_certificates(self):
+        from cryptography.hazmat.primitives.serialization import Encoding
+        from cryptography import x509
+
+        for cert_pem_path in self._cert_pem_paths:
+            if not os.path.exists(cert_pem_path):
+                msg = _("Certificate is missing.")
+                raise exception.NetAppException(msg)
+
+            try:
+                # expect PEM string
+                with open(cert_pem_path, 'r', encoding='utf-8') as f:
+                    cert_x509 = x509.load_pem_x509_certificate(
+                        bytes(f.read(), encoding='utf-8'))
+            except UnicodeDecodeError as e:
+                # if it is not a string, most likely it is a DER certificate
+                if e.reason == 'invalid start byte':
+                    with open(cert_pem_path, 'rb') as f:
+                        cert_x509 = x509.load_der_x509_certificate(f.read())
+                else:
+                    raise
+
+            api_args = {
+                'certificate': cert_x509.public_bytes(
+                    Encoding.PEM).decode('utf-8'),
+                'type': 'server_ca'
+            }
+
+            try:
+                self.send_request('security-certificate-install', api_args)
+            except netapp_api.NaApiError as e:
+                if e.code != netapp_api.EDUPLICATEENTRY:
+                    msg = _("Failed to install certificate. %s")
+                    raise exception.NetAppException(msg % e.message)
+
+    @na_utils.trace
     def configure_cifs_aes_encryption(self, aes_encryption, secure=True):
         if self.features.AES_ENCRYPTION_TYPES:
             if aes_encryption:
@@ -2291,6 +2353,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         if not secure:
             api_args['use-ldaps-for-ad-ldap'] = 'false'
             api_args['session-security-for-ad-ldap'] = 'none'
+        else:
+            api_args['use-ldaps-for-ad-ldap'] = 'true'
+            api_args['session-security-for-ad-ldap'] = 'sign'
 
         try:
             self.send_request('cifs-security-modify', api_args)
