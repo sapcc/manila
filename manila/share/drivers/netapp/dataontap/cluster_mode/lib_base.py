@@ -403,13 +403,17 @@ class NetAppCmodeFileStorageLibrary(object):
         if self._flexgroup_pools:
             consistent_snapshot_support = None
 
+        available_protocols = 'NFS'
+        if self._client.features.CIFS_CHANNEL_BINDING:
+            available_protocols = 'NFS_CIFS_MULTI'
+
         data = {
             'share_backend_name': self._backend_name,
             'driver_name': self.driver_name,
             'vendor_name': 'NetApp',
             'driver_version': '1.0',
             'netapp_storage_family': 'ontap_cluster',
-            'storage_protocol': 'NFS_CIFS_MULTI',
+            'storage_protocol': available_protocols,
             'pools': self._get_pools(get_filter_function=get_filter_function,
                                      goodness_function=goodness_function),
             'share_group_stats': {
