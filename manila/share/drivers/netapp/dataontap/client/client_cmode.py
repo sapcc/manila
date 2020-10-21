@@ -18,9 +18,11 @@
 
 import copy
 import hashlib
+import os
 import re
 import time
 
+from oslo_config import cfg
 from oslo_log import log
 from oslo_utils import strutils
 from oslo_utils import units
@@ -34,6 +36,7 @@ from manila.share.drivers.netapp import utils as na_utils
 from manila import utils as manila_utils
 
 
+CONF = cfg.CONF
 LOG = log.getLogger(__name__)
 DELETED_PREFIX = 'deleted_manila_'
 DEFAULT_IPSPACE = 'Default'
@@ -44,6 +47,22 @@ CUTOVER_ACTION_MAP = {
     'force': 'force',
     'wait': 'wait',
 }
+
+client_cmode_opts = [
+    cfg.ListOpt(
+        "cifs_cert_pem_paths",
+        default=[
+            "/etc/ssl/certs/SAPNetCA_G2.pem",
+            "/etc/ssl/certs/SAP_Global_Root_CA.pem",
+            "/etc/ssl/certs/SAP_Global_Sub_CA_02.pem",
+            "/etc/ssl/certs/SAP_Global_Sub_CA_04.pem",
+            "/etc/ssl/certs/SAP_Global_Sub_CA_05.pem",
+            "/etc/ssl/certs/DigiCert_Global_Root_CA.pem"],
+        help="Path to the x509 certificate used for secure ldap "
+             "connections.")
+]
+
+CONF.register_opts(client_cmode_opts)
 
 
 class NetAppCmodeClient(client_base.NetAppBaseClient):
@@ -59,6 +78,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         self.connection.set_api_version(major, minor)
         system_version = self.get_system_version(cached=False)
         self.connection.set_system_version(system_version)
+        self._cert_pem_paths = CONF.get('cifs_cert_pem_paths')
 
         self._init_features()
 
@@ -78,6 +98,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         ontapi_1_180 = ontapi_version >= (1, 180)
         ontapi_1_191 = ontapi_version >= (1, 191)
         ontap_9_10 = self.get_system_version()['version-tuple'] >= (9, 10, 0)
+        ontap_9_10_1 = self.get_system_version()['version-tuple'] >= (9, 10, 1)
 
         self.features.add_feature('SNAPMIRROR_V2', supported=ontapi_1_20)
         self.features.add_feature('SYSTEM_METRICS', supported=ontapi_1_2x)
@@ -103,6 +124,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         self.features.add_feature('FLEXGROUP_FAN_OUT', supported=ontapi_1_191)
         self.features.add_feature('SVM_MIGRATE', supported=ontap_9_10)
         self.features.add_feature('CIFS_LARGE_MTU', supported=ontapi_1_170)
+        self.features.add_feature('CIFS_CHANNEL_BINDING',
+                                  supported=ontap_9_10_1)
 
     def _invoke_vserver_api(self, na_element, vserver):
         server = copy.copy(self.connection)
@@ -1731,6 +1754,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
     def configure_active_directory(self, security_service, vserver_name):
         """Configures AD on Vserver."""
         self.configure_dns(security_service)
+        self.configure_certificates()
         self.configure_cifs_encryption()
         self.set_preferred_dc(security_service)
 
@@ -2042,9 +2066,31 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             raise exception.NetAppException(msg % e.message)
 
     @na_utils.trace
+    def configure_certificates(self):
+        for cert_pem_path in self._cert_pem_paths:
+            if not os.path.exists(cert_pem_path):
+                msg = _("Certificate is missing.")
+                raise exception.NetAppException(msg)
+            with open(cert_pem_path, 'r') as f:
+                cert_pem_data = f.read()
+
+            api_args = {
+                'certificate': cert_pem_data,
+                'type': 'server_ca'
+            }
+
+            try:
+                self.send_request('security-certificate-install', api_args)
+            except netapp_api.NaApiError as e:
+                msg = _("Failed to install certificate. %s")
+                raise exception.NetAppException(msg % e.message)
+
+    @na_utils.trace
     def configure_cifs_encryption(self):
         api_args = {
-            'is-aes-encryption-enabled': 'true'
+            'is-aes-encryption-enabled': 'true',
+            'use-ldaps-for-ad-ldap': 'true',
+            'session-security-for-ad-ldap': 'sign',
         }
 
         try:
