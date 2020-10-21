@@ -2557,6 +2557,28 @@ class NetAppClientCmodeTestCase(test.TestCase):
             mock.call('export-rule-create', export_rule_create_args),
             mock.call('export-rule-create', export_rule_create_args2)])
 
+    def test_configure_certificates(self):
+        from cryptography import x509
+        import datetime
+        import os
+
+        for cert_pem_path in self.client._cert_pem_paths:
+            self.assertTrue(os.path.exists(cert_pem_path),
+                            f'{cert_pem_path} not found')
+
+            with open(cert_pem_path, 'r', encoding='utf-8') as f:
+                cert_pem_data = f.read()
+
+            cert = x509.load_pem_x509_certificate(
+                bytes(cert_pem_data, encoding='utf-8'))
+            cert_will_expire_at = cert.not_valid_after
+            until_expiry = cert_will_expire_at - datetime.datetime.utcnow()
+
+            self.assertTrue(
+                until_expiry > datetime.timedelta(days=60),
+                f'cert {cert_pem_path} will expire in {until_expiry} '
+                f'at {cert_will_expire_at}')
+
     @ddt.data(fake.LDAP_LINUX_SECURITY_SERVICE, fake.LDAP_AD_SECURITY_SERVICE)
     def test_configure_ldap(self, sec_service):
         self.client.features.add_feature('LDAP_LDAP_SERVERS')

@@ -57,7 +57,8 @@ client_cmode_opts = [
             "/etc/ssl/certs/SAP_Global_Sub_CA_02.pem",
             "/etc/ssl/certs/SAP_Global_Sub_CA_04.pem",
             "/etc/ssl/certs/SAP_Global_Sub_CA_05.pem",
-            "/etc/ssl/certs/DigiCert_Global_Root_CA.pem"],
+            "/etc/ssl/certs/DigiCert_Global_Root_CA.pem",
+            ],
         help="Path to the x509 certificate used for secure ldap "
              "connections.")
 ]
@@ -1508,6 +1509,11 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         self.send_request('vserver-modify', api_args)
 
         for security_service in security_services:
+            if (security_service.get('dns_ip') and
+                    security_service.get('domain')):
+                vserver_client.configure_dns(security_service)
+
+        for security_service in security_services:
             if security_service['type'].lower() == 'ldap':
                 vserver_client.configure_ldap(security_service,
                                               timeout=timeout)
@@ -1614,9 +1620,6 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                         "server.")
                 LOG.exception(msg)
                 raise exception.NetAppException(msg)
-
-        if security_service.get('dns_ip'):
-            self.configure_dns(security_service)
 
         config_name = hashlib.md5(six.b(security_service['id'])).hexdigest()
         LOG.debug("Configuring LDAP Security Service: %s",
@@ -1753,7 +1756,6 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
     @na_utils.trace
     def configure_active_directory(self, security_service, vserver_name):
         """Configures AD on Vserver."""
-        self.configure_dns(security_service)
         self.configure_certificates()
         self.configure_cifs_encryption()
         self.set_preferred_dc(security_service)
@@ -1863,7 +1865,6 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                     '8.3 or later.')
             raise exception.NetAppException(msg)
 
-        self.configure_dns(security_service)
         spn = self._get_kerberos_service_principal_name(
             security_service, vserver_name)
 
@@ -2071,7 +2072,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             if not os.path.exists(cert_pem_path):
                 msg = _("Certificate is missing.")
                 raise exception.NetAppException(msg)
-            with open(cert_pem_path, 'r') as f:
+            with open(cert_pem_path, 'r', encoding='utf-8') as f:
                 cert_pem_data = f.read()
 
             api_args = {
