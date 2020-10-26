@@ -1363,6 +1363,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 vserver_client.configure_ldap(security_service)
 
             elif security_service['type'].lower() == 'active_directory':
+                # vserver_client.create_kerberos_realm(security_service)
+                # vserver_client.configure_kerberos(security_service,
+                #                                   vserver_name)
                 vserver_client.configure_active_directory(security_service,
                                                           vserver_name)
 
@@ -1479,14 +1482,14 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         """Creates Kerberos realm on cluster."""
 
         api_args = {
+            'ad-server-ip': security_service['server'],
+            'ad-server-name': 'mo-1edb42e39.mo.sap.corp',
             'admin-server-ip': security_service['server'],
             'admin-server-port': '749',
             'clock-skew': '5',
-            'comment': '',
-            'config-name': security_service['id'],
             'kdc-ip': security_service['server'],
             'kdc-port': '88',
-            'kdc-vendor': 'other',
+            'kdc-vendor': 'microsoft',
             'password-server-ip': security_service['server'],
             'password-server-port': '464',
             'realm': security_service['domain'].upper(),
