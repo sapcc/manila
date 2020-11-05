@@ -27,6 +27,7 @@ from oslo_log import log
 from manila import exception
 from manila.i18n import _
 from manila import network
+from manila.share import share_types
 from manila import utils
 
 LOG = log.getLogger(__name__)
@@ -884,6 +885,8 @@ class ShareDriver(object):
         """Method that allows driver to choose share server for provided share.
 
         If compatible share-server is not found, method should return None.
+        Share type can have optional extra-specs to limit either the number
+        of shares or the total size of all shares per server.
 
         :param context: Current context
         :param share_servers: list with share-server models
@@ -900,7 +903,44 @@ class ShareDriver(object):
                     return share_server
             return None
 
-        return share_servers[0] if share_servers else None
+        if share_servers:
+            extra_specs = share_types.get_extra_specs_from_share(share)
+            max_shares_per_server = extra_specs.get("max_shares_per_server")
+            max_gb_total_per_server = extra_specs.get(
+                "max_gb_total_per_server")
+
+            if not any((max_shares_per_server, max_gb_total_per_server)):
+                # if no limits are set, return first available share server
+                return share_servers[0]
+
+            for share_server in share_servers:
+                share_inst = share_server.get('share_instances', [])
+                if max_shares_per_server:
+                    total_shares = len(share_inst)
+                    if total_shares >= int(max_shares_per_server):
+                        LOG.debug("There are %(shr)s shares on %(srv)s share"
+                                  " server. Trying next server since "
+                                  "max_shares_per_server extra-spec is set.",
+                                  {'shr': total_shares,
+                                   'srv': share_server['id']})
+                        continue
+
+                if max_gb_total_per_server:
+                    total_share_size = 0
+                    for instance in share_inst:
+                        total_share_size += instance['share']['size']
+                    if total_share_size >= int(max_gb_total_per_server):
+                        LOG.debug("Total share size is %(size)s GB on %(srv)s"
+                                  "share server. Trying next server since "
+                                  "max_gb_total_per_server extra-spec is "
+                                  "set.", {'size': total_share_size,
+                                           'srv': share_server['id']})
+                        continue
+
+                return share_server
+
+        # if no share servers or available ones are too busy return None
+        return None
 
     def choose_share_server_compatible_with_share_group(
             self, context, share_servers, share_group_ref,

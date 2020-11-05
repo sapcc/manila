@@ -197,6 +197,8 @@ class ExtraSpecs(object):
     REVERT_TO_SNAPSHOT_SUPPORT = "revert_to_snapshot_support"
     MOUNT_SNAPSHOT_SUPPORT = "mount_snapshot_support"
     AVAILABILITY_ZONES = "availability_zones"
+    MAX_SHARES_PER_SERVER = "max_shares_per_server"
+    MAX_GB_TOTAL_PER_SERVER = "max_gb_total_per_server"
 
     # Extra specs containers
     REQUIRED = (

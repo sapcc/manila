@@ -130,8 +130,10 @@ def thin_provisioning(host_state_thin_provisioning):
 def capabilities_satisfied(capabilities, extra_specs):
 
     # These extra-specs are not capabilities for matching hosts
+    # Max shares and Gb total per server are handeled in generic driver
     ignored_extra_specs = (
         'availability_zones', 'capabilities:availability_zones',
+        'max_shares_per_server', 'max_gb_total_per_server',
     )
 
     for key, req in extra_specs.items():

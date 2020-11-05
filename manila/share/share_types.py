@@ -350,6 +350,10 @@ def is_valid_optional_extra_spec(key, value):
         return parse_boolean_extra_spec(key, value) is not None
     elif key == constants.ExtraSpecs.AVAILABILITY_ZONES:
         return is_valid_csv(value)
+    elif key == constants.ExtraSpecs.MAX_SHARES_PER_SERVER:
+        return value.isdigit()
+    elif key == constants.ExtraSpecs.MAX_GB_TOTAL_PER_SERVER:
+        return value.isdigit()
 
     return False
 

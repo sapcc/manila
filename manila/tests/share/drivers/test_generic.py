@@ -1767,6 +1767,53 @@ class GenericShareDriverTestCase(test.TestCase):
                                                         result):
         fake_share = "fake"
 
+        self.mock_object(share_types, 'get_extra_specs_from_share',
+                         mock.Mock(return_value={}))
+
+        actual_result = self._driver.choose_share_server_compatible_with_share(
+            self._context, share_servers, fake_share
+        )
+
+        self.assertEqual(result, actual_result)
+
+    @ddt.data({'share_servers': [], 'result': None},
+              {'share_servers': None, 'result': None},
+              {'share_servers': [{'id': 'fake'}],
+                  'result': {'id': 'fake'}},
+              {'share_servers': [{'id': 'fake'}, {'id': 'test'}],
+                  'result': {'id': 'fake'}})
+    @ddt.unpack
+    def tests_choose_share_server_compatible_with_share_max_shares(
+            self, share_servers, result
+            ):
+        fake_share = "fake"
+
+        self.mock_object(share_types, 'get_extra_specs_from_share',
+                         mock.Mock(return_value={'max_shares_per_server': 5}))
+
+        actual_result = self._driver.choose_share_server_compatible_with_share(
+            self._context, share_servers, fake_share
+        )
+
+        self.assertEqual(result, actual_result)
+
+    @ddt.data({'share_servers': [], 'result': None},
+              {'share_servers': None, 'result': None},
+              {'share_servers': [{'id': 'fake'}],
+                  'result': {'id': 'fake'}},
+              {'share_servers': [{'id': 'fake'}, {'id': 'test'}],
+                  'result': {'id': 'fake'}})
+    @ddt.unpack
+    def tests_choose_share_server_compatible_with_share_max_gb_total(
+            self, share_servers, result
+            ):
+        fake_share = "fake"
+
+        self.mock_object(share_types, 'get_extra_specs_from_share',
+                         mock.Mock(
+                             return_value={'max_gb_total_per_server': 50})
+                         )
+
         actual_result = self._driver.choose_share_server_compatible_with_share(
             self._context, share_servers, fake_share
         )

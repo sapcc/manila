@@ -728,6 +728,12 @@ class ShareManagerTestCase(test.TestCase):
         snapshot = db_utils.create_snapshot(share_id=parent_share['id'])
         snapshot_id = snapshot['id']
 
+        self.mock_object(share_types,
+                         'get_share_type_extra_specs',
+                         mock.Mock(return_value='False'))
+        self.mock_object(share_types, 'get_extra_specs_from_share',
+                         mock.Mock(return_value={}))
+
         self.share_manager.create_share_instance(
             self.context, share.instance['id'], snapshot_id=snapshot_id)
         self.assertEqual(share_id, db.share_get(context.get_admin_context(),
