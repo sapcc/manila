@@ -431,6 +431,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
         vserver_modify_args = {
             'aggr-list': [{'aggr-name': aggr_name} for aggr_name
                           in fake.SHARE_AGGREGATE_NAMES],
+            'volume-delete-retention-hours': 16,
             'vserver-name': fake.VSERVER_NAME
         }
 
@@ -438,7 +439,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
                                    fake.ROOT_VOLUME_AGGREGATE_NAME,
                                    fake.ROOT_VOLUME_NAME,
                                    fake.SHARE_AGGREGATE_NAMES,
-                                   None)
+                                   None,
+                                   16)
 
         self.client.send_request.assert_has_calls([
             mock.call('vserver-create', vserver_create_args),
@@ -460,6 +462,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
         vserver_modify_args = {
             'aggr-list': [{'aggr-name': aggr_name} for aggr_name
                           in fake.SHARE_AGGREGATE_NAMES],
+            'volume-delete-retention-hours': 24,
             'vserver-name': fake.VSERVER_NAME
         }
 
@@ -467,7 +470,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
                                    fake.ROOT_VOLUME_AGGREGATE_NAME,
                                    fake.ROOT_VOLUME_NAME,
                                    fake.SHARE_AGGREGATE_NAMES,
-                                   fake.IPSPACE_NAME)
+                                   fake.IPSPACE_NAME,
+                                   24)
 
         self.client.send_request.assert_has_calls([
             mock.call('vserver-create', vserver_create_args),
@@ -486,13 +490,15 @@ class NetAppClientCmodeTestCase(test.TestCase):
         vserver_modify_args = {
             'aggr-list': [{'aggr-name': aggr_name} for aggr_name
                           in fake.SHARE_AGGREGATE_NAMES],
+            'volume-delete-retention-hours': 18,
             'vserver-name': fake.VSERVER_NAME
         }
 
         self.client.create_vserver_dp_destination(
             fake.VSERVER_NAME,
             fake.SHARE_AGGREGATE_NAMES,
-            fake.IPSPACE_NAME)
+            fake.IPSPACE_NAME,
+            18)
 
         self.client.send_request.assert_has_calls([
             mock.call('vserver-create', vserver_create_args),
@@ -506,7 +512,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
                           fake.ROOT_VOLUME_AGGREGATE_NAME,
                           fake.ROOT_VOLUME_NAME,
                           fake.SHARE_AGGREGATE_NAMES,
-                          fake.IPSPACE_NAME)
+                          fake.IPSPACE_NAME,
+                          17)
 
     def test_get_vserver_root_volume_name(self):
 
