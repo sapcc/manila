@@ -159,7 +159,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
 
     @na_utils.trace
     def create_vserver(self, vserver_name, root_volume_aggregate_name,
-                       root_volume_name, aggregate_names, ipspace_name):
+                       root_volume_name, aggregate_names, ipspace_name,
+                       delete_retention_hours):
         """Creates new vserver and assigns aggregates."""
         create_args = {
             'vserver-name': vserver_name,
@@ -180,9 +181,18 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
 
         self.send_request('vserver-create', create_args)
 
+        self.modify_vserver(
+            vserver_name=vserver_name,
+            aggregate_names=aggregate_names,
+            retention_hours=delete_retention_hours
+        )
+
+    @na_utils.trace
+    def modify_vserver(self, vserver_name, aggregate_names, retention_hours):
         aggr_list = [{'aggr-name': aggr_name} for aggr_name in aggregate_names]
         modify_args = {
             'aggr-list': aggr_list,
+            'volume-delete-retention-hours': retention_hours,
             'vserver-name': vserver_name,
         }
         self.send_request('vserver-modify', modify_args)
