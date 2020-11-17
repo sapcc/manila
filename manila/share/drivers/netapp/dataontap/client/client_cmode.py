@@ -1572,7 +1572,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                       compression_enabled=False, max_files=None,
                       snapshot_reserve=None, volume_type='rw',
                       qos_policy_group=None, comment='',
-                      encrypt=False, **options):
+                      encrypt=None, **options):
         """Creates a volume."""
         api_args = {
             'containing-aggr-name': aggregate_name,
@@ -1595,12 +1595,14 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         if qos_policy_group is not None:
             api_args['qos-policy-group-name'] = qos_policy_group
 
-        if encrypt is True:
-            if not self.features.FLEXVOL_ENCRYPTION:
+        if encrypt is not None:
+            if encrypt is True and not self.features.FLEXVOL_ENCRYPTION:
                 msg = 'Flexvol encryption is not supported on this backend.'
                 raise exception.NetAppException(msg)
-            else:
+            elif encrypt is True:
                 api_args['encrypt'] = 'true'
+            else:
+                api_args['encrypt'] = 'false'
 
         self.send_request('volume-create', api_args)
 
@@ -3781,7 +3783,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         elif encrypt_destination:
             msg = 'Flexvol encryption is not supported on this backend.'
             raise exception.NetAppException(msg)
-        else:
+        elif encrypt_destination is False:
             api_args['encrypt-destination'] = 'false'
 
         if validation_only:
