@@ -3414,7 +3414,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
         }
 
         self.client._get_create_volume_api_args.assert_called_once_with(
-            fake.SHARE_NAME, False, None, None, None, 'rw', '', None, False,
+            fake.SHARE_NAME, False, None, None, None, 'rw', '', None, None,
             None, None, None)
         self.client.send_request.assert_called_with('volume-create',
                                                     volume_create_args)
@@ -3448,7 +3448,6 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'volume-comment': '',
             'junction-path': '/%s' % fake.SHARE_NAME,
             'space-reserve': ('none' if thin_provisioned else 'volume'),
-            'encrypt': 'false'
         }
 
         self.client.send_request.assert_called_once_with('volume-create',
@@ -3473,7 +3472,6 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'volume-comment': '',
             'junction-path': '/%s' % fake.SHARE_NAME,
             'space-reserve': 'volume',
-            'encrypt': 'false',
             'snaplock-type': snaplock_type,
         }
 
@@ -3522,7 +3520,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
         }
 
         self.client._get_create_volume_api_args.assert_called_once_with(
-            fake.SHARE_NAME, False, None, None, None, 'rw', '', None, False,
+            fake.SHARE_NAME, False, None, None, None, 'rw', '', None, None,
             None, None, None)
         self.client.send_request.assert_called_with('volume-create-async',
                                                     volume_create_args)
@@ -3604,7 +3602,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
         }
         self.assertEqual(expected_api_args, result_api_args)
 
-    def test_get_create_volume_api_args_no_extra_specs(self):
+    @ddt.data(None, True, False)
+    def test_get_create_volume_api_args_no_extra_specs(self, encrypt):
 
         self.client.features.add_feature('FLEXVOL_ENCRYPTION')
         volume_type = 'dp'
@@ -3614,7 +3613,6 @@ class NetAppClientCmodeTestCase(test.TestCase):
         language = None
         reserve = None
         qos_name = None
-        encrypt = False
         qos_adaptive_name = None
 
         result_api_args = self.client._get_create_volume_api_args(
@@ -3625,8 +3623,14 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'volume-type': volume_type,
             'volume-comment': cmt,
             'space-reserve': 'volume',
-            'encrypt': 'false'
         }
+
+        if encrypt is not None:
+            if encrypt:
+                expected_api_args['encrypt'] = 'true'
+            else:
+                expected_api_args['encrypt'] = 'false'
+
         self.assertEqual(expected_api_args, result_api_args)
 
     def test_get_create_volume_api_args_encrypted_not_supported(self):
