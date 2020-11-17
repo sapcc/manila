@@ -340,7 +340,8 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             self._client.create_vserver_dp_destination(
                 vserver_name,
                 aggregate_names,
-                ipspace_name)
+                ipspace_name,
+                self.configuration.netapp_delete_retention_hours)
             # Set up port and broadcast domain for the current ipspace
             self._create_port_and_broadcast_domain(
                 ipspace_name, network_info[0])
@@ -353,7 +354,8 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                 self.configuration.netapp_root_volume_aggregate,
                 self.configuration.netapp_root_volume,
                 aggr_set,
-                ipspace_name)
+                ipspace_name,
+                self.configuration.netapp_delete_retention_hours)
 
             vserver_client = self._get_api_client(vserver=vserver_name)
 
@@ -616,22 +618,26 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
     @na_utils.trace
     def _update_vserver(self, vserver, network_info):
         """Update a Vserver as needed."""
+        self._client.modify_vserver(
+            vserver_name=vserver,
+            aggregate_names=self._find_matching_aggregates(),
+            retention_hours=self.configuration.netapp_delete_retention_hours
+            )
         vserver_client = self._get_api_client(vserver=vserver)
+        vserver_client.enable_nfs(
+            self.configuration.netapp_enabled_share_protocols)
 
         for network in network_info:
             self._create_vserver_routes(vserver_client, network)
-        vserver_client.enable_nfs(
-            self.configuration.netapp_enabled_share_protocols)
-        security_services = network_info.get('security_services')
-        if security_services:
-            for security_service in security_services:
-                if security_service['type'].lower() == 'active_directory':
-                    try:
-                        vserver_client.configure_certificates()
-                        # vserver_client.configure_cifs_encryption()
-                        # vserver_client.configure_cifs_options(security_service) # noqa: E501
-                    except exception.NetAppException as e:
-                        LOG.warning(e.message)
+
+            security_services = network_info.get('security_services')
+            if security_services:
+                for security_service in security_services:
+                    if security_service['type'].lower() == 'active_directory':
+                        try:
+                            vserver_client.configure_certificates()
+                        except exception.NetAppException as e:
+                            LOG.warning(e.message)
 
     @na_utils.trace
     def teardown_server(self, server_details, security_services=None):
