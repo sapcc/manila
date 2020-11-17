@@ -1050,7 +1050,7 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             [fake.SHARE_AGGREGATE_NAME], fake.VOLUME_NAMES[0], fake.SHARE_SIZE,
             is_flexgroup=False, thin_provisioned=False, snapshot_policy=None,
             language=None, max_files=1, comment='', snapshot_reserve=None,
-            volume_type='rw', qos_policy_group=None, encrypt=False,
+            volume_type='rw', qos_policy_group=None, encrypt=None,
             adaptive_qos_policy_group=None, mount_point_name=None,
             efficiency_policy=fake.VOLUME_EFFICIENCY_POLICY_NAME,
             snaplock_type="enterprise",
@@ -1086,7 +1086,7 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             is_flexgroup=False)
 
         self.client._get_create_volume_body.assert_called_once_with(
-            fake.VOLUME_NAMES[0], False, None, None, None, 'rw', None, False,
+            fake.VOLUME_NAMES[0], False, None, None, None, 'rw', None, None,
             None, None, None, '')
         self.client.send_request.assert_called_once_with(
             '/storage/volumes', 'post', body=body, wait_on_accepted=True)
