@@ -964,7 +964,7 @@ class NetAppRestClient(object):
                       compression_enabled=False, max_files=None,
                       snapshot_reserve=None, volume_type='rw', comment='',
                       qos_policy_group=None, adaptive_qos_policy_group=None,
-                      encrypt=False, mount_point_name=None,
+                      encrypt=None, mount_point_name=None,
                       snaplock_type=None, **options):
         """Creates a FlexVol volume synchronously."""
 
@@ -999,7 +999,7 @@ class NetAppRestClient(object):
                             snapshot_policy=None,
                             language=None, snapshot_reserve=None,
                             volume_type='rw', comment='',
-                            qos_policy_group=None, encrypt=False,
+                            qos_policy_group=None, encrypt=None,
                             adaptive_qos_policy_group=None,
                             auto_provisioned=False, mount_point_name=None,
                             snaplock_type=None, **options):
@@ -1071,14 +1071,14 @@ class NetAppRestClient(object):
         if comment is not None:
             body['comment'] = comment
 
-        if encrypt is True:
-            if not self.features.FLEXVOL_ENCRYPTION:
+        if encrypt is not None:
+            if encrypt is True and not self.features.FLEXVOL_ENCRYPTION:
                 msg = 'Flexvol encryption is not supported on this backend.'
                 raise exception.NetAppException(msg)
-            else:
+            elif encrypt is True:
                 body['encryption.enabled'] = 'true'
-        else:
-            body['encryption.enabled'] = 'false'
+            else:
+                body['encryption.enabled'] = 'false'
 
         if snaplock_type is not None:
             body['snaplock.type'] = snaplock_type
