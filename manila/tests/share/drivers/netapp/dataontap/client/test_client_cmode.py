@@ -3110,7 +3110,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         self.client._get_create_volume_api_args.assert_called_once_with(
             fake.SHARE_NAME, False, None, None, None,
-            'rw', '', None, False, None)
+            'rw', '', None, None, None)
         self.client.send_request.assert_called_with('volume-create',
                                                     volume_create_args)
         (self.client.update_volume_efficiency_attributes.
@@ -3232,6 +3232,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
             qos_adaptive_name)
 
         expected_api_args = {
+            'encrypt': 'false',
             'volume-type': volume_type,
             'volume-comment': volume_comment,
         }
@@ -7190,7 +7191,6 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'vserver': fake.VSERVER_NAME,
             'dest-aggr': fake.SHARE_AGGREGATE_NAME,
             'cutover-action': 'wait',
-            'encrypt-destination': 'false'
         }
         if method_name.startswith('check'):
             expected_api_args['perform-validation-only'] = 'true'

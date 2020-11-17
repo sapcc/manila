@@ -2057,7 +2057,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                       compression_enabled=False, max_files=None,
                       snapshot_reserve=None, volume_type='rw', comment='',
                       qos_policy_group=None, adaptive_qos_policy_group=None,
-                      encrypt=False, **options):
+                      encrypt=None, **options):
         """Creates a volume."""
         if adaptive_qos_policy_group and not self.features.ADAPTIVE_QOS:
             msg = 'Adaptive QoS not supported on this backend ONTAP version.'
@@ -2144,12 +2144,14 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             api_args['qos-adaptive-policy-group-name'] = (
                 adaptive_qos_policy_group)
 
-        if encrypt is True:
-            if not self.features.FLEXVOL_ENCRYPTION:
+        if encrypt is not None:
+            if encrypt is True and not self.features.FLEXVOL_ENCRYPTION:
                 msg = 'Flexvol encryption is not supported on this backend.'
                 raise exception.NetAppException(msg)
-            else:
+            elif encrypt is True:
                 api_args['encrypt'] = 'true'
+            else:
+                api_args['encrypt'] = 'false'
 
         return api_args
 
@@ -4951,7 +4953,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         elif encrypt_destination:
             msg = 'Flexvol encryption is not supported on this backend.'
             raise exception.NetAppException(msg)
-        else:
+        elif encrypt_destination is False:
             api_args['encrypt-destination'] = 'false'
 
         if validation_only:
