@@ -1799,7 +1799,6 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             'compression_enabled': False,
             'dedup_enabled': False,
             'split': False,
-            'encrypt': False,
             'hide_snapdir': False,
             'fpolicy_extensions_to_exclude': None,
             'fpolicy_extensions_to_include': None,
