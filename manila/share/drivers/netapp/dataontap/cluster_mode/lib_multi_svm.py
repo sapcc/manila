@@ -627,20 +627,24 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
     @na_utils.trace
     def _update_vserver(self, vserver, network_info):
         """Update a Vserver as needed."""
+        self._client.modify_vserver(
+            vserver_name=vserver,
+            aggregate_names=self._find_matching_aggregates(),
+            retention_hours=self.configuration.netapp_delete_retention_hours
+        )
         vserver_client = self._get_api_client(vserver=vserver)
+        vserver_client.enable_nfs(
+            self.configuration.netapp_enabled_share_protocols)
 
         for network in network_info:
             self._create_vserver_routes(vserver_client, network)
-        vserver_client.enable_nfs(
-            self.configuration.netapp_enabled_share_protocols)
-        security_services = network_info.get('security_services')
+
+        security_services = network_info[0].get('security_services')
         if security_services:
             for security_service in security_services:
                 if security_service['type'].lower() == 'active_directory':
                     try:
                         vserver_client.configure_certificates()
-                        # vserver_client.configure_cifs_encryption()
-                        # vserver_client.configure_cifs_options(security_service) # noqa: E501
                     except exception.NetAppException as e:
                         LOG.warning(e.message)
 

@@ -4419,23 +4419,30 @@ class NetAppRestClient(object):
         if ipspace_name:
             body['ipspace.name'] = ipspace_name
 
+        self.send_request('/svm/svms', 'post', body=body)
+
+        self.modify_vserver(
+            vserver_name=vserver_name,
+            aggregate_names=aggregate_names,
+            retention_hours=delete_retention_hours
+        )
+
+    @na_utils.trace
+    def modify_vserver(self, vserver_name, aggregate_names, retention_hours):
+        body = {}
         body['aggregates'] = []
         for aggr_name in aggregate_names:
             body['aggregates'].append({'name': aggr_name})
 
-        self.send_request('/svm/svms', 'post', body=body)
-
-        if delete_retention_hours != 0:
-            try:
-                svm_uuid = self._get_unique_svm_by_name(vserver_name)
-                body = {
-                    'retention_period': delete_retention_hours
-                }
-                self.send_request(f'/svm/svms/{svm_uuid}', 'patch',
-                                  body=body)
-            except netapp_api.api.NaApiError:
-                LOG.warning('Failed to modify retention period for vserver '
-                            '%(server)s.', {'server': vserver_name})
+        if retention_hours != 0:
+            body['retention_period'] = retention_hours
+        try:
+            svm_uuid = self._get_unique_svm_by_name(vserver_name)
+            self.send_request(f'/svm/svms/{svm_uuid}', 'patch',
+                              body=body)
+        except netapp_api.api.NaApiError:
+            LOG.warning('Failed to modify retention period for vserver '
+                        '%(server)s.', {'server': vserver_name})
 
     @na_utils.trace
     def _modify_security_cert(self, vserver_name, security_cert_expire_days):

@@ -6035,12 +6035,12 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             'nsswitch.namemap': fake.FAKE_SERVER_SWITCH_NAME,
             'subtype': fake.FAKE_SUBTYPE,
             'ipspace.name': fake.IPSPACE_NAME,
-            'aggregates': [{
-                'name': fake.SHARE_AGGREGATE_NAME
-            }],
         }
 
         body_patch = {
+            'aggregates': [{
+                'name': fake.SHARE_AGGREGATE_NAME
+            }],
             'retention_period': fake.DELETE_RETENTION_HOURS,
         }
 

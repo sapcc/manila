@@ -238,15 +238,22 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
 
         self.send_request('vserver-create', create_args)
 
+        self.modify_vserver(
+            vserver_name=vserver_name,
+            aggregate_names=aggregate_names,
+            retention_hours=delete_retention_hours
+        )
+
+    @na_utils.trace
+    def modify_vserver(self, vserver_name, aggregate_names, retention_hours):
         aggr_list = [{'aggr-name': aggr_name} for aggr_name in aggregate_names]
         modify_args = {
             'aggr-list': aggr_list,
             'vserver-name': vserver_name,
         }
-        if (delete_retention_hours != 0 and
-                self.features.DELETE_RETENTION_HOURS):
+        if (retention_hours != 0 and self.features.DELETE_RETENTION_HOURS):
             modify_args.update(
-                {'volume-delete-retention-hours': delete_retention_hours})
+                {'volume-delete-retention-hours': retention_hours})
 
         self.send_request('vserver-modify', modify_args)
 
