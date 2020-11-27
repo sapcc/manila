@@ -100,6 +100,12 @@ class Detail(object):
           " Shrinking share operation failed."))
     FILTER_AFFINITY = ('020', FILTER_MSG % 'AffinityFilter')
     FILTER_ANTI_AFFINITY = ('021', FILTER_MSG % 'AntiAffinityFilter')
+    SECURITY_SERVICE_FAILED_AUTH = (
+        '022',
+        _("Share Driver failed to create share due to a security service "
+          "authentication issue. The security service user has either "
+          "insufficient privileges or wrong credentials. Please check your "
+          "user, password, ou and domain."))
 
     ALL = (UNKNOWN_ERROR,
            NO_VALID_HOST,
@@ -121,7 +127,8 @@ class Detail(object):
            DRIVER_REFUSED_SHRINK,
            DRIVER_FAILED_SHRINK,
            FILTER_AFFINITY,
-           FILTER_ANTI_AFFINITY)
+           FILTER_ANTI_AFFINITY,
+           SECURITY_SERVICE_FAILED_AUTH)
 
     # Exception and detail mappings
     EXCEPTION_DETAIL_MAPPINGS = {
