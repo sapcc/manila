@@ -1542,13 +1542,19 @@ def share_instances_get_all_by_share_network(context, share_network_id):
 
 
 @require_context
-def share_instances_get_all_by_share_server(context, share_server_id):
+def share_instances_get_all_by_share_server(context, share_server_id,
+                                            with_share_data=False):
     """Returns list of share instance with given share server."""
+    session = get_session()
     result = (
         model_query(context, models.ShareInstance).filter(
             models.ShareInstance.share_server_id == share_server_id,
         ).all()
     )
+
+    if with_share_data:
+        result = _set_instances_share_data(context, result, session)
+
     return result
 
 

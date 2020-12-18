@@ -334,10 +334,11 @@ def share_instances_get_all(context, filters=None):
     return IMPL.share_instances_get_all(context, filters=filters)
 
 
-def share_instances_get_all_by_share_server(context, share_server_id):
+def share_instances_get_all_by_share_server(context, share_server_id,
+                                            with_share_data=False):
     """Returns all share instances with given share_server_id."""
-    return IMPL.share_instances_get_all_by_share_server(context,
-                                                        share_server_id)
+    return IMPL.share_instances_get_all_by_share_server(
+        context, share_server_id, with_share_data=with_share_data)
 
 
 def share_instances_get_all_by_host(context, host, with_share_data=False):
