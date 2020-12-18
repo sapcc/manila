@@ -582,11 +582,14 @@ class ShareManager(manager.SchedulerDependentManager):
         for ss in available_share_servers[:]:
             share_instances = self.db.share_instances_get_all_by_share_server(
                 context, ss['id'], with_share_data=True)
-            share_instance_ids = [si['id'] for si in share_instances]
-            share_snapshot_instances = (
-                self.db.share_snapshot_instance_get_all_with_filters(
-                    context, {"share_instance_ids": share_instance_ids},
-                    with_share_data=True))
+            if len(share_instances) > 0:
+                share_instance_ids = [si['id'] for si in share_instances]
+                share_snapshot_instances = (
+                    self.db.share_snapshot_instance_get_all_with_filters(
+                        context, {"share_instance_ids": share_instance_ids},
+                        with_share_data=True))
+            else:
+                share_snapshot_instances = []
 
             server_instances_size_sum = 0
             num_instances = 0
