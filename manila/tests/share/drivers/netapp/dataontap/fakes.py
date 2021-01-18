@@ -146,6 +146,10 @@ SHARE_INSTANCE = {
     'status': constants.STATUS_AVAILABLE,
 }
 
+PARENT_SHARE_INSTANCE = copy.deepcopy(SHARE_INSTANCE)
+PARENT_SHARE_INSTANCE.update(
+    {'share_server_id': '8e6a2cc8-871f-4b1d-8364-5aad0f98da88'})
+
 FLEXVOL_TO_MANAGE = {
     'aggregate': POOL_NAME,
     'junction-path': '/%s' % FLEXVOL_NAME,
@@ -380,6 +384,7 @@ SNAPSHOT = {
     'id': SNAPSHOT_ID,
     'project_id': TENANT_ID,
     'share_id': PARENT_SHARE_ID,
+    'share_instance': PARENT_SHARE_INSTANCE,
     'status': constants.STATUS_CREATING,
     'provider_location': None,
 }

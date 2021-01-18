@@ -3945,18 +3945,20 @@ class NetAppClientCmodeTestCase(test.TestCase):
     def test_create_volume_clone(self, qos_policy_group_name):
 
         self.mock_object(self.client, 'send_request')
-        self.mock_object(self.client, 'split_volume_clone')
+        self.mock_object(self.vserver_client, 'split_volume_clone')
 
-        self.client.create_volume_clone(fake.SHARE_NAME,
+        self.client.create_volume_clone(fake.VSERVER_NAME,
+                                        self.vserver_client,
+                                        fake.SHARE_NAME,
                                         fake.PARENT_SHARE_NAME,
                                         fake.PARENT_SNAPSHOT_NAME,
                                         qos_policy_group=qos_policy_group_name)
 
         volume_clone_create_args = {
+            'vserver': fake.VSERVER_NAME,
             'volume': fake.SHARE_NAME,
             'parent-volume': fake.PARENT_SHARE_NAME,
             'parent-snapshot': fake.PARENT_SNAPSHOT_NAME,
-            'junction-path': '/%s' % fake.SHARE_NAME
         }
 
         if qos_policy_group_name:
@@ -3965,33 +3967,35 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         self.client.send_request.assert_has_calls([
             mock.call('volume-clone-create', volume_clone_create_args)])
-        self.assertFalse(self.client.split_volume_clone.called)
+        self.assertFalse(self.vserver_client.split_volume_clone.called)
 
     @ddt.data(True, False)
     def test_create_volume_clone_split(self, split):
 
         self.mock_object(self.client, 'send_request')
-        self.mock_object(self.client, 'split_volume_clone')
+        self.mock_object(self.vserver_client, 'split_volume_clone')
 
-        self.client.create_volume_clone(fake.SHARE_NAME,
+        self.client.create_volume_clone(fake.VSERVER_NAME,
+                                        self.vserver_client,
+                                        fake.SHARE_NAME,
                                         fake.PARENT_SHARE_NAME,
                                         fake.PARENT_SNAPSHOT_NAME,
                                         split=split)
 
         volume_clone_create_args = {
+            'vserver': fake.VSERVER_NAME,
             'volume': fake.SHARE_NAME,
             'parent-volume': fake.PARENT_SHARE_NAME,
             'parent-snapshot': fake.PARENT_SNAPSHOT_NAME,
-            'junction-path': '/%s' % fake.SHARE_NAME
         }
 
         self.client.send_request.assert_has_calls([
             mock.call('volume-clone-create', volume_clone_create_args)])
         if split:
-            self.client.split_volume_clone.assert_called_once_with(
+            self.vserver_client.split_volume_clone.assert_called_once_with(
                 fake.SHARE_NAME)
         else:
-            self.assertFalse(self.client.split_volume_clone.called)
+            self.assertFalse(self.vserver_client.split_volume_clone.called)
 
     @ddt.data(None,
               mock.Mock(side_effect=netapp_api.NaApiError(

@@ -446,6 +446,9 @@ class NetAppCmodeFileStorageLibrary(object):
         """Find all aggregates match pattern."""
         raise NotImplementedError()
 
+    def _get_vserver_name(self, server_id):
+        raise NotImplementedError()
+
     @na_utils.trace
     def _get_helper(self, share):
         """Returns driver which implements share protocol."""
@@ -787,6 +790,8 @@ class NetAppCmodeFileStorageLibrary(object):
         """Clones existing share."""
         share_name = self._get_backend_share_name(share['id'])
         parent_share_name = self._get_backend_share_name(snapshot['share_id'])
+        parent_vserver = self._get_vserver_name(
+            snapshot['share_instance']['share_server_id'])
         aggregate_name = share_utils.extract_host(share['host'], level='pool')
         share_comment = self._get_backend_share_comment(share)
         if snapshot.get('provider_location') is None:
@@ -800,9 +805,10 @@ class NetAppCmodeFileStorageLibrary(object):
         hide_snapdir = provisioning_options.pop('hide_snapdir')
 
         LOG.debug('Creating share from snapshot %s', snapshot['id'])
-        vserver_client.create_volume_clone(share_name, parent_share_name,
-                                           parent_snapshot_name,
-                                           **provisioning_options)
+        self._client.create_volume_clone(vserver, vserver_client, share_name,
+                                         parent_share_name,
+                                         parent_snapshot_name, parent_vserver,
+                                         **provisioning_options)
 
         # ccloud: set share comment
         vserver_client.modify_volume(aggregate_name, share_name,

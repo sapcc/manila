@@ -1072,6 +1072,10 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             self.library, '_get_provisioning_options_for_share',
             mock.Mock(return_value=provisioning_options))
         vserver = fake.VSERVER1
+        parent_vserver = fake.VSERVER2
+        mock_get_vserver = self.mock_object(
+            self.library, '_get_vserver_name',
+            mock.Mock(return_value=parent_vserver))
         vserver_client = mock.Mock()
         original_snapshot_size = 20
 
@@ -1094,11 +1098,13 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             fake_snapshot['id']) if not provider_location else 'fake_location'
         mock_get_provisioning_opts.assert_called_once_with(
             fake_share_inst, fake.VSERVER1)
-        vserver_client.create_volume_clone.assert_called_once_with(
-            share_name, parent_share_name, parent_snapshot_name,
-            thin_provisioned=True, snapshot_policy='default',
-            language='en-US', dedup_enabled=True, split=True, encrypt=False,
-            compression_enabled=False, max_files=5000)
+        mock_get_vserver.assert_called_once()
+        self.client.create_volume_clone.assert_called_once_with(
+            vserver, vserver_client, share_name, parent_share_name,
+            parent_snapshot_name, parent_vserver, thin_provisioned=True,
+            snapshot_policy='default', language='en-US', dedup_enabled=True,
+            split=True, encrypt=False, compression_enabled=False,
+            max_files=5000)
         if size > original_snapshot_size:
             vserver_client.set_volume_size.assert_called_once_with(
                 share_name, size)

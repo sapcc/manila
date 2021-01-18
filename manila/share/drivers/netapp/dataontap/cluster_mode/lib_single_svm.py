@@ -101,6 +101,10 @@ class NetAppCmodeSingleSVMFileStorageLibrary(
         vserver_client = self._get_api_client(self._vserver)
         return self._vserver, vserver_client
 
+    @na_utils.trace
+    def _get_vserver_name(self, server_id=None):
+        return self._vserver
+
     def _get_ems_pool_info(self):
         return {
             'pools': {

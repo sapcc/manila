@@ -2265,24 +2265,35 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         return volume
 
     @na_utils.trace
-    def create_volume_clone(self, volume_name, parent_volume_name,
-                            parent_snapshot_name=None, split=False,
+    def create_volume_clone(self, vserver, vserver_client, volume_name,
+                            parent_volume_name, parent_snapshot_name=None,
+                            parent_vserver=None, split=False,
                             qos_policy_group=None, **options):
         """Clones a volume."""
         api_args = {
+            'vserver': vserver,
             'volume': volume_name,
             'parent-volume': parent_volume_name,
             'parent-snapshot': parent_snapshot_name,
-            'junction-path': '/%s' % volume_name,
         }
 
         if qos_policy_group is not None:
             api_args['qos-policy-group-name'] = qos_policy_group
 
+        if parent_vserver is not None:
+            api_args['parent-vserver'] = parent_vserver
+
         self.send_request('volume-clone-create', api_args)
 
         if split:
-            self.split_volume_clone(volume_name)
+            vserver_client.split_volume_clone(volume_name)
+            # TODO: wait for split to finish
+            # else the following mount will fail
+            # "volume xyz is busy with other volume operations involving job ID"
+            # check 'volume-clone-split-status' API
+            # or capture the job ID from the response and go with the job API
+
+        vserver_client.mount_volume(volume_name)
 
     @na_utils.trace
     def split_volume_clone(self, volume_name):
