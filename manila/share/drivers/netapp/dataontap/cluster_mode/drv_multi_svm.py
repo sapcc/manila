@@ -35,6 +35,10 @@ class NetAppCmodeMultiSvmShareDriver(driver.ShareDriver):
             True, *args, **kwargs)
         self.library = lib_multi_svm.NetAppCmodeMultiSVMFileStorageLibrary(
             self.DRIVER_NAME, **kwargs)
+        self.dhss_mandatory_security_service_association = {
+            'nfs': None,
+            'cifs': ['active_directory', 'ldap', 'kerberos', ]
+        }
 
     def do_setup(self, context):
         self.library.do_setup(context)

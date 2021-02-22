@@ -106,6 +106,11 @@ class Detail(object):
           "authentication issue. The security service user has either "
           "insufficient privileges or wrong credentials. Please check your "
           "user, password, ou and domain."))
+    MISSING_SECURITY_SERVICE = (
+        '023',
+        _("Share Driver failed to create share because a security service "
+          "has not been added to the share network used. Please add a "
+          "security service to the share network."))
 
     ALL = (UNKNOWN_ERROR,
            NO_VALID_HOST,
@@ -128,7 +133,9 @@ class Detail(object):
            DRIVER_FAILED_SHRINK,
            FILTER_AFFINITY,
            FILTER_ANTI_AFFINITY,
-           SECURITY_SERVICE_FAILED_AUTH)
+           SECURITY_SERVICE_FAILED_AUTH,
+           MISSING_SECURITY_SERVICE)
+
 
     # Exception and detail mappings
     EXCEPTION_DETAIL_MAPPINGS = {

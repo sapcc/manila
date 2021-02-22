@@ -283,6 +283,7 @@ class ShareDriver(object):
         self._stats = {}
         self.ip_versions = None
         self.ipv6_implemented = False
+        self.dhss_mandatory_security_service_association = {}
 
         self.pools = []
         if self.configuration:
