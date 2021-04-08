@@ -2905,7 +2905,8 @@ class NetAppCmodeFileStorageLibrary(object):
         # match the name of the share.
         export_locations = self._create_export(
             destination_share, share_server, vserver, vserver_client,
-            clear_current_export_policy=False)
+            clear_current_export_policy=False,
+            ensure_share_already_exists=True)
         src_snaps_dict = {s['id']: s for s in source_snapshots}
         snapshot_updates = {}
 

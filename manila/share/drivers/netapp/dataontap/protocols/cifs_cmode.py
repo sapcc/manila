@@ -45,11 +45,13 @@ class NetAppCmodeCIFSHelper(base.NetAppBaseHelper):
         if share['share_proto'].lower() != 'multi':
             self._client.set_volume_security_style(share_name,
                                                    security_style='ntfs')
+        export_path = self._client.get_volume_junction_path(
+            share_name, is_style_cifs=True).lstrip("\\")
 
         # Return a callback that may be used for generating export paths
         # for this share.
-        return (lambda export_address, share_name=share_name:
-                r'\\%s\%s' % (export_address, share_name))
+        return (lambda export_address, export_path=export_path:
+                r'\\%s\%s' % (export_address, export_path))
 
     @na_utils.trace
     def delete_share(self, share, share_name):
