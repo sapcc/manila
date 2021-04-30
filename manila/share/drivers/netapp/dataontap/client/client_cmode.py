@@ -74,6 +74,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         ontapi_1_120 = ontapi_version >= (1, 120)
         ontapi_1_140 = ontapi_version >= (1, 140)
         ontapi_1_150 = ontapi_version >= (1, 150)
+        ontapi_1_170 = ontapi_version >= (1, 170)
         ontapi_1_180 = ontapi_version >= (1, 180)
         ontapi_1_191 = ontapi_version >= (1, 191)
         ontap_9_10 = self.get_system_version()['version-tuple'] >= (9, 10, 0)
@@ -101,6 +102,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         self.features.add_feature('FLEXGROUP', supported=ontapi_1_180)
         self.features.add_feature('FLEXGROUP_FAN_OUT', supported=ontapi_1_191)
         self.features.add_feature('SVM_MIGRATE', supported=ontap_9_10)
+        self.features.add_feature('CIFS_LARGE_MTU', supported=ontapi_1_170)
 
     def _invoke_vserver_api(self, na_element, vserver):
         server = copy.copy(self.connection)
@@ -1479,8 +1481,10 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                                               timeout=timeout)
 
             elif security_service['type'].lower() == 'active_directory':
+                vserver_client.configure_cifs_encryption()
                 vserver_client.configure_active_directory(security_service,
                                                           vserver_name)
+                vserver_client.configure_cifs_options()
 
             elif security_service['type'].lower() == 'kerberos':
                 vserver_client.create_kerberos_realm(security_service)
@@ -2023,6 +2027,20 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         except netapp_api.NaApiError as e:
             msg = _("Failed to set aes encryption. %s")
             raise exception.NetAppException(msg % e.message)
+
+    @na_utils.trace
+    def configure_cifs_options(self):
+        if not self.features.CIFS_LARGE_MTU:
+            api_args = {
+                'is-large-mtu-enabled': 'true'
+            }
+
+            try:
+                self.send_request('cifs-options-modify', api_args)
+            except netapp_api.NaApiError as e:
+                msg = _("Failed to set cifs options. %s")
+                # no raise to be non-blocking
+                LOG.warning(msg, e.message)
 
     @na_utils.trace
     def set_preferred_dc(self, security_service):
