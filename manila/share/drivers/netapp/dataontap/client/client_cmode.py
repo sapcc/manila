@@ -72,6 +72,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         ontapi_1_110 = ontapi_version >= (1, 110)
         ontapi_1_140 = ontapi_version >= (1, 140)
         ontapi_1_150 = ontapi_version >= (1, 150)
+        ontapi_1_170 = ontapi_version >= (1, 170)
 
         self.features.add_feature('SNAPMIRROR_V2', supported=ontapi_1_20)
         self.features.add_feature('SYSTEM_METRICS', supported=ontapi_1_2x)
@@ -90,6 +91,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                                   supported=ontapi_1_140)
         self.features.add_feature('CIFS_DC_ADD_SKIP_CHECK',
                                   supported=ontapi_1_150)
+        self.features.add_feature('CIFS_LARGE_MTU', supported=ontapi_1_170)
 
     def _invoke_vserver_api(self, na_element, vserver):
         server = copy.copy(self.connection)
@@ -1444,6 +1446,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 vserver_client.configure_ldap(security_service)
 
             elif security_service['type'].lower() == 'active_directory':
+                vserver_client.update_active_directory_settings()
                 vserver_client.configure_active_directory(security_service,
                                                           vserver_name)
 
@@ -1537,10 +1540,15 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         self.send_request('ldap-config-create', api_args)
 
     @na_utils.trace
+    def update_active_directory_settings(self):
+        """Prepares AD on Vserver."""
+        self.configure_cifs_encryption()
+        self.configure_cifs_options()
+
+    @na_utils.trace
     def configure_active_directory(self, security_service, vserver_name):
         """Configures AD on Vserver."""
         self.configure_dns(security_service)
-        self.configure_cifs_encryption()
         self.set_preferred_dc(security_service)
 
         # 'cifs-server' is CIFS Server NetBIOS Name, max length is 15.
@@ -1662,6 +1670,19 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         except netapp_api.NaApiError as e:
             msg = _("Failed to set aes encryption. %s")
             raise exception.NetAppException(msg % e.message)
+
+    @na_utils.trace
+    def configure_cifs_options(self):
+        if not self.features.CIFS_LARGE_MTU:
+            api_args = {
+                'is-large-mtu-enabled': 'true'
+            }
+
+            try:
+                self.send_request('cifs-options-modify', api_args)
+            except netapp_api.NaApiError as e:
+                msg = _("Failed to set cifs options. %s")
+                raise exception.NetAppException(msg % e.message)
 
     @na_utils.trace
     def set_preferred_dc(self, security_service):
