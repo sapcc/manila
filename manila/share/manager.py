@@ -422,6 +422,8 @@ class ShareManager(manager.SchedulerDependentManager):
                 ctxt, share_server['share_network_subnet_id'])
             share_network = self.db.share_network_get(
                 ctxt, share_network_subnet['share_network_id'])
+            self.driver.ensure_net_allocations(
+                ctxt, share_server, share_network, share_network_subnet)
             network_allocations = (
                 self.db.network_allocations_get_for_share_server(
                     ctxt, share_server['id'], label='user'))
@@ -439,7 +441,8 @@ class ShareManager(manager.SchedulerDependentManager):
             network_info = self._form_server_setup_info(
                 ctxt, share_server, share_network, share_network_subnet)
             server_info = self.driver.ensure_share_server(
-                ctxt, share_server, network_info)
+                ctxt, share_server, network_info, share_network,
+                share_network_subnet)
             if server_info:
                 LOG.debug(
                     ("Adding server_info %(server_info)s to share server "

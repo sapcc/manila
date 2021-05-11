@@ -441,6 +441,12 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             self._client.create_port_and_broadcast_domain(
                 node_name, port, vlan, mtu, ipspace_name)
 
+    def get_ss_network_allocations_number(self, share_server):
+        server_details = share_server['backend_details']
+        vserver_name = server_details.get('vserver_name')
+        vserver_client = self._get_api_client(vserver=vserver_name)
+        return len(vserver_client.get_network_interfaces())
+
     @na_utils.trace
     def get_network_allocations_number(self):
         """Get number of network interfaces to be created."""
@@ -483,10 +489,13 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
 
         self._update_vserver(vserver, network_info)
 
-        if missing_nfs_config:
-            return server_details
-        else:
-            return None
+        ports = {}
+        for network_allocation in network_info['network_allocations']:
+            ports[network_allocation['id']] = network_allocation['ip_address']
+        server_details['ports'] = jsonutils.dumps(ports)
+
+        return server_details
+
 
     @na_utils.trace
     def _update_vserver(self, vserver, network_info):
@@ -498,6 +507,15 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             )
 
         vserver_client = self._get_api_client(vserver=vserver)
+        node_name = self._client.list_cluster_nodes()[0]
+        port = self._get_node_data_port(node_name)
+        vlan = network_info['segmentation_id']
+        ipspace_name = self._client.get_ipspace_name_for_vlan_port(
+            node_name, port, vlan)
+        self._create_vserver_lifs(vserver_name,
+                                  vserver_client,
+                                  network_info,
+                                  ipspace_name)
         self._create_vserver_routes(vserver_client, network_info)
         vserver_client.enable_nfs(
             self.configuration.netapp_enabled_share_protocols)
