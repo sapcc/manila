@@ -98,6 +98,8 @@ class Detail(object):
         '019',
         _("Share Driver does not support shrinking shares."
           " Shrinking share operation failed."))
+    FILTER_AFFINITY = ('020', FILTER_MSG % 'Affinity')
+    FILTER_ANTI_AFFINITY = ('021', FILTER_MSG % 'AntiAffinity')
 
     ALL = (UNKNOWN_ERROR,
            NO_VALID_HOST,
@@ -105,6 +107,8 @@ class Detail(object):
            NO_SHARE_SERVER,
            NO_ACTIVE_AVAILABLE_REPLICA,
            NO_ACTIVE_REPLICA,
+           FILTER_AFFINITY,
+           FILTER_ANTI_AFFINITY,
            FILTER_AVAILABILITY,
            FILTER_CAPABILITIES,
            FILTER_CAPACITY,
@@ -136,6 +140,8 @@ class Detail(object):
         'RetryFilter': FILTER_RETRY,
         'ShareReplicationFilter': FILTER_REPLICATION,
         'CreateFromSnapshotFilter': FILTER_CREATE_FROM_SNAPSHOT,
+        'AffinityFilter': FILTER_AFFINITY,
+        'AntiAffinityFilter': FILTER_ANTI_AFFINITY,
     }
 
 
