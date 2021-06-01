@@ -159,6 +159,20 @@ class API(base.Base):
                availability_zones=None, scheduler_hints=None):
         """Create new share."""
 
+        # Add affinity/anti-affinity scheduler hints to hidden metadata.
+        # This is required to take rules into account on share migration.
+        if scheduler_hints:
+            affinity_filter = scheduler_hints.get('affinity_filter')
+            anti_affinity_filter = scheduler_hints.get('anti_affinity_filter')
+            if affinity_filter:
+                # We save list as a comma-separated string of uuid-s
+                metadata['_ccloud_affinity_filter'] = ','.join(map(str,
+                    affinity_filter))
+            if anti_affinity_filter:
+                # We save list as a comma-separated string of uuid-s
+                metadata['_ccloud_anti_affinity_filter'] = ','.join(map(str,
+                    anti_affinity_filter))
+
         self._check_metadata_properties(metadata)
 
         if snapshot_id is not None:

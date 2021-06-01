@@ -90,6 +90,16 @@ class AffinityBaseFilter(base_host.BaseHostFilter):
 
         return filter_properties
 
+    def _get_host_name_from_state(self, host_state_host):
+        host_name = ""
+        if host_state_host:
+            full_name = host_state_host.split('@')
+            if len(full_name) == 2:
+                # we can relibly say that first is the hostname
+                host_name = full_name[0]
+
+        return host_name
+
 
 class AffinityFilter(AffinityBaseFilter):
     _filter_type = AFFINITY_FILTER
@@ -97,7 +107,12 @@ class AffinityFilter(AffinityBaseFilter):
     def host_passes(self, host_state, filter_properties):
         allowed_hosts = \
             filter_properties['scheduler_hints'][self._filter_type]
-        return host_state.host in allowed_hosts
+        host_name = self._get_host_name_from_state(host_state.host)
+
+        for allowed_host in allowed_hosts:
+            if host_name in allowed_host:
+                # pass the host immediately:
+                return host_state.host
 
 
 class AntiAffinityFilter(AffinityBaseFilter):
@@ -106,7 +121,14 @@ class AntiAffinityFilter(AffinityBaseFilter):
     def host_passes(self, host_state, filter_properties):
         forbidden_hosts = \
             filter_properties['scheduler_hints'][self._filter_type]
-        return host_state.host not in forbidden_hosts
+        host_name = self._get_host_name_from_state(host_state.host)
+
+        for forbidden_host in forbidden_hosts:
+            if host_name in self._get_host_name_from_state(forbidden_host):
+                # do not pass the host if there is a host_name match:
+                return None
+
+        return host_state.host
 
 
 class SchedulerHintsNotSet(Exception):

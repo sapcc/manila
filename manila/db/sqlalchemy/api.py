@@ -41,7 +41,9 @@ from oslo_utils import timeutils
 from oslo_utils import uuidutils
 import six
 from sqlalchemy import MetaData
+from sqlalchemy import and_
 from sqlalchemy import or_
+from sqlalchemy.orm import contains_eager
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import subqueryload
 from sqlalchemy.sql.expression import literal
@@ -61,6 +63,7 @@ LOG = log.getLogger(__name__)
 QUOTAS = quota.QUOTAS
 
 _DEFAULT_QUOTA_NAME = 'default'
+_DEFAULT_ADMIN_METADATA = '_ccloud'
 PER_PROJECT_QUOTAS = []
 
 _FACADE = None
@@ -1895,6 +1898,27 @@ def _share_get_query(context, session=None):
         session = get_session()
     return (model_query(context, models.Share, session=session).
             options(joinedload('share_metadata')))
+#    else:
+#        # filter private admin metadata:
+#        query = model_query(context, models.Share, session=session)
+#        query = query.outerjoin(models.ShareMetadata,
+#                                models.ShareMetadata.share_id == models.Share.id).options(contains_eager(models.Share.share_metadata))
+#        query = query.filter(models.ShareMetadata.key.notlike('_ccloud%'))
+
+#        join(User.addresses).\
+#        filter(Address.email_address.like('%@aol.com')).\
+#        options(contains_eager(User.addresses)).\
+#        populate_existing()
+
+#        return query
+
+#        return (model_query(context, models.Share, session=session).\
+#                join('share_metadata').\
+#                filter(models.ShareMetadata.key.like(_DEFAULT_ADMIN_METADATA + '%')).\
+#                options(contains_eager('share_metadata')))
+#                join('share_metadata').
+#                filter(models.ShareMetadata.key.like(
+#                           _DEFAULT_ADMIN_METADATA + '%')))
 
 
 def _metadata_refs(metadata_dict, meta_class):
@@ -1980,6 +2004,20 @@ def share_get(context, share_id, session=None):
     if result is None:
         raise exception.NotFound()
 
+#    if not context.is_admin:
+#        # do not return private admin metadata for regular users:
+#        for metadata in result.share_metadata[:]:
+#            LOG.info("The METADATA KEY: %s" % metadata.key)
+#            if metadata.key.startswith(_DEFAULT_ADMIN_METADATA):
+#                LOG.info("Stuff should get deleted here")
+#                result.share_metadata.remove(metadata)
+
+#        if (context.is_admin or
+#                not row['key'].startswith(_DEFAULT_ADMIN_METADATA)):
+            # filter rows that hold private admin metadata, unless admin:
+#            result[row['key']] = row['value']
+
+
     return result
 
 
@@ -2047,10 +2085,15 @@ def _share_get_all_with_filters(context, project_id=None, share_server_id=None,
 
     if 'metadata' in filters:
         for k, v in filters['metadata'].items():
-            # pylint: disable=no-member
-            query = query.filter(
-                or_(models.Share.share_metadata.any(
-                    key=k, value=v)))
+            if v == "*":
+                # pylint: disable=no-member
+                query = query.filter(
+                    or_(models.Share.share_metadata.any(key=k)))
+            else:
+                # pylint: disable=no-member
+                query = query.filter(
+                    or_(models.Share.share_metadata.any(key=k, value=v)))
+
     if 'extra_specs' in filters:
         query = query.join(
             models.ShareTypeExtraSpecs,
@@ -3204,8 +3247,15 @@ def share_metadata_get(context, share_id):
 @require_context
 @require_share_exists
 def share_metadata_delete(context, share_id, key):
-    (_share_metadata_get_query(context, share_id).
-        filter_by(key=key).soft_delete())
+    if (context.is_admin or
+            not key.startswith(_DEFAULT_ADMIN_METADATA)):
+        # admins can delete any metadata, but users cannot delete private one
+        (_share_metadata_get_query(context, share_id).
+            filter_by(key=key).soft_delete())
+    else:
+        # normal user should not be able to see/delete private admin metadata
+        raise exception.ShareMetadataNotFound(metadata_key=key,
+                                              share_id=share_id)
 
 
 @require_context
@@ -3226,7 +3276,10 @@ def _share_metadata_get(context, share_id, session=None):
                                      session=session).all()
     result = {}
     for row in rows:
-        result[row['key']] = row['value']
+        if (context.is_admin or
+                not row['key'].startswith(_DEFAULT_ADMIN_METADATA)):
+            # filter rows that hold private admin metadata, unless admin:
+            result[row['key']] = row['value']
 
     return result
 
@@ -3243,10 +3296,12 @@ def _share_metadata_update(context, share_id, metadata, delete, session=None):
                                                     session=session)
             for meta_key, meta_value in original_metadata.items():
                 if meta_key not in metadata:
-                    meta_ref = _share_metadata_get_item(context, share_id,
-                                                        meta_key,
-                                                        session=session)
-                    meta_ref.soft_delete(session=session)
+                    # But do not delete private admin metadata:
+                    if not meta_key.startswith(_DEFAULT_ADMIN_METADATA):
+                        meta_ref = _share_metadata_get_item(context, share_id,
+                                                            meta_key,
+                                                            session=session)
+                        meta_ref.soft_delete(session=session)
 
         meta_ref = None
 
@@ -3254,19 +3309,24 @@ def _share_metadata_update(context, share_id, metadata, delete, session=None):
         # objects
         for meta_key, meta_value in metadata.items():
 
-            # update the value whether it exists or not
-            item = {"value": meta_value}
+            # Update any item if admin,
+            # otherwise filter out private admin metadata keys
+            if (context.is_admin or
+                    not meta_key.startswith(_DEFAULT_ADMIN_METADATA)):
 
-            try:
-                meta_ref = _share_metadata_get_item(context, share_id,
-                                                    meta_key,
-                                                    session=session)
-            except exception.ShareMetadataNotFound:
-                meta_ref = models.ShareMetadata()
-                item.update({"key": meta_key, "share_id": share_id})
+                # update the value whether it exists or not
+                item = {"value": meta_value}
 
-            meta_ref.update(item)
-            meta_ref.save(session=session)
+                try:
+                    meta_ref = _share_metadata_get_item(context, share_id,
+                                                        meta_key,
+                                                        session=session)
+                except exception.ShareMetadataNotFound:
+                    meta_ref = models.ShareMetadata()
+                    item.update({"key": meta_key, "share_id": share_id})
+
+                meta_ref.update(item)
+                meta_ref.save(session=session)
 
         return metadata
 
