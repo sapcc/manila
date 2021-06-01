@@ -98,6 +98,8 @@ class Detail(object):
         '019',
         _("Share Driver does not support shrinking shares."
           " Shrinking share operation failed."))
+    FILTER_AFFINITY = ('020', FILTER_MSG % 'AffinityFilter')
+    FILTER_ANTI_AFFINITY = ('021', FILTER_MSG % 'AntiAffinityFilter')
 
     ALL = (UNKNOWN_ERROR,
            NO_VALID_HOST,
@@ -117,7 +119,9 @@ class Detail(object):
            FILTER_CREATE_FROM_SNAPSHOT,
            DRIVER_FAILED_CREATING_FROM_SNAP,
            DRIVER_REFUSED_SHRINK,
-           DRIVER_FAILED_SHRINK)
+           DRIVER_FAILED_SHRINK,
+           FILTER_AFFINITY,
+           FILTER_ANTI_AFFINITY)
 
     # Exception and detail mappings
     EXCEPTION_DETAIL_MAPPINGS = {
@@ -136,6 +140,8 @@ class Detail(object):
         'RetryFilter': FILTER_RETRY,
         'ShareReplicationFilter': FILTER_REPLICATION,
         'CreateFromSnapshotFilter': FILTER_CREATE_FROM_SNAPSHOT,
+        'AffinityFilter': FILTER_AFFINITY,
+        'AntiAffinityFilter': FILTER_ANTI_AFFINITY,
     }
 
 
