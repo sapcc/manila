@@ -441,6 +441,20 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             self._client.create_port_and_broadcast_domain(
                 node_name, port, vlan, mtu, ipspace_name)
 
+    @na_utils.trace
+    def _ensure_broadcast_domain_for_ports(self, ipspace_name, network_info):
+        nodes = self._client.list_cluster_nodes()
+        node_network_info = zip(nodes, network_info['network_allocations'])
+
+        for node_name, network_allocation in node_network_info:
+
+            port = self._get_node_data_port(node_name)
+            network_mtu = network_allocation.get('mtu')
+            mtu = network_mtu or DEFAULT_MTU
+
+            self._client._ensure_broadcast_domain_for_port(
+               node_name, port, mtu, ipspace_name)
+
     def get_ss_network_allocations_number(self, share_server):
         server_details = share_server['backend_details']
         vserver_name = server_details.get('vserver_name')
@@ -512,10 +526,15 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         vlan = network_info['segmentation_id']
         ipspace_name = self._client.get_ipspace_name_for_vlan_port(
             node_name, port, vlan)
+
+        self._ensure_broadcast_domain_for_ports(ipspace_name,
+                                                network_info)
+
         self._create_vserver_lifs(vserver_name,
                                   vserver_client,
                                   network_info,
                                   ipspace_name)
+
         self._create_vserver_routes(vserver_client, network_info)
         vserver_client.enable_nfs(
             self.configuration.netapp_enabled_share_protocols)
