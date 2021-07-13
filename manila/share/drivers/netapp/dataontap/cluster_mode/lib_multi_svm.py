@@ -344,17 +344,50 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         return ipspace_name
 
     @na_utils.trace
+    def _check_vserver_has_lif(self, svm_net, node_name):
+        """Returns True if vserver already has a LIF on the given node"""
+        for net in svm_net:
+            if net.get('home-node') == node_name:
+                # the node already has a LIF, continue to next node:
+                LOG.info("The node %s already has a LIF" % node_name)
+                return True
+
+    @na_utils.trace
     def _create_vserver_lifs(self, vserver_name, vserver_client, network_info,
                              ipspace_name):
         """Create Vserver data logical interfaces (LIFs)."""
 
         nodes = self._client.list_cluster_nodes()
+        LOG.info("Nodes are %s" % nodes)
+        LOG.info("Network info is %s" % network_info)
+
         node_network_info = zip(nodes, network_info['network_allocations'])
 
         for node_name, network_allocation in node_network_info:
+            LOG.info("node_name is %s" % node_name)
+
             lif_name = self._get_lif_name(node_name, network_allocation)
-            self._create_lif(vserver_client, vserver_name, ipspace_name,
-                             node_name, lif_name, network_allocation)
+            LOG.info("The LIF name is %s" % lif_name)
+
+            ifaces = self._client.get_network_interfaces()
+            svm_net = list(filter(lambda iface: iface['vserver'] == vserver_name, ifaces))
+            LOG.info("The SVM net interfaces are: %s" % svm_net)
+
+            # check if svm already has a LIF on the respective node:
+            if self._check_vserver_has_lif(svm_net, node_name):
+                continue
+
+            # check if that LIF is already present:
+            lifs_list = self._client.list_network_interfaces()
+            if lif_name in lifs_list:
+                LOG.info("The LIF with name '%s' already exists. Skipping creation." % lif_name)
+                continue
+
+            try:
+                self._create_lif(vserver_client, vserver_name, ipspace_name,
+                                 node_name, lif_name, network_allocation)
+            except Exception as exc:
+                LOG.error("An Exception while creating LIFs: %s" % exc)
 
     @na_utils.trace
     def _create_vserver_admin_lif(self, vserver_name, vserver_client,
@@ -442,6 +475,26 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                 node_name, port, vlan, mtu, ipspace_name)
 
     @na_utils.trace
+    def _ensure_broadcast_domain_for_ports(self, ipspace_name, network_info):
+        nodes = self._client.list_cluster_nodes()
+        node_network_info = zip(nodes, network_info['network_allocations'])
+
+        for node_name, network_allocation in node_network_info:
+
+            port = self._get_node_data_port(node_name)
+            network_mtu = network_allocation.get('mtu')
+            mtu = network_mtu or DEFAULT_MTU
+
+            self._client._ensure_broadcast_domain_for_port(
+               node_name, port, mtu, ipspace_name)
+
+    def get_ss_network_allocations_number(self, share_server):
+        server_details = share_server['backend_details']
+        vserver_name = server_details.get('vserver_name')
+        vserver_client = self._get_api_client(vserver=vserver_name)
+        return len(vserver_client.get_network_interfaces())
+
+    @na_utils.trace
     def get_network_allocations_number(self):
         """Get number of network interfaces to be created."""
         return len(self._client.list_cluster_nodes())
@@ -483,10 +536,13 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
 
         self._update_vserver(vserver, network_info)
 
-        if missing_nfs_config:
-            return server_details
-        else:
-            return None
+        ports = {}
+        for network_allocation in network_info['network_allocations']:
+            ports[network_allocation['id']] = network_allocation['ip_address']
+        server_details['ports'] = jsonutils.dumps(ports)
+
+        return server_details
+
 
     @na_utils.trace
     def _update_vserver(self, vserver, network_info):
@@ -498,6 +554,28 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             )
 
         vserver_client = self._get_api_client(vserver=vserver)
+        node_name = self._client.list_cluster_nodes()[0]
+        port = self._get_node_data_port(node_name)
+        vlan = network_info['segmentation_id']
+        LOG.info("NETWORK INFO is %s" % network_info)
+#        ipspace_name = self._client.get_ipspace_name_for_vlan_port(
+#            node_name, port, vlan) or self._create_ipspace(network_info)
+
+        ipspace_id = network_info.get('neutron_subnet_id')
+        if not ipspace_id:
+            ipspace_name = client_cmode.DEFAULT_IPSPACE
+        else:
+            ipspace_name = self._get_valid_ipspace_name(ipspace_id)
+
+        LOG.info("IPSPACE_NAME is %s" % ipspace_name)
+
+        #self._ensure_broadcast_domain_for_ports(ipspace_name,
+        #                                        network_info)
+        self._create_vserver_lifs(vserver,
+                                  vserver_client,
+                                  network_info,
+                                  ipspace_name)
+
         self._create_vserver_routes(vserver_client, network_info)
         vserver_client.enable_nfs(
             self.configuration.netapp_enabled_share_protocols)

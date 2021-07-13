@@ -272,6 +272,16 @@ class NetAppCmodeMultiSvmShareDriver(driver.ShareDriver):
     def ensure_shares(self, context, shares):
         return self.library.ensure_shares(context, shares)
 
+    def ensure_net_allocations(self, context, share_server, share_network,
+                               share_network_subnet):
+        total_count = self.get_network_allocations_number()
+        existing_count = self.library.get_ss_network_allocations_number(
+            share_server)
+        missing_count = total_count - existing_count
+        if missing_count > 0:
+            self.allocate_network(context, share_server, share_network,
+                                  share_network_subnet, count=missing_count)
+
     def ensure_share_server(self, context, share_server, network_info):
         return self.library.ensure_share_server(
             context, share_server, network_info)

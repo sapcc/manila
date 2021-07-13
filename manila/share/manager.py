@@ -422,9 +422,15 @@ class ShareManager(manager.SchedulerDependentManager):
                 ctxt, share_server['share_network_subnet_id'])
             share_network = self.db.share_network_get(
                 ctxt, share_network_subnet['share_network_id'])
-            network_allocations = (
-                self.db.network_allocations_get_for_share_server(
-                    ctxt, share_server['id'], label='user'))
+            try:
+                self.driver.ensure_net_allocations(
+                    ctxt, share_server, share_network, share_network_subnet)
+                network_allocations = (
+                    self.db.network_allocations_get_for_share_server(
+                        ctxt, share_server['id'], label='user'))
+            except Exception as exc:
+                LOG.error("An exception ensuring net allocations: %s" % exc)
+                continue
             # add missing gateways to net_allocation
             for net_allocation in network_allocations:
                 if not net_allocation['gateway']:
