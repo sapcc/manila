@@ -330,6 +330,7 @@ class FilterScheduler(base.Scheduler):
         )
         filter_properties['user_id'] = shr.get('user_id')
         filter_properties['metadata'] = shr.get('metadata')
+        filter_properties['snapshot_id'] = shr.get('snapshot_id')
 
         share_id = request_spec.get('share_id', None)
         if not share_id:
