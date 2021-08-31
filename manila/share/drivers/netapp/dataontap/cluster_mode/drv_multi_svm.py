@@ -37,7 +37,7 @@ class NetAppCmodeMultiSvmShareDriver(driver.ShareDriver):
             self.DRIVER_NAME, **kwargs)
         self.dhss_mandatory_security_service_association = {
             'nfs': None,
-            'cifs': ['active_directory', 'ldap', 'kerberos', ]
+            'cifs': ['active_directory', ]
         }
 
     def do_setup(self, context):
