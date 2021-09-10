@@ -370,6 +370,25 @@ class FilterScheduler(base.Scheduler):
                 ANTI_AFFINITY_KEY, ANTI_AFFINITY_HINT)
             filter_properties['scheduler_hints'] = hints
 
+        share_id = request_spec.get('share_id', None)
+        if not share_id:
+            filter_properties['scheduler_hints'] = {}
+            return
+
+        try:
+            db_api.share_get(context, share_id)
+        except exception.NotFound:
+            filter_properties['scheduler_hints'] = {}
+        else:
+            hints = {}
+            self.populate_filter_properties_share_scheduler_hint(
+                context, share_id, hints,
+                AFFINITY_KEY, AFFINITY_HINT)
+            self.populate_filter_properties_share_scheduler_hint(
+                context, share_id, hints,
+                ANTI_AFFINITY_KEY, ANTI_AFFINITY_HINT)
+            filter_properties['scheduler_hints'] = hints
+
     def schedule_create_share_group(self, context, share_group_id,
                                     request_spec, filter_properties):
 

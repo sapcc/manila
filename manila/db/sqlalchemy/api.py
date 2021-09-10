@@ -68,6 +68,7 @@ LOG = log.getLogger(__name__)
 QUOTAS = quota.QUOTAS
 
 _DEFAULT_QUOTA_NAME = 'default'
+_DEFAULT_AFFINITY_METADATA = '__affinity_'
 PER_PROJECT_QUOTAS = []
 
 _FACADE = None
@@ -2060,10 +2061,15 @@ def _process_share_filters(query, filters, project_id=None, is_public=False):
 
     if 'metadata' in filters:
         for k, v in filters['metadata'].items():
-            # pylint: disable=no-member
-            query = query.filter(
-                or_(models.Share.share_metadata.any(
-                    key=k, value=v)))
+            if v == "*":
+                # pylint: disable=no-member
+                query = query.filter(
+                    or_(models.Share.share_metadata.any(key=k)))
+            else:
+                # pylint: disable=no-member
+                query = query.filter(
+                    or_(models.Share.share_metadata.any(key=k, value=v)))
+
     if 'extra_specs' in filters:
         query = query.join(
             models.ShareTypeExtraSpecs,
@@ -3434,8 +3440,15 @@ def share_metadata_get_item(context, share_id, key, session=None):
 @require_context
 @require_share_exists
 def share_metadata_delete(context, share_id, key):
-    (_share_metadata_get_query(context, share_id).
-        filter_by(key=key).soft_delete())
+    if (context.is_admin or
+            not key.startswith(_DEFAULT_AFFINITY_METADATA)):
+        # admins can delete any metadata, but users cannot delete private one
+        (_share_metadata_get_query(context, share_id).
+            filter_by(key=key).soft_delete())
+    else:
+        # normal user should not be able to delete private admin metadata
+        raise exception.ShareMetadataNotFound(metadata_key=key,
+                                              share_id=share_id)
 
 
 @require_context
@@ -3447,7 +3460,10 @@ def share_metadata_update(context, share_id, metadata, delete):
 @require_context
 @require_share_exists
 def share_metadata_update_item(context, share_id, item, session=None):
-    return _share_metadata_update(context, share_id, item, delete=False)
+    # NOTE(galkindmitrii): we use force as an extra flag here because only
+    # admins can update affinity metadata values.
+    return _share_metadata_update(context, share_id, item, delete=False,
+                                  force=True)
 
 
 def _share_metadata_get_query(context, share_id, session=None):
@@ -3463,12 +3479,12 @@ def _share_metadata_get(context, share_id, session=None):
     result = {}
     for row in rows:
         result[row['key']] = row['value']
-
     return result
 
 
 @oslo_db_api.wrap_db_retry(max_retries=5, retry_on_deadlock=True)
-def _share_metadata_update(context, share_id, metadata, delete, session=None):
+def _share_metadata_update(context, share_id, metadata, delete, session=None,
+                           force=False):
     if not session:
         session = get_session()
 
@@ -3479,10 +3495,13 @@ def _share_metadata_update(context, share_id, metadata, delete, session=None):
                                                     session=session)
             for meta_key, meta_value in original_metadata.items():
                 if meta_key not in metadata:
-                    meta_ref = _share_metadata_get_item(context, share_id,
-                                                        meta_key,
-                                                        session=session)
-                    meta_ref.soft_delete(session=session)
+                    # But do not delete affinity metadata unless forced:
+                    cond = meta_key.startswith(_DEFAULT_AFFINITY_METADATA)
+                    if (force or not cond):
+                        meta_ref = _share_metadata_get_item(context, share_id,
+                                                            meta_key,
+                                                            session=session)
+                        meta_ref.soft_delete(session=session)
 
         meta_ref = None
 
@@ -3490,19 +3509,24 @@ def _share_metadata_update(context, share_id, metadata, delete, session=None):
         # objects
         for meta_key, meta_value in metadata.items():
 
-            # update the value whether it exists or not
-            item = {"value": meta_value}
+            # Update any item if admin or forced
+            # otherwise filter out affinity metadata keys
+            if (force or context.is_admin or
+                    not meta_key.startswith(_DEFAULT_AFFINITY_METADATA)):
 
-            try:
-                meta_ref = _share_metadata_get_item(context, share_id,
-                                                    meta_key,
-                                                    session=session)
-            except exception.ShareMetadataNotFound:
-                meta_ref = models.ShareMetadata()
-                item.update({"key": meta_key, "share_id": share_id})
+                # update the value whether it exists or not
+                item = {"value": meta_value}
 
-            meta_ref.update(item)
-            meta_ref.save(session=session)
+                try:
+                    meta_ref = _share_metadata_get_item(context, share_id,
+                                                        meta_key,
+                                                        session=session)
+                except exception.ShareMetadataNotFound:
+                    meta_ref = models.ShareMetadata()
+                    item.update({"key": meta_key, "share_id": share_id})
+
+                meta_ref.update(item)
+                meta_ref.save(session=session)
 
         return metadata
 
