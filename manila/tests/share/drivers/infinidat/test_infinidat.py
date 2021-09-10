@@ -278,7 +278,7 @@ class InfiniboxDriverTestCase(InfiniboxDriverTestCaseBase):
 
     def test__get_ip_address_range_single_ip(self):
         ip_address = self.driver._get_ip_address_range('1.2.3.4')
-        self.assertEqual('1.2.3.4', ip_address)
+        self.assertEqual('1.2.3.4-1.2.3.4', ip_address)
 
     def test__get_ip_address_range_ip_range(self):
         ip_address_range = self.driver._get_ip_address_range('5.6.7.8/28')
@@ -636,11 +636,11 @@ class InfiniboxDriverTestCase(InfiniboxDriverTestCaseBase):
                              key=lambda permission: permission.client)
 
         self.assertEqual('RO', permissions[0].access)
-        self.assertEqual('1.2.3.4', permissions[0].client)
+        self.assertEqual('1.2.3.4-1.2.3.4', permissions[0].client)
         self.assertTrue(permissions[0].no_root_squash)
 
         self.assertEqual('RW', permissions[1].access)
-        self.assertEqual('1.2.3.5', permissions[1].client)
+        self.assertEqual('1.2.3.5-1.2.3.5', permissions[1].client)
         self.assertTrue(permissions[1].no_root_squash)
 
         self.assertEqual('RO', permissions[2].access)
@@ -723,12 +723,12 @@ class InfiniboxDriverTestCase(InfiniboxDriverTestCaseBase):
                              key=lambda permission: permission.client)
 
         self.assertEqual('RO', permissions[0].access)
-        self.assertEqual('1.2.3.4', permissions[0].client)
+        self.assertEqual('1.2.3.4-1.2.3.4', permissions[0].client)
         self.assertTrue(permissions[0].no_root_squash)
 
         # despite sending a RW rule, all rules are converted to RO:
         self.assertEqual('RO', permissions[1].access)
-        self.assertEqual('1.2.3.5', permissions[1].client)
+        self.assertEqual('1.2.3.5-1.2.3.5', permissions[1].client)
         self.assertTrue(permissions[1].no_root_squash)
 
         self.assertEqual('RO', permissions[2].access)

@@ -742,6 +742,11 @@ def share_metadata_get(context, share_id):
     return IMPL.share_metadata_get(context, share_id)
 
 
+def share_metadata_get_item(context, share_id, key):
+    """Get metatem for given key and for a given share.."""
+    return IMPL.share_metadata_get_item(context, share_id, key)
+
+
 def share_metadata_delete(context, share_id, key):
     """Delete the given metadata item."""
     IMPL.share_metadata_delete(context, share_id, key)
@@ -750,6 +755,11 @@ def share_metadata_delete(context, share_id, key):
 def share_metadata_update(context, share, metadata, delete):
     """Update metadata if it exists, otherwise create it."""
     IMPL.share_metadata_update(context, share, metadata, delete)
+
+
+def share_metadata_update_item(context, share_id, item):
+    """update meta item containing key and value for given share."""
+    IMPL.share_metadata_update_item(context, share_id, item)
 
 
 ###################

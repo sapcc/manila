@@ -25,6 +25,7 @@ from oslo_log import log
 from oslo_utils import excutils
 from oslo_utils import strutils
 from oslo_utils import timeutils
+from oslo_utils import uuidutils
 import six
 
 from manila.common import constants
@@ -59,6 +60,11 @@ CONF.register_opts(share_api_opts)
 LOG = log.getLogger(__name__)
 GB = 1048576 * 1024
 QUOTAS = quota.QUOTAS
+
+AFFINITY_HINT = 'same_host'
+ANTI_AFFINITY_HINT = 'different_host'
+AFFINITY_KEY = "__affinity_same_host"
+ANTI_AFFINITY_KEY = "__affinity_different_host"
 
 
 class API(base.Base):
@@ -345,6 +351,8 @@ class API(base.Base):
                 finally:
                     QUOTAS.rollback(
                         context, reservations, share_type_id=share_type_id)
+
+        self.save_scheduler_hints(context, share, scheduler_hints)
 
         host = None
         snapshot_host = None
@@ -925,6 +933,7 @@ class API(base.Base):
                        'terminated_at': timeutils.utcnow()}
         share_ref = self.db.share_update(context, share['id'], update_data)
 
+        self.delete_scheduler_hints(context, share)
         self.share_rpcapi.unmanage_share(context, share_ref)
 
         # NOTE(u_glide): We should update 'updated_at' timestamp of
@@ -1135,6 +1144,8 @@ class API(base.Base):
             raise exception.InvalidShare(reason=msg)
 
         self._check_is_share_busy(share)
+        self.delete_scheduler_hints(context, share)
+
         for share_instance in share.instances:
             if share_instance['host']:
                 self.delete_instance(context, share_instance, force=force)
@@ -1997,6 +2008,86 @@ class API(base.Base):
     def delete_share_metadata(self, context, share, key):
         """Delete the given metadata item from a share."""
         self.db.share_metadata_delete(context, share['id'], key)
+
+    def _validate_scheduler_hints(self, context, share, share_uuids):
+        for uuid in share_uuids:
+            if not uuidutils.is_uuid_like(uuid):
+                raise exception.InvalidUUID(uuid=uuid)
+            try:
+                self.get(context, uuid)
+            except (exception.NotFound, exception.PolicyNotAuthorized):
+                raise exception.ShareNotFound(share_id=uuid)
+
+    def _save_scheduler_hints(self, context, share, share_uuids, key):
+        if not isinstance(share_uuids, list):
+            share_uuids = share_uuids.split(",")
+
+        self._validate_scheduler_hints(context, share, share_uuids)
+        val_uuids = None
+        for uuid in share_uuids:
+            try:
+                result = self.db.share_metadata_get_item(context, uuid, key)
+            except exception.ShareMetadataNotFound:
+                item = {key: share['id']}
+            else:
+                existing_uuids = result.get(key, "")
+                item = {key:
+                        ','.join(existing_uuids.split(',') + [share['id']])}
+            self.db.share_metadata_update_item(context, uuid, item)
+            if not val_uuids:
+                val_uuids = uuid
+            else:
+                val_uuids = val_uuids + "," + uuid
+
+        if val_uuids:
+            item = {key: val_uuids}
+            self.db.share_metadata_update_item(context, share['id'], item)
+
+    def save_scheduler_hints(self, context, share, scheduler_hints=None):
+        if scheduler_hints is None:
+            return
+
+        same_host_uuids = scheduler_hints.get(AFFINITY_HINT, None)
+        different_host_uuids = scheduler_hints.get(ANTI_AFFINITY_HINT, None)
+
+        if same_host_uuids:
+            self._save_scheduler_hints(context, share, same_host_uuids,
+                                       AFFINITY_KEY)
+        if different_host_uuids:
+            self._save_scheduler_hints(context, share, different_host_uuids,
+                                       ANTI_AFFINITY_KEY)
+
+    def _delete_scheduler_hints(self, context, share, key):
+        try:
+            result = self.db.share_metadata_get_item(context, share['id'],
+                                                     key)
+        except exception.ShareMetadataNotFound:
+            return
+
+        # elevate context as default user context won't be enough
+        # to delete the scheduler hints.
+        context = context.elevated()
+
+        share_uuids = result.get(key, "").split(",")
+        for uuid in share_uuids:
+            try:
+                result = self.db.share_metadata_get_item(context, uuid, key)
+            except exception.ShareMetadataNotFound:
+                continue
+
+            new_val_uuids = [val_uuid for val_uuid
+                             in result.get(key, "").split(",")
+                             if val_uuid != share['id']]
+            if not new_val_uuids:
+                self.db.share_metadata_delete(context, uuid, key)
+            else:
+                item = {key: ','.join(new_val_uuids)}
+                self.db.share_metadata_update_item(context, uuid, item)
+        self.db.share_metadata_delete(context, share['id'], key)
+
+    def delete_scheduler_hints(self, context, share):
+        self._delete_scheduler_hints(context, share, AFFINITY_KEY)
+        self._delete_scheduler_hints(context, share, ANTI_AFFINITY_KEY)
 
     def _check_is_share_busy(self, share):
         """Raises an exception if share is busy with an active task."""

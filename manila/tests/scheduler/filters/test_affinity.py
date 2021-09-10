@@ -16,19 +16,20 @@
 import ddt
 from unittest import mock
 
-from manila.exception import NotFound
+from manila import exception
 from manila.scheduler.filters import affinity
 from manila import test
 from manila.tests.scheduler import fakes
 
 
+# NOTE:(ccloud) we distinguish by hosts and not aggregates:
 fake_hosts = [
-    fakes.FakeHostState('host1', {}),
-    fakes.FakeHostState('host2', {}),
-    fakes.FakeHostState('host3', {}),
+    fakes.FakeHostState('aggregate1@host1', {}),
+    fakes.FakeHostState('aggregate2@host2', {}),
+    fakes.FakeHostState('aggregate3@host3', {}),
     ]
 
-fake_shares = {
+fake_shares_1 = {
     'abb6e0ac-7c3e-4ce0-8a69-5a166d246882': {
         'instances': [
             {'host': fake_hosts[0].host}
@@ -36,7 +37,23 @@ fake_shares = {
         },
     '4de0cc74-450c-4468-8159-52128cf03407': {
         'instances': [
+            {'host': fake_hosts[0].host}
+            ]
+        },
+    }
+
+fake_shares_2 = {
+    'c920fb61-e250-4c3c-a25d-1fdd9ca7cbc3': {
+        'instances': [
             {'host': fake_hosts[1].host}
+            ]
+        },
+    }
+
+fake_shares_3 = {
+    '3923bebf-9825-4a66-971e-6092a9fe2dbb': {
+        'instances': [
+            {'host': fake_hosts[2].host}
             ]
         },
     }
@@ -54,29 +71,23 @@ class AffinityFilterTestCase(test.TestCase):
     def _make_filter_hints(self, *hints):
         return {
             'context': None,
-            'scheduler_hints': {'affinity_filter': list(hints)},
+            'scheduler_hints': {'same_host': list(hints)},
         }
 
     def _make_anti_filter_hints(self, *hints):
         return {
             'context': None,
-            'scheduler_hints': {'anti_affinity_filter': list(hints)},
+            'scheduler_hints': {'different_host': list(hints)},
         }
 
     def _fake_get(self, context, uuid):
-        if uuid in fake_shares.keys():
-            return fake_shares[uuid]
-        raise NotFound
-
-    @ddt.data(
-        {'affinity_filter': 'uuid1'},
-        {'affinity_filter': ('uuid1', 'uuid2')},
-        {'affinity_filter': ['uuid1', 'uuid2']},
-    )
-    def test_affinity_invalid_uuid(self, hints):
-        filter_properties = {'context': None, 'scheduler_hints': hints}
-        self.assertRaises(affinity.InvalidUUIDError,
-                          self.filter._validate, filter_properties)
+        if uuid in fake_shares_1.keys():
+            return fake_shares_1[uuid]
+        if uuid in fake_shares_2.keys():
+            return fake_shares_2[uuid]
+        if uuid in fake_shares_3.keys():
+            return fake_shares_3[uuid]
+        raise affinity.ShareNotFoundError(uuid)
 
     @ddt.data('b5c207da-ac0b-43b0-8691-c6c9e860199d')
     @mock.patch('manila.share.api.API.get')
@@ -95,28 +106,29 @@ class AffinityFilterTestCase(test.TestCase):
         self.assertRaises(affinity.SchedulerHintsNotSet,
                           self.filter._validate, hints)
 
-    @ mock.patch('manila.share.api.API.get')
+    @mock.patch('manila.share.api.API.get')
     def test_affinity_filter(self, mock_share_get):
         mock_share_get.side_effect = self._fake_get
 
-        share_ids = fake_shares.keys()
+        share_ids = fake_shares_1.keys()
         hints = self._make_filter_hints(*share_ids)
         valid_hosts = self.filter.filter_all(fake_hosts, hints)
         valid_hosts = [h.host for h in valid_hosts]
 
-        self.assertIn('host1', valid_hosts)
-        self.assertIn('host2', valid_hosts)
-        self.assertNotIn('host3', valid_hosts)
+        self.assertIn('aggregate1@host1', valid_hosts)
+        self.assertNotIn('aggregate2@host2', valid_hosts)
+        self.assertNotIn('aggregate3@host3', valid_hosts)
 
-    @ mock.patch('manila.share.api.API.get')
+    @mock.patch('manila.share.api.API.get')
     def test_anti_affinity_filter(self, mock_share_get):
         mock_share_get.side_effect = self._fake_get
 
-        share_ids = fake_shares.keys()
+        share_ids = fake_shares_2.keys()
         hints = self._make_anti_filter_hints(*share_ids)
         valid_hosts = self.anti_filter.filter_all(fake_hosts, hints)
         valid_hosts = [h.host for h in valid_hosts]
 
-        self.assertNotIn('host1', valid_hosts)
-        self.assertNotIn('host2', valid_hosts)
-        self.assertIn('host3', valid_hosts)
+        self.assertIn('aggregate1@host1', valid_hosts)
+        self.assertIn('aggregate3@host3', valid_hosts)
+        self.assertNotIn('aggregate2@host2', valid_hosts)
+
