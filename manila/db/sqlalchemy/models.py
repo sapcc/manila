@@ -695,9 +695,11 @@ class ShareSnapshot(BASE, ManilaBase):
                 lambda x: qualified_replica(x.share_instance), self.instances))
 
             migrating_snapshots = list(filter(
-                lambda x: x.share_instance['status'] in (
-                    constants.STATUS_MIGRATING,
-                    constants.STATUS_SERVER_MIGRATING), self.instances))
+                lambda x: (x.share_instance is not None and
+                           x.share_instance['status'] in (
+                               constants.STATUS_MIGRATING,
+                               constants.STATUS_SERVER_MIGRATING)
+                           ), self.instances))
 
             snapshot_instances = (replica_snapshots or migrating_snapshots
                                   or self.instances)
