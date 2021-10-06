@@ -50,6 +50,7 @@ host_manager_opts = [
                     'CreateFromSnapshotFilter',
                     'AffinityFilter',
                     'AntiAffinityFilter',
+                    'OnlyHostFilter',
                 ],
                 help='Which filter class names to use for filtering hosts '
                      'when not specified in the request.'),
