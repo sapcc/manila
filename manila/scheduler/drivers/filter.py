@@ -336,6 +336,9 @@ class FilterScheduler(base.Scheduler):
         if not share_id:
             filter_properties['scheduler_hints'] = {}
             return
+        else:
+            if filter_properties.get('scheduler_hints', None):
+                return
 
         try:
             db_api.share_get(context, share_id)
