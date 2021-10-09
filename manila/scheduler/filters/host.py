@@ -20,6 +20,9 @@ class OnlyHostFilter(base_host.BaseHostFilter):
     """Filters Hosts by 'only_host' scheduler_hint."""
 
     def host_passes(self, host_state, filter_properties):
+        context = filter_properties['context']
+        if not context.is_admin:
+            return True
         hints = filter_properties.get('scheduler_hints')
         if hints is None:
             return True

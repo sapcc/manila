@@ -15,6 +15,7 @@
 
 import ddt
 
+from manila import context
 from manila.scheduler.filters import host
 from manila import test
 from manila.tests.scheduler import fakes
@@ -22,7 +23,6 @@ from manila.tests.scheduler import fakes
 
 fake_host1 = fakes.FakeHostState('host1', {})
 fake_host2 = fakes.FakeHostState('host2', {})
-fake_host3 = fakes.FakeHostState('host3', {})
 
 
 @ddt.ddt
@@ -32,24 +32,32 @@ class OnlyHostFilterTestCase(test.TestCase):
     def setUp(self):
         super(OnlyHostFilterTestCase, self).setUp()
         self.filter = host.OnlyHostFilter()
+        self.user_context = context.RequestContext('user', 'project')
+        self.admin_context = context.RequestContext('user', 'project',
+                                                    is_admin=True)
 
-    def _make_filter_hints(self):
+    def _make_filter_properties(self, hint):
         return {
-            'context': None,
-            'scheduler_hints': {'only_host': fake_host1.host},
+            'context': self.admin_context,
+            'scheduler_hints': hint,
         }
 
-    @ddt.data((fake_host1, {'context': None}),
-              (fake_host1, {'context': None, 'scheduler_hints': None}),
-              (fake_host1, {'context': None, 'scheduler_hints': {}}))
+    @ddt.data((fake_host1, {'scheduler_hints': None}),
+              (fake_host1, {'scheduler_hints': {}}),
+              (fake_host1,
+              {'scheduler_hints': {'only_host': fake_host2.host}}))
     @ddt.unpack
-    def test_only_host_scheduler_hint_not_set(self, host, hints):
-        self.assertTrue(self.filter.host_passes(host, hints))
+    def test_only_host_filter_user_context(self, host, filter_properties):
+        context = {'context': self.user_context}
+        filter_properties.update(context)
+        self.assertTrue(self.filter.host_passes(host, filter_properties))
 
-    @ddt.data((fake_host1, True),
-              (fake_host2, False),
-              (fake_host3, False))
+    @ddt.data((fake_host1, None, True),
+              (fake_host1, {}, True),
+              (fake_host1, {'only_host': fake_host1.host}, True),
+              (fake_host2, {'only_host': fake_host1.host}, False))
     @ddt.unpack
-    def test_only_host_filter(self, host, host_passes):
-        hints = self._make_filter_hints()
-        self.assertEqual(host_passes, self.filter.host_passes(host, hints))
+    def test_only_host_filter_admin_context(self, host, hint, host_passes):
+        filter_properties = self._make_filter_properties(hint)
+        self.assertEqual(host_passes,
+                         self.filter.host_passes(host, filter_properties))
