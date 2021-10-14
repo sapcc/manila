@@ -2406,6 +2406,13 @@ class NetAppCmodeFileStorageLibrary(object):
             'options': provisioning_options
         }
 
+        snapshot_attributes = vserver_client.get_volume_snapshot_attributes(
+            share_name)
+        if snapshot_attributes['snapshot-policy'] == 'EC2_Backups':
+            provisioning_options['snapshot-policy'] = 'EC2_Backups'
+            provisioning_options['snapdir-access-enabled'] = \
+                    snapshot_attributes['snapdir-access-enabled']
+
         try:
             vserver_client.modify_volume(aggregate_name, share_name,
                                          comment=share_comment,
