@@ -2040,6 +2040,19 @@ class NetAppCmodeFileStorageLibrary(object):
         if qos_policy_group_name:
             provisioning_options['qos_policy_group'] = qos_policy_group_name
 
+        snapshot_attributes = vserver_client.get_volume_snapshot_attributes(
+            share_name)
+        if (
+            snapshot_attributes['snapshot-policy'].lower()
+            in self.configuration.netapp_snapmirror_policy_exceptions
+        ):
+            provisioning_options['snapshot_policy'] = \
+                snapshot_attributes['snapshot-policy']
+            if snapshot_attributes['snapdir-access-enabled'].lower() == 'true':
+                provisioning_options['hide_snapdir'] = False
+            else:
+                provisioning_options['hide_snapdir'] = True
+
         # Modify volume to match extra specs.
         vserver_client.modify_volume(aggregate_name, share_name,
                                      **provisioning_options)
@@ -2427,6 +2440,19 @@ class NetAppCmodeFileStorageLibrary(object):
             share, extra_specs, vserver, vserver_client)
         if qos_policy_group_name:
             provisioning_options['qos_policy_group'] = qos_policy_group_name
+
+        snapshot_attributes = vserver_client.get_volume_snapshot_attributes(
+            share_name)
+        if (
+            snapshot_attributes['snapshot-policy'].lower()
+            in self.configuration.netapp_snapmirror_policy_exceptions
+        ):
+            provisioning_options['snapshot_policy'] = \
+                snapshot_attributes['snapshot-policy']
+            if snapshot_attributes['snapdir-access-enabled'].lower() == 'true':
+                provisioning_options['hide_snapdir'] = False
+            else:
+                provisioning_options['hide_snapdir'] = True
 
         modify_args = {
             'share': share_name,
@@ -3663,6 +3689,19 @@ class NetAppCmodeFileStorageLibrary(object):
                 source_share['id'])
             self._client.mark_qos_policy_group_for_deletion(
                 qos_policy_of_src_share)
+
+        snapshot_attributes = vserver_client.get_volume_snapshot_attributes(
+            new_share_volume_name)
+        if (
+            snapshot_attributes['snapshot-policy'].lower()
+            in self.configuration.netapp_snapmirror_policy_exceptions
+        ):
+            provisioning_options['snapshot_policy'] = \
+                snapshot_attributes['snapshot-policy']
+            if snapshot_attributes['snapdir-access-enabled'].lower() == 'true':
+                provisioning_options['hide_snapdir'] = False
+            else:
+                provisioning_options['hide_snapdir'] = True
 
         destination_aggregate = share_utils.extract_host(
             destination_share['host'], level='pool')
