@@ -1718,11 +1718,11 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
 
         api_args = {
             'containing-aggr-name': aggregate_name,
-            'size': six.text_type(size_gb) + 'g',
             'volume': volume_name,
             'volume-type': volume_type,
             'volume-comment': comment,
         }
+
         if volume_type != 'dp':
             api_args['junction-path'] = '/%s' % volume_name
         if thin_provisioned:
@@ -1734,6 +1734,13 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         if snapshot_reserve is not None:
             api_args['percentage-snapshot-reserve'] = six.text_type(
                 snapshot_reserve)
+        if (options.get('provision_net_capacity') and
+                snapshot_reserve is not None):
+            size_b = size_gb * units.Gi * 100 / (100 - snapshot_reserve)
+        else:
+            size_b = size_gb * units.Gi
+        api_args['size'] = six.text_type(size_b)
+
         if qos_policy_group is not None:
             api_args['qos-policy-group-name'] = qos_policy_group
         if adaptive_qos_policy_group is not None:
@@ -1848,7 +1855,16 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         self.send_request('volume-modify-iter', api_args)
 
     @na_utils.trace
-    def set_volume_size(self, volume_name, size_gb):
+    def set_volume_size(self, volume_name, size_gb, **options):
+
+        snapshot_reserve_percent = options.get('snapshot_reserve_percent')
+        provision_net_capacity = options.get('provision_net_capacity')
+
+        if provision_net_capacity and snapshot_reserve_percent:
+            avail_percent = 100 - snapshot_reserve_percent
+            size_b = int(size_gb * units.Gi * 100 / avail_percent)
+        else:
+            size_b = int(size_gb * units.Gi)
         """Set volume size."""
         api_args = {
             'query': {
@@ -1861,7 +1877,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'attributes': {
                 'volume-attributes': {
                     'volume-space-attributes': {
-                        'size': int(size_gb) * units.Gi,
+                        'size': six.text_type(size_b),
+                        'percentage-snapshot-reserve': (
+                            six.text_type(snapshot_reserve_percent)),
                     },
                 },
             },

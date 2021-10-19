@@ -1281,7 +1281,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             thin_provisioned=True, snapshot_policy='default',
             language='en-US', dedup_enabled=True, split=True, encrypt=False,
             compression_enabled=False, max_files=5000, snapshot_reserve=8,
-            adaptive_qos_policy_group=None, comment=fake.VOLUME_COMMENT)
+            adaptive_qos_policy_group=None, comment=fake.VOLUME_COMMENT,
+            provision_net_capacity=False)
 
         if hide_snapdir:
             vserver_client.set_volume_snapdir_access.assert_called_once_with(
@@ -1322,7 +1323,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             language='en-US', dedup_enabled=True, split=True,
             compression_enabled=False, max_files=5000, encrypt=False,
             snapshot_reserve=8, volume_type='dp',
-            adaptive_qos_policy_group=None, comment=fake.VOLUME_COMMENT)
+            adaptive_qos_policy_group=None, comment=fake.VOLUME_COMMENT,
+            provision_net_capacity=False)
 
     def test_allocate_container_no_pool_name(self):
         self.mock_object(self.library, '_get_backend_share_name', mock.Mock(
@@ -1706,7 +1708,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             adaptive_qos_policy_group=None)
         if size > original_snapshot_size:
             vserver_client.set_volume_size.assert_called_once_with(
-                share_name, size)
+                share_name, size, snapshot_reserve_percent=8,
+                provision_net_capacity=False)
         else:
             vserver_client.set_volume_size.assert_not_called()
 
@@ -2852,7 +2855,9 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
         self.library.extend_share(fake.SHARE, new_size)
 
-        mock_set_volume_size.assert_called_once_with(fake.SHARE_NAME, new_size)
+        mock_set_volume_size.assert_called_once_with(
+            fake.SHARE_NAME, new_size, snapshot_reserve_percent=8,
+            provision_net_capacity=False)
         mock_adjust_qos_policy.assert_called_once_with(
             fake.SHARE, new_size, vserver_client)
 
@@ -2871,7 +2876,9 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
         self.library.shrink_share(fake.SHARE, new_size)
 
-        mock_set_volume_size.assert_called_once_with(fake.SHARE_NAME, new_size)
+        mock_set_volume_size.assert_called_once_with(
+            fake.SHARE_NAME, new_size, snapshot_reserve_percent=8,
+            provision_net_capacity=False)
         mock_adjust_qos_policy.assert_called_once_with(
             fake.SHARE, new_size, vserver_client)
 
@@ -2896,7 +2903,9 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                           fake.SHARE, new_size)
 
         self.library._get_vserver.assert_called_once_with(share_server=None)
-        mock_set_volume_size.assert_called_once_with(fake.SHARE_NAME, new_size)
+        mock_set_volume_size.assert_called_once_with(
+            fake.SHARE_NAME, new_size, snapshot_reserve_percent=8,
+            provision_net_capacity=False)
 
     def test_update_access(self):
 

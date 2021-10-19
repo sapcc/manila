@@ -120,7 +120,14 @@ netapp_provisioning_opts = [
     cfg.StrOpt('netapp_snapmirror_policy_name_svm_template',
                help='NetApp SnapMirror policy name template for Storage '
                     'Virtual Machines (Vservers).',
-               default='snapmirror_policy_%(share_server_id)s'), ]
+               default='snapmirror_policy_%(share_server_id)s'),
+    cfg.BoolOpt('netapp_volume_provision_net_capacity',
+                help='This option provisions a volume with the specified size '
+                     'available as net capacity to the end user. The size of '
+                     'snapshot reserve is then added on top of net capacity. '
+                     'The total size is calculated as (size * 100) divided by '
+                     '(100 - netapp_volume_snapshot_reserve_percent)',
+                default=False), ]
 
 netapp_cluster_opts = [
     cfg.StrOpt('netapp_vserver',

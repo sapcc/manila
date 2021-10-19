@@ -2843,7 +2843,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         volume_create_args = {
             'containing-aggr-name': fake.SHARE_AGGREGATE_NAME,
-            'size': '100g',
+            'size': '107374182400',
             'volume': fake.SHARE_NAME,
             'volume-type': 'rw',
             'junction-path': '/%s' % fake.SHARE_NAME,
@@ -2884,7 +2884,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         volume_create_args = {
             'containing-aggr-name': fake.SHARE_AGGREGATE_NAME,
-            'size': '100g',
+            'size': '107374182400',
             'volume': fake.SHARE_NAME,
             'junction-path': '/%s' % fake.SHARE_NAME,
             'space-reserve': 'none',
@@ -2920,7 +2920,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         volume_create_args = {
             'containing-aggr-name': fake.SHARE_AGGREGATE_NAME,
-            'size': '100g',
+            'size': '107374182400',
             'volume': fake.SHARE_NAME,
             'volume-type': 'rw',
             'junction-path': '/%s' % fake.SHARE_NAME,
@@ -2942,7 +2942,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         volume_create_args = {
             'containing-aggr-name': fake.SHARE_AGGREGATE_NAME,
-            'size': '100g',
+            'size': '107374182400',
             'volume': fake.SHARE_NAME,
             'volume-type': 'rw',
             'junction-path': '/%s' % fake.SHARE_NAME,
@@ -3383,7 +3383,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'attributes': {
                 'volume-attributes': {
                     'volume-space-attributes': {
-                        'size': 10737418240,
+                        'size': '10737418240',
+                        'percentage-snapshot-reserve': 'None'
                     },
                 },
             },
