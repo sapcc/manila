@@ -3111,7 +3111,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         volume_create_args = {
             'containing-aggr-name': fake.SHARE_AGGREGATE_NAME,
-            'size': '100g',
+            'size': '107374182400',
             'volume': fake.SHARE_NAME,
         }
 
@@ -3154,8 +3154,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
             auto_provisioned=auto_provisioned)
 
         volume_create_args = {
-            'size': 1073741824,
             'volume-name': fake.SHARE_NAME,
+            'size': '1073741824'
         }
         if auto_provisioned:
             volume_create_args['auto-provision-as'] = 'flexgroup'
@@ -3777,7 +3777,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'attributes': {
                 'volume-attributes': {
                     'volume-space-attributes': {
-                        'size': 10737418240,
+                        'size': '10737418240',
+                        'percentage-snapshot-reserve': 'None'
                     },
                 },
             },

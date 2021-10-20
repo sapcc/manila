@@ -181,7 +181,14 @@ netapp_provisioning_opts = [
                min=60,
                default=360,  # Default to six minutes
                help='Sets time in seconds to wait for a FlexGroup snapshot '
-                    'to not be busy with clones after splitting them.'), ]
+                    'to not be busy with clones after splitting them.'),
+    cfg.BoolOpt('netapp_volume_provision_net_capacity',
+                help='This option provisions a volume with the specified size '
+                     'available as net capacity to the end user. The size of '
+                     'snapshot reserve is then added on top of net capacity. '
+                     'The total size is calculated as (size * 100) divided by '
+                     '(100 - netapp_volume_snapshot_reserve_percent)',
+                default=False), ]
 
 netapp_cluster_opts = [
     cfg.StrOpt('netapp_vserver',
