@@ -165,6 +165,13 @@ class NetAppCmodeFileStorageLibrary(object):
         self._flexgroup_pools = {}
         self._is_flexgroup_auto = False
 
+        self._volume_size_options = {
+            'snapshot_reserve_percent': (
+                self.configuration.netapp_volume_snapshot_reserve_percent),
+            'provision_net_capacity': (
+                self.configuration.netapp_volume_provision_net_capacity)
+        }
+
         self._app_version = kwargs.get('app_version', 'unknown')
 
         na_utils.setup_tracing(self.configuration.netapp_trace_flags,
@@ -1098,6 +1105,9 @@ class NetAppCmodeFileStorageLibrary(object):
 
         hide_snapdir = provisioning_options.pop('hide_snapdir')
 
+        provisioning_options['provision_net_capacity'] = (
+            self._volume_size_options.get('provision_net_capacity'))
+
         LOG.debug('Creating share %(share)s on pool %(pool)s with '
                   'provisioning options %(options)s',
                   {'share': share_name, 'pool': pool_name,
@@ -1594,7 +1604,8 @@ class NetAppCmodeFileStorageLibrary(object):
                                      **provisioning_options)
 
         if share['size'] > snapshot['size']:
-            vserver_client.set_volume_size(share_name, share['size'])
+            vserver_client.set_volume_size(share_name, share['size'],
+                                           **self._volume_size_options)
 
         if hide_snapdir:
             self._apply_snapdir_visibility(
@@ -2340,9 +2351,12 @@ class NetAppCmodeFileStorageLibrary(object):
         share_name = self._get_backend_share_name(share['id'])
         vserver_client.set_volume_filesys_size_fixed(share_name,
                                                      filesys_size_fixed=False)
+
         LOG.debug('Extending share %(name)s to %(size)s GB.',
                   {'name': share_name, 'size': new_size})
-        vserver_client.set_volume_size(share_name, new_size)
+        vserver_client.set_volume_size(share_name, new_size,
+                                       **self._volume_size_options)
+
         self._adjust_qos_policy_with_volume_resize(share, new_size,
                                                    vserver_client)
 
@@ -2353,11 +2367,13 @@ class NetAppCmodeFileStorageLibrary(object):
         share_name = self._get_backend_share_name(share['id'])
         vserver_client.set_volume_filesys_size_fixed(share_name,
                                                      filesys_size_fixed=False)
+
         LOG.debug('Shrinking share %(name)s to %(size)s GB.',
                   {'name': share_name, 'size': new_size})
 
         try:
-            vserver_client.set_volume_size(share_name, new_size)
+            vserver_client.set_volume_size(share_name, new_size,
+                                           **self._volume_size_options)
         except netapp_api.NaApiError as e:
             if e.code == netapp_api.EVOLOPNOTSUPP:
                 msg = _('Failed to shrink share %(share_id)s. '
