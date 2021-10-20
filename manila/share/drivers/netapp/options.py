@@ -118,6 +118,13 @@ netapp_provisioning_opts = [
                default=5,
                help='The percentage of share space set aside as reserve for '
                     'snapshot usage; valid values range from 0 to 90.'),
+    cfg.BoolOpt('netapp_volume_provision_net_capacity',
+                help='This option provisions a volume with the specified size '
+                     'available as net capacity to the end user. The size of '
+                     'snapshot reserve is then added on top of net capacity. '
+                     'The total size is calculated as (size * 100) divided by '
+                     '(100 - netapp_volume_snapshot_reserve_percent)',
+                default=False),
     cfg.StrOpt('netapp_reset_snapdir_visibility',
                choices=['visible', 'hidden', 'default'],
                default="default",
