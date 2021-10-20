@@ -1079,7 +1079,6 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
 
     def test_create_volume_async(self):
         body = {
-            'size': 1073741824,
             'name': fake.VOLUME_NAMES[0],
             'style': 'flexvol',
             'aggregates': [{'name': fake.SHARE_AGGREGATE_NAME}]
@@ -1103,7 +1102,7 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             is_flexgroup=False)
 
         self.client._get_create_volume_body.assert_called_once_with(
-            fake.VOLUME_NAMES[0], False, None, None, None, 'rw', None, None,
+            fake.VOLUME_NAMES[0], 1, False, None, None, None, 'rw', None, None,
             None, None, None, '')
         self.client.send_request.assert_called_once_with(
             '/storage/volumes', 'post', body=body, wait_on_accepted=True)
@@ -1812,10 +1811,12 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
         self.mock_object(self.client, '_get_volume_by_args',
                          mock.Mock(return_value=unique_volume_return))
         mock_sr = self.mock_object(self.client, 'send_request')
-        self.client.set_volume_size('fake_name', 1)
+        self.client.set_volume_size('fake_name', 1,
+                                    snapshot_reserve_percent=5)
 
         body = {
-            'space.size': 1 * units.Gi
+            'space.size': 1 * units.Gi,
+            'snapshot.reserve_percent': 5
         }
         mock_sr.assert_called_once_with(
             '/storage/volumes/fake_uuid', 'patch', body=body)
@@ -2796,6 +2797,7 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
     def test__get_create_volume_body(self, thin_provisioned):
         expected = {
             'type': 'fake_type',
+            'size': 1073741824,
             'guarantee.type': ('none' if thin_provisioned else 'volume'),
             'nas.path': '/%s' % fake.SHARE_MOUNT_POINT,
             'snapshot_policy.name': fake.SNAPSHOT_POLICY_NAME,
@@ -2811,6 +2813,7 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
         self.mock_object(self.client.connection, 'get_vserver',
                          mock.Mock(return_value='fake_vserver'))
         res = self.client._get_create_volume_body(fake.VOLUME_NAMES[0],
+                                                  1,
                                                   thin_provisioned,
                                                   fake.SNAPSHOT_POLICY_NAME,
                                                   'fake_language',

@@ -1030,7 +1030,6 @@ class NetAppRestClient(object):
         """
 
         body = {
-            'size': size_gb * units.Gi,
             'name': volume_name,
         }
 
@@ -1040,10 +1039,10 @@ class NetAppRestClient(object):
             body['aggregates'] = [{'name': aggr} for aggr in aggregate_list]
 
         body.update(self._get_create_volume_body(
-            volume_name, thin_provisioned, snapshot_policy, language,
+            volume_name, size_gb, thin_provisioned, snapshot_policy, language,
             snapshot_reserve, volume_type, qos_policy_group, encrypt,
             adaptive_qos_policy_group, mount_point_name, snaplock_type,
-            comment))
+            comment, **options))
 
         # NOTE(nahimsouza): When a volume is not a FlexGroup, volume creation
         # is made synchronously to replicate old ZAPI behavior. When ZAPI is
@@ -1062,11 +1061,12 @@ class NetAppRestClient(object):
         return job_info
 
     @na_utils.trace
-    def _get_create_volume_body(self, volume_name, thin_provisioned,
+    def _get_create_volume_body(self, volume_name, size_gb, thin_provisioned,
                                 snapshot_policy, language, snapshot_reserve,
                                 volume_type, qos_policy_group, encrypt,
                                 adaptive_qos_policy_group,
-                                mount_point_name, snaplock_type, comment):
+                                mount_point_name, snaplock_type, comment,
+                                **options):
         """Builds the body to volume creation request."""
 
         body = {
@@ -1082,13 +1082,20 @@ class NetAppRestClient(object):
         if language is not None:
             body['language'] = language
         if snapshot_reserve is not None:
-            body['space.snapshot.reserve_percent'] = str(snapshot_reserve)
+            body['space.snapshot.reserve_percent'] = snapshot_reserve
         if qos_policy_group is not None:
             body['qos.policy.name'] = qos_policy_group
         if adaptive_qos_policy_group is not None:
             body['qos.policy.name'] = adaptive_qos_policy_group
         if comment is not None:
             body['comment'] = comment
+
+        if (options.get('provision_net_capacity') and
+                snapshot_reserve is not None):
+            size_b = size_gb * units.Gi * 100 / (100 - snapshot_reserve)
+        else:
+            size_b = size_gb * units.Gi
+        body['size'] = size_b
 
         if encrypt is not None:
             if encrypt is True and not self.features.FLEXVOL_ENCRYPTION:
@@ -1886,14 +1893,23 @@ class NetAppRestClient(object):
                           body=body)
 
     @na_utils.trace
-    def set_volume_size(self, volume_name, size_gb):
-        """Set volume size."""
+    def set_volume_size(self, volume_name, size_gb, **options):
+
+        snapshot_reserve_percent = options.get('snapshot_reserve_percent')
+        provision_net_capacity = options.get('provision_net_capacity')
+
+        if provision_net_capacity and snapshot_reserve_percent:
+            avail_percent = 100 - snapshot_reserve_percent
+            size_b = int(size_gb * units.Gi * 100 / avail_percent)
+        else:
+            size_b = int(size_gb * units.Gi)
 
         volume = self._get_volume_by_args(vol_name=volume_name)
         uuid = volume['uuid']
 
         body = {
-            'space.size': int(size_gb) * units.Gi
+            'space.size': size_b,
+            'snapshot.reserve_percent': snapshot_reserve_percent
         }
 
         self.send_request(f'/storage/volumes/{uuid}', 'patch', body=body)

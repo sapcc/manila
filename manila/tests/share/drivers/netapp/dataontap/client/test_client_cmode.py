@@ -3360,7 +3360,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.mock_object(self.client, 'update_volume_efficiency_attributes')
         self.mock_object(
             self.client, '_get_create_volume_api_args',
-            mock.Mock(return_value={}))
+            mock.Mock(return_value={'size': 100}))
         options = {'efficiency_policy': fake.VOLUME_EFFICIENCY_POLICY_NAME}
 
         self.client.create_volume(
@@ -3371,13 +3371,13 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         volume_create_args = {
             'containing-aggr-name': fake.SHARE_AGGREGATE_NAME,
-            'size': '100g',
             'volume': fake.SHARE_NAME,
+            'size': '100',
         }
 
         self.client._get_create_volume_api_args.assert_called_once_with(
-            fake.SHARE_NAME, False, None, None, None, 'rw', '', None, None,
-            None, None, None, **options)
+            fake.SHARE_NAME, 100, False, None, None, None, 'rw', '', None,
+            None, None, None, None, **options)
         self.client.send_request.assert_called_with('volume-create',
                                                     volume_create_args)
         (
@@ -3404,12 +3404,12 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         volume_create_args = {
             'containing-aggr-name': fake.SHARE_AGGREGATE_NAME,
-            'size': '100g',
             'volume': fake.SHARE_NAME,
             'volume-type': 'rw',
             'volume-comment': '',
             'junction-path': '/%s' % fake.SHARE_NAME,
             'space-reserve': ('none' if thin_provisioned else 'volume'),
+            'size': '107374182400',
         }
 
         self.client.send_request.assert_called_once_with('volume-create',
@@ -3428,7 +3428,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         volume_create_args = {
             'containing-aggr-name': fake.SHARE_AGGREGATE_NAME,
-            'size': '100g',
+            'size': '107374182400',
             'volume': fake.SHARE_NAME,
             'volume-type': 'rw',
             'volume-comment': '',
@@ -3459,15 +3459,15 @@ class NetAppClientCmodeTestCase(test.TestCase):
                          mock.Mock(return_value=api_response))
         self.mock_object(
             self.client, '_get_create_volume_api_args',
-            mock.Mock(return_value={}))
+            mock.Mock(return_value={'size': 1}))
 
         result = self.client.create_volume_async(
             [fake.SHARE_AGGREGATE_NAME], fake.SHARE_NAME, 1,
             auto_provisioned=auto_provisioned)
 
         volume_create_args = {
-            'size': 1073741824,
             'volume-name': fake.SHARE_NAME,
+            'size': 1,
         }
         if auto_provisioned:
             volume_create_args['auto-provision-as'] = 'flexgroup'
@@ -3482,7 +3482,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
         }
 
         self.client._get_create_volume_api_args.assert_called_once_with(
-            fake.SHARE_NAME, False, None, None, None, 'rw', '', None, None,
+            fake.SHARE_NAME, 1, False, None, None, None, 'rw', '', None, None,
             None, None, None)
         self.client.send_request.assert_called_with('volume-create-async',
                                                     volume_create_args)
@@ -3505,6 +3505,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.client.features.add_feature('FLEXVOL_ENCRYPTION')
         volume_type = 'rw'
         cmnt = 'fake_comment'
+        size = 17
         thin_provisioned = False
         snapshot_policy = 'default'
         language = 'en-US'
@@ -3515,7 +3516,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
         mount_point_name = 'fake_mp'
 
         result_api_args = self.client._get_create_volume_api_args(
-            fake.SHARE_NAME, thin_provisioned, snapshot_policy, language,
+            fake.SHARE_NAME, size, thin_provisioned, snapshot_policy, language,
             reserve, volume_type, cmnt, qos_name, encrypt, qos_adaptive_name,
             mount_point_name)
 
@@ -3524,9 +3525,10 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'volume-comment': cmnt,
             'junction-path': '/fake_mp',
             'space-reserve': 'volume',
+            'size': 18253611008,
             'snapshot-policy': snapshot_policy,
             'language-code': language,
-            'percentage-snapshot-reserve': str(reserve),
+            'percentage-snapshot-reserve': reserve,
             'qos-policy-group-name': qos_name,
             'qos-adaptive-policy-group-name': qos_adaptive_name,
             'encrypt': 'true',
@@ -3538,6 +3540,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.client.features.add_feature('FLEXVOL_ENCRYPTION')
         volume_type = 'rw'
         cmnt = 'fake_comment'
+        size = 17
         thin_provisioned = False
         snapshot_policy = 'default'
         language = 'en-US'
@@ -3547,7 +3550,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
         qos_adaptive_name = 'fake_adaptive_qos'
 
         result_api_args = self.client._get_create_volume_api_args(
-            fake.SHARE_NAME, thin_provisioned, snapshot_policy, language,
+            fake.SHARE_NAME, size, thin_provisioned, snapshot_policy, language,
             reserve, volume_type, cmnt, qos_name, encrypt, qos_adaptive_name)
 
         expected_api_args = {
@@ -3555,9 +3558,10 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'volume-comment': cmnt,
             'junction-path': '/fake_share',
             'space-reserve': 'volume',
+            'size': 18253611008,
             'snapshot-policy': snapshot_policy,
             'language-code': language,
-            'percentage-snapshot-reserve': str(reserve),
+            'percentage-snapshot-reserve': reserve,
             'qos-policy-group-name': qos_name,
             'qos-adaptive-policy-group-name': qos_adaptive_name,
             'encrypt': 'true',
@@ -3570,6 +3574,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.client.features.add_feature('FLEXVOL_ENCRYPTION')
         volume_type = 'dp'
         cmt = 'fake_comment'
+        size = 17
         thin_provisioned = False
         snapshot_policy = None
         language = None
@@ -3578,13 +3583,14 @@ class NetAppClientCmodeTestCase(test.TestCase):
         qos_adaptive_name = None
 
         result_api_args = self.client._get_create_volume_api_args(
-            fake.SHARE_NAME, thin_provisioned, snapshot_policy, language,
+            fake.SHARE_NAME, size, thin_provisioned, snapshot_policy, language,
             reserve, volume_type, cmt, qos_name, encrypt, qos_adaptive_name)
 
         expected_api_args = {
             'volume-type': volume_type,
             'volume-comment': cmt,
             'space-reserve': 'volume',
+            'size': 18253611008,
         }
 
         if encrypt is not None:
@@ -3600,7 +3606,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
         encrypt = True
         self.assertRaises(exception.NetAppException,
                           self.client._get_create_volume_api_args,
-                          fake.SHARE_NAME, True, 'default', 'en-US',
+                          fake.SHARE_NAME, 1, True, 'default', 'en-US',
                           15, 'rw', 'fake_comment', 'fake_qos', encrypt,
                           'fake_qos_adaptive')
 
@@ -4278,6 +4284,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
                 'volume-attributes': {
                     'volume-space-attributes': {
                         'size': 10737418240,
+                        'percentage-snapshot-reserve': None
                     },
                 },
             },
