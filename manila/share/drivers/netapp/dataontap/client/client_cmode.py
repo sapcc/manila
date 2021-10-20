@@ -2335,9 +2335,13 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             msg = 'Adaptive QoS not supported on this backend ONTAP version.'
             raise exception.NetAppException(msg)
 
+        size_b = self._calculate_volume_size(
+            size_gb, options.get('provision_net_capacity', False),
+            snapshot_reserve)
+
         api_args = {
             'containing-aggr-name': aggregate_name,
-            'size': str(size_gb) + 'g',
+            'size': str(size_b),
             'volume': volume_name,
         }
         api_args.update(self._get_create_volume_api_args(
@@ -2375,8 +2379,12 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             msg = 'Adaptive QoS not supported on this backend ONTAP version.'
             raise exception.NetAppException(msg)
 
+        size_b = self._calculate_volume_size(
+            size_gb, options.get('provision_net_capacity', False),
+            snapshot_reserve)
+
         api_args = {
-            'size': size_gb * units.Gi,
+            'size': size_b,
             'volume-name': volume_name,
         }
         if auto_provisioned:
@@ -2398,6 +2406,13 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         }
         return job_info
 
+    def _calculate_volume_size(self, size_gb, provision_net_capacity=False,
+                               snapshot_reserve=None):
+        """Return volume size in bytes, adjusted for net capacity if needed."""
+        if provision_net_capacity and snapshot_reserve is not None:
+            return int(size_gb * units.Gi * 100 / (100 - snapshot_reserve))
+        return int(size_gb * units.Gi)
+
     def _get_create_volume_api_args(self, volume_name, thin_provisioned,
                                     snapshot_policy, language,
                                     snapshot_reserve, volume_type, comment,
@@ -2411,6 +2426,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'volume-comment': comment,
             'space-reserve': ('none' if thin_provisioned else 'volume'),
         }
+
         if volume_type != 'dp':
             api_args['junction-path'] = '/%s' % (mount_point_name
                                                  or volume_name)
@@ -2419,7 +2435,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         if language is not None:
             api_args['language-code'] = language
         if snapshot_reserve is not None:
-            api_args['percentage-snapshot-reserve'] = str(snapshot_reserve)
+            api_args['percentage-snapshot-reserve'] = snapshot_reserve
         if qos_policy_group is not None:
             api_args['qos-policy-group-name'] = qos_policy_group
         if adaptive_qos_policy_group is not None:
@@ -2637,8 +2653,14 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         self.send_request('volume-modify-iter', api_args)
 
     @na_utils.trace
-    def set_volume_size(self, volume_name, size_gb):
+    def set_volume_size(self, volume_name, size_gb, **options):
         """Set volume size."""
+        snapshot_reserve_percent = options.get('snapshot_reserve_percent')
+        provision_net_capacity = options.get('provision_net_capacity', False)
+
+        size_b = self._calculate_volume_size(
+            size_gb, provision_net_capacity, snapshot_reserve_percent)
+
         api_args = {
             'query': {
                 'volume-attributes': {
@@ -2650,7 +2672,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'attributes': {
                 'volume-attributes': {
                     'volume-space-attributes': {
-                        'size': int(size_gb) * units.Gi,
+                        'size': size_b,
+                        'percentage-snapshot-reserve': (
+                            snapshot_reserve_percent),
                     },
                 },
             },
