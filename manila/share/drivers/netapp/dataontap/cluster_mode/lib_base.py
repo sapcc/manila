@@ -2416,18 +2416,21 @@ class NetAppCmodeFileStorageLibrary(object):
         if qos_policy_group_name:
             provisioning_options['qos_policy_group'] = qos_policy_group_name
 
+        snapshot_attributes = vserver_client.get_volume_snapshot_attributes(
+            share_name)
+        if snapshot_attributes['snapshot-policy'].lower() == 'ec2_backups':
+            provisioning_options['snapshot_policy'] = \
+                snapshot_attributes['snapshot-policy']
+            if snapshot_attributes['snapdir-access-enabled'].lower() == 'true':
+                provisioning_options['hide_snapdir'] = False
+            else:
+                provisioning_options['hide_snapdir'] = True
+
         modify_args = {
             'share': share_name,
             'aggr': aggregate_name,
             'options': provisioning_options
         }
-
-        snapshot_attributes = vserver_client.get_volume_snapshot_attributes(
-            share_name)
-        if snapshot_attributes['snapshot-policy'] == 'EC2_Backups':
-            provisioning_options['snapshot-policy'] = 'EC2_Backups'
-            provisioning_options['snapdir-access-enabled'] = \
-                    snapshot_attributes['snapdir-access-enabled']
 
         try:
             vserver_client.modify_volume(aggregate_name, share_name,
