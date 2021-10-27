@@ -111,6 +111,12 @@ class Detail(object):
         _("Share Driver failed to create share because a security service "
           "has not been added to the share network used. Please add a "
           "security service to the share network."))
+    DRIVER_FAILED_DELETE_SHARE_SNAPMIRROR = (
+        '024',
+        _("Share Driver failed to delete the share. The EC2 backup SnapMirror "
+          "configuration exist in the backend that has to be removed first in "
+          "order to delete the share. Please contact Storage Team via SNOW "
+          "ticket."))
 
     ALL = (UNKNOWN_ERROR,
            NO_VALID_HOST,
@@ -134,7 +140,8 @@ class Detail(object):
            FILTER_AFFINITY,
            FILTER_ANTI_AFFINITY,
            SECURITY_SERVICE_FAILED_AUTH,
-           MISSING_SECURITY_SERVICE)
+           MISSING_SECURITY_SERVICE,
+           DRIVER_FAILED_DELETE_SHARE_SNAPMIRROR)
 
 
     # Exception and detail mappings
