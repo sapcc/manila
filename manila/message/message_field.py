@@ -178,6 +178,15 @@ class Detail(object):
           "contact your administrator to troubleshoot "
           "issues with your network."))
 
+    # ////////////////////////// SCI custom message //////////////////////////
+    DRIVER_FAILED_DELETE_SHARE_SNAPMIRROR = (
+        '997',
+        _("Share Driver failed to delete the share. A backup SnapMirror "
+          "configuration exist in the backend that has to be removed first in "
+          "order to delete the share. Please contact Storage Team via SNOW "
+          "ticket."))
+    # ////////////////////////// SCI custom message //////////////////////////
+
     ALL = (
         UNKNOWN_ERROR,
         NO_VALID_HOST,
@@ -198,6 +207,7 @@ class Detail(object):
         DRIVER_FAILED_CREATING_FROM_SNAP,
         DRIVER_REFUSED_SHRINK,
         DRIVER_FAILED_SHRINK,
+        DRIVER_FAILED_DELETE_SHARE_SNAPMIRROR,
         FORBIDDEN_CLIENT_ACCESS,
         UNSUPPORTED_CLIENT_ACCESS,
         UNSUPPORTED_ADD_UDPATE_SECURITY_SERVICE,
