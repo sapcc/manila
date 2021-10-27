@@ -3498,13 +3498,27 @@ class ShareManager(manager.SchedulerDependentManager):
                         context,
                         share_instance_id,
                         {'status': constants.STATUS_ERROR_DELETING})
-                self.message_api.create(
-                    context,
-                    message_field.Action.DELETE,
-                    share_instance['project_id'],
-                    resource_type=message_field.Resource.SHARE,
-                    resource_id=share_instance_id,
-                    exception=excep)
+
+                # NOTE: workaround to filter NetApp snapmirror error:
+                exc_msg = getattr(excep, 'message', '')
+                exc_code = getattr(excep, 'code', '')
+                if ('18436' in str(exc_code) and 'SnapMirror' in exc_msg):
+                    self.message_api.create(
+                        context,
+                        message_field.Action.DELETE,
+                        share_instance['project_id'],
+                        resource_type=message_field.Resource.SHARE,
+                        resource_id=share_id,
+                        detail=(message_field.Detail.
+                                DRIVER_FAILED_DELETE_SHARE_SNAPMIRROR))
+                else:
+                    self.message_api.create(
+                        context,
+                        message_field.Action.DELETE,
+                        share_instance['project_id'],
+                        resource_type=message_field.Resource.SHARE,
+                        resource_id=share_instance_id,
+                        exception=excep)
 
         self.db.share_instance_delete(
             context, share_instance_id, need_to_update_usages=True)
