@@ -107,6 +107,12 @@ class Detail(object):
         '019',
         _("Share Driver does not support shrinking shares."
           " Shrinking share operation failed."))
+    DRIVER_FAILED_DELETE_SHARE_SNAPMIRROR = (
+        '997',
+        _("Share Driver failed to delete the share. A backup SnapMirror "
+          "configuration exist in the backend that has to be removed first in "
+          "order to delete the share. Please contact Storage Team via SNOW "
+          "ticket."))
     FORBIDDEN_CLIENT_ACCESS = (
         '020',
         _("Failed to grant access to client. The client ID used may be "
@@ -162,6 +168,7 @@ class Detail(object):
         DRIVER_FAILED_CREATING_FROM_SNAP,
         DRIVER_REFUSED_SHRINK,
         DRIVER_FAILED_SHRINK,
+        DRIVER_FAILED_DELETE_SHARE_SNAPMIRROR,
         FORBIDDEN_CLIENT_ACCESS,
         UNSUPPORTED_CLIENT_ACCESS,
         UNSUPPORTED_ADD_UDPATE_SECURITY_SERVICE,
