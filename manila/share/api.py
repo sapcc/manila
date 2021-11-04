@@ -600,7 +600,8 @@ class API(base.Base):
         return request_spec, share_instance
 
     def create_share_replica(self, context, share, availability_zone=None,
-                             share_network_id=None):
+                             share_network_id=None,
+                             scheduler_hints=None):
 
         if not share.get('replication_type'):
             msg = _("Replication not supported for share %s.")
@@ -731,7 +732,8 @@ class API(base.Base):
                 context, snapshot['id'], snapshot_instance)
 
         self.scheduler_rpcapi.create_share_replica(
-            context, request_spec=request_spec, filter_properties={})
+            context, request_spec=request_spec,
+            filter_properties={'scheduler_hints': scheduler_hints})
 
         return share_replica
 
