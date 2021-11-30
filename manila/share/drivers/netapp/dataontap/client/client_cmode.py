@@ -164,14 +164,15 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
     @na_utils.trace
     def create_vserver(self, vserver_name, root_volume_aggregate_name,
                        root_volume_name, aggregate_names, ipspace_name,
-                       delete_retention_hours):
+                       delete_retention_hours, logical_space_reporting):
         """Creates new vserver and assigns aggregates."""
         self._create_vserver(
             vserver_name, aggregate_names, ipspace_name,
             delete_retention_hours, root_volume_name=root_volume_name,
             root_volume_aggregate_name=root_volume_aggregate_name,
             root_volume_security_style='unix',
-            name_server_switch='file')
+            name_server_switch='file',
+            logical_space_reporting=logical_space_reporting)
 
     @na_utils.trace
     def create_vserver_dp_destination(self, vserver_name, aggregate_names,
@@ -186,7 +187,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                         delete_retention_hours, root_volume_name=None,
                         root_volume_aggregate_name=None,
                         root_volume_security_style=None,
-                        name_server_switch=None, subtype=None):
+                        name_server_switch=None, subtype=None,
+                        logical_space_reporting=False):
         """Creates new vserver and assigns aggregates."""
         create_args = {
             'vserver-name': vserver_name,
@@ -210,6 +212,10 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 raise exception.NetAppException(msg)
             else:
                 create_args['ipspace'] = ipspace_name
+
+        if logical_space_reporting:
+            create_args['is-space-reporting-logical'] = True
+            create_args['is-space-enforcement-logical'] = True
 
         self.send_request('vserver-create', create_args)
 
