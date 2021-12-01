@@ -356,7 +356,8 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                 self.configuration.netapp_root_volume,
                 aggr_set,
                 ipspace_name,
-                self.configuration.netapp_delete_retention_hours)
+                self.configuration.netapp_delete_retention_hours,
+                self.configuration.netapp_enable_logical_space_reporting)
 
             vserver_client = self._get_api_client(vserver=vserver_name)
 
@@ -2148,6 +2149,13 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             msg = _("The extra spec 'adaptive_qos_policy_group' is not "
                     "supported by backends configured with "
                     "'driver_handles_share_server' == True mode.")
+            raise exception.NetAppException(msg)
+
+        if (self.configuration.netapp_enable_logical_space_reporting and
+                not provisioning_options.get('thin_provisioned')):
+            msg = _("Logical space reporting is only available if thin "
+                    "provisioning is enabled. Set 'thin_provisioning=True' "
+                    "in your provisioning options")
             raise exception.NetAppException(msg)
 
         (super(NetAppCmodeMultiSVMFileStorageLibrary, self)
