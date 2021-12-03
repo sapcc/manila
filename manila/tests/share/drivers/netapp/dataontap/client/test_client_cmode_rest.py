@@ -1526,9 +1526,10 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
         # Get volume UUID.
         uuid = volume['uuid']
 
-        self.client.delete_volume('fake_volume_name')
+        self.client.delete_volume('fake_volume_name', False)
 
-        mock_sr.assert_called_once_with(f'/storage/volumes/{uuid}', 'delete')
+        mock_sr.assert_called_once_with(
+            f'/storage/volumes/{uuid}', 'delete', query={})
 
     def test__unmount_volume(self):
         volume = fake.VOLUME_ITEM_SIMPLE_RESPONSE_REST
