@@ -835,7 +835,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.vserver_client.offline_volume.assert_called_with(
             fake.ROOT_VOLUME_NAME)
         self.vserver_client.delete_volume.assert_called_with(
-            fake.ROOT_VOLUME_NAME)
+            fake.ROOT_VOLUME_NAME, False)
 
         vserver_destroy_args = {'vserver-name': fake.VSERVER_NAME}
         self.client.send_request.assert_has_calls([
@@ -865,7 +865,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.vserver_client.offline_volume.assert_called_with(
             fake.ROOT_VOLUME_NAME)
         self.vserver_client.delete_volume.assert_called_with(
-            fake.ROOT_VOLUME_NAME)
+            fake.ROOT_VOLUME_NAME, False)
 
         vserver_destroy_args = {'vserver-name': fake.VSERVER_NAME}
         self.client.send_request.assert_has_calls([
@@ -5460,7 +5460,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         self.mock_object(self.client, 'send_request')
 
-        self.client.delete_volume(fake.SHARE_NAME)
+        self.client.delete_volume(fake.SHARE_NAME, False)
 
         volume_destroy_args = {'name': fake.SHARE_NAME}
 
