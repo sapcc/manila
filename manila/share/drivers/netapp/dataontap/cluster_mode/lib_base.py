@@ -1219,10 +1219,14 @@ class NetAppCmodeFileStorageLibrary(object):
     @na_utils.trace
     def _delete_share(self, share, vserver_client, remove_export=True):
         share_name = self._get_backend_share_name(share['id'])
+        duration_sec = share.get('duration_seconds', 24 * 60)  # 24 Hrs
+        force_delete_sec = CONF.force_delete_time * 60
+        force_delete = True if duration_sec < force_delete_sec else False
         if self._share_exists(share_name, vserver_client):
             if remove_export:
                 self._remove_export(share, vserver_client)
-            self._deallocate_container(share_name, vserver_client)
+            self._deallocate_container(share_name, vserver_client,
+                                       force_delete)
             qos_policy_for_share = self._get_backend_qos_policy_group_name(
                 share['id'])
             vserver_client.mark_qos_policy_group_for_deletion(
@@ -1247,7 +1251,8 @@ class NetAppCmodeFileStorageLibrary(object):
         self._delete_share(share, vserver_client)
 
     @na_utils.trace
-    def _deallocate_container(self, share_name, vserver_client):
+    def _deallocate_container(self, share_name, vserver_client,
+                              force_delete=False):
         """Free share space."""
         try:
             vserver_client.unmount_volume(share_name, force=True)
@@ -1256,7 +1261,7 @@ class NetAppCmodeFileStorageLibrary(object):
             pass
 
         vserver_client.offline_volume(share_name)
-        vserver_client.delete_volume(share_name)
+        vserver_client.delete_volume(share_name, force_delete)
 
     def _is_multi_protocol_share(self, share):
         """Returns True if share should be available over both NFS and CIFS"""

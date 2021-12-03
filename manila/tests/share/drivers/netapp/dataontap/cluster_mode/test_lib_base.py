@@ -891,7 +891,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         mock_share_exits.assert_called_once_with(fake.SHARE_NAME,
                                                  self.src_vserver_client)
         mock_deallocate_container.assert_called_once_with(
-            fake.SHARE_NAME, self.src_vserver_client)
+            fake.SHARE_NAME, self.src_vserver_client, False)
 
     def test__update_create_from_snapshot_status(self):
         fake_result = mock.Mock()
@@ -978,7 +978,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         mock_share_exits.assert_called_once_with(fake.SHARE_NAME,
                                                  src_vserver_client)
         mock_deallocate_container.assert_called_once_with(fake.SHARE_NAME,
-                                                          src_vserver_client)
+                                                          src_vserver_client,
+                                                          False)
         mock_pvt_storage_delete.assert_called_once_with(fake.SHARE['id'])
         self.assertEqual(expected_result, result)
 
@@ -1761,7 +1762,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         mock_share_exists.assert_called_once_with(share_name, vserver_client)
         mock_remove_export.assert_called_once_with(fake.SHARE, vserver_client)
         mock_deallocate_container.assert_called_once_with(share_name,
-                                                          vserver_client)
+                                                          vserver_client,
+                                                          False)
         (vserver_client.mark_qos_policy_group_for_deletion
          .assert_called_once_with(qos_policy_name))
         self.assertEqual(0, lib_base.LOG.info.call_count)
@@ -1822,12 +1824,13 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
         vserver_client = mock.Mock()
 
-        self.library._deallocate_container(fake.SHARE_NAME, vserver_client)
+        self.library._deallocate_container(fake.SHARE_NAME, vserver_client,
+                                           False)
 
         vserver_client.unmount_volume.assert_called_with(fake.SHARE_NAME,
                                                          force=True)
         vserver_client.offline_volume.assert_called_with(fake.SHARE_NAME)
-        vserver_client.delete_volume.assert_called_with(fake.SHARE_NAME)
+        vserver_client.delete_volume.assert_called_with(fake.SHARE_NAME, False)
 
     def test_create_export(self):
 

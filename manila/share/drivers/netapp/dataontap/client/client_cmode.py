@@ -458,7 +458,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                               root_volume_name)
                 else:
                     raise
-            vserver_client.delete_volume(root_volume_name)
+            vserver_client.delete_volume(root_volume_name, False)
 
         elif volumes_count > 1:
             msg = _("Cannot delete Vserver. Vserver %s has shares.")
@@ -2713,8 +2713,19 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         raise exception.NetAppException(msg % msg_args)
 
     @na_utils.trace
-    def delete_volume(self, volume_name):
+    def delete_volume(self, volume_name, force_delete):
         """Deletes a volume."""
+        if force_delete:
+            res = self.send_request(
+                'system-cli', [{'priv': 'advanced'}, {'args': [
+                    {'arg': 'volume'}, {'arg': 'destroy'},
+                    {'arg': '-vserver'}, {'arg': self.vserver},
+                    {'arg': '-volume'}, {'arg': volume_name},
+                    {'arg': '-force'}, {'arg': 'True'}
+                    ]}], enable_tunneling=False)
+            if res.get_child_content('cli-result-value') == '1':
+                return
+        # Fallback in-case force-delete fails or delete without force_delete
         self.send_request('volume-destroy', {'name': volume_name})
 
     @na_utils.trace
