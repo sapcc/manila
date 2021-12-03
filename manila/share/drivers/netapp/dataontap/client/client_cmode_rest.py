@@ -1667,14 +1667,20 @@ class NetAppRestClient(object):
         self.send_request(f'/storage/volumes/{uuid}', 'patch', body=body)
 
     @na_utils.trace
-    def delete_volume(self, volume_name):
+    def delete_volume(self, volume_name, force_delete):
         """Deletes a volume."""
         # Get volume UUID.
         volume = self._get_volume_by_args(vol_name=volume_name)
         uuid = volume['uuid']
+        if force_delete:
+            query = {
+                "force": "true",
+            }
+        else:
+            query = {}
 
         # delete volume async operation.
-        self.send_request(f'/storage/volumes/{uuid}', 'delete')
+        self.send_request(f'/storage/volumes/{uuid}', 'delete', query=query)
 
     @na_utils.trace
     def qos_policy_group_get(self, qos_policy_group_name):

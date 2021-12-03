@@ -83,6 +83,17 @@ share_manager_opts = [
                 default=False,
                 help='Whether share servers will '
                      'be deleted on deletion of the last share.'),
+    cfg.IntOpt('force_delete_time',
+               default=2,
+               min=0,
+               max=12,
+               help='Maximum time diff in hours to decide whether share will '
+                    'be deleted or force deleted. If time difference between '
+                    'share deletion time and creation time is less than '
+                    'force_delete_time, share will be force deleted. In case '
+                    'force delete fails, volume will be deleted in regular '
+                    'way and it will stay in recovery queue for some time. '
+                    'Value of 0 indicates disable force-delete feature.'),
     cfg.BoolOpt('unmanage_remove_access_rules',
                 default=False,
                 help='If set to True, then manila will deny access and remove '
@@ -3758,6 +3769,12 @@ class ShareManager(manager.SchedulerDependentManager):
             return
 
         try:
+            scheduled_at = share_instance.get('scheduled_at')
+            terminated_at = share_instance.get('terminated_at')
+            if scheduled_at and terminated_at:
+                duration = terminated_at - scheduled_at
+                share_instance.update(
+                    {'duration_seconds': duration.total_seconds()})
             self.driver.delete_share(context, share_instance,
                                      share_server=share_server)
         except exception.ShareResourceNotFound:
@@ -3890,6 +3907,12 @@ class ShareManager(manager.SchedulerDependentManager):
                 continue
 
             try:
+                scheduled_at = share_instance.get('scheduled_at')
+                terminated_at = share_instance.get('terminated_at')
+                if scheduled_at and terminated_at:
+                    duration = terminated_at - scheduled_at
+                    share_instance.update(
+                        {'duration_seconds': duration.total_seconds()})
                 self.driver.delete_share(ctxt, share_instance,
                                          share_server=share_server)
             except exception.ShareResourceNotFound:
