@@ -408,7 +408,7 @@ class NetAppCmodeFileStorageLibrary(object):
             'vendor_name': 'NetApp',
             'driver_version': '1.0',
             'netapp_storage_family': 'ontap_cluster',
-            'storage_protocol': 'NFS_CIFS',
+            'storage_protocol': 'NFS_CIFS_MULTI',
             'pools': self._get_pools(get_filter_function=get_filter_function,
                                      goodness_function=goodness_function),
             'share_group_stats': {
