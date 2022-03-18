@@ -929,6 +929,9 @@ class ShareManagerTestCase(test.TestCase):
             'availability_zone': share_instance.get('availability_zone'),
             'export_locations': share_instance.get('export_locations') or [],
         }
+        share_type = share_instance.get('share_type')
+        if share_type:
+            share_instance_ref['share_type_name'] = share_type.get('name')
         return share_instance_ref
 
     def test_init_host_with_exception_on_ensure_shares(self):
@@ -8651,6 +8654,7 @@ class ShareManagerTestCase(test.TestCase):
         self.mock_object(
             self.share_manager, '_get_share_server',
             mock.Mock(return_value=None))
+        self.mock_object(share_types, 'get_share_type', mock.Mock())
         self.mock_object(
             db, 'share_replicas_get_all_by_share',
             mock.Mock(return_value=replicas))
