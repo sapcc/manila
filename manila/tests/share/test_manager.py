@@ -863,6 +863,7 @@ class ShareManagerTestCase(test.TestCase):
             'source_share_group_snapshot_member_id': share_instance.get(
                 'source_share_group_snapshot_member_id'),
             'availability_zone': share_instance.get('availability_zone'),
+            'share_type_name': 'fake_type',
             'export_locations': share_instance.get('export_locations') or [],
         }
         return share_instance_ref
@@ -8587,6 +8588,7 @@ class ShareManagerTestCase(test.TestCase):
         self.mock_object(
             self.share_manager, '_get_share_server',
             mock.Mock(return_value=None))
+        self.mock_object(share_types, 'get_share_type', mock.Mock())
         self.mock_object(
             db, 'share_replicas_get_all_by_share',
             mock.Mock(return_value=replicas))
