@@ -3126,7 +3126,8 @@ def share_access_get_all_for_share(context, share_id, filters=None):
 @require_context
 @context_manager.reader
 def share_access_get_all_for_instance(context, instance_id, filters=None,
-                                      with_share_access_data=True):
+                                      with_share_access_data=True,
+                                      updated_before=None):
     """Get all access rules related to a certain share instance."""
     filters = copy.deepcopy(filters) if filters else {}
     filters.update({'share_instance_id': instance_id})
@@ -3136,7 +3137,16 @@ def share_access_get_all_for_instance(context, instance_id, filters=None,
     query = exact_filter(
         query, models.ShareInstanceAccessMapping, filters, legal_filter_keys)
 
-    instance_accesses = query.all()
+    if updated_before is not None:
+        created_after = updated_before
+        # e.g. assuming updated_before is: 'one week ago'
+        # younger than a week or not touched since a week
+        instance_accesses = query.filter(or_(
+            models.ShareInstanceAccessMapping.updated_at < updated_before,
+            models.ShareInstanceAccessMapping.created_at > created_after)
+            ).all()
+    else:
+        instance_accesses = query.all()
 
     if with_share_access_data:
         instance_accesses = _set_instances_share_access_data(
