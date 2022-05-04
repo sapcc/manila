@@ -2057,6 +2057,61 @@ def share_instance_get_all_by_share_group_id(context, share_group_id):
     return instances
 
 
+@require_admin_context
+def share_instance_purge(context, instance_id):
+    share_instance_export_locations = model_query(
+        context,
+        models.ShareInstanceExportLocations,
+    ).filter(
+        models.ShareInstanceExportLocations.share_instance_id ==
+        instance_id).all()
+
+    for export_location in share_instance_export_locations:
+        share_instance_export_locations_metadata = model_query(
+            context,
+            models.ShareInstanceExportLocationsMetadata,
+        ).filter(
+            models.ShareInstanceExportLocationsMetadata.export_location_id
+            == export_location.id,
+        ).all()
+
+        for si_el_metadatum in share_instance_export_locations_metadata:
+            si_el_metadatum.delete(session=context.session)
+        export_location.delete(session=context.session)
+
+    share_instance_access_mappings = model_query(
+        context,
+        models.ShareInstanceAccessMapping,
+    ).filter(
+        models.ShareInstanceAccessMapping.share_instance_id ==
+        instance_id).all()
+
+    for access_mapping in share_instance_access_mappings:
+        access_mapping.delete(session=context.session)
+
+    share_snapshot_instances = model_query(
+        context,
+        models.ShareSnapshotInstance,
+    ).filter(
+        models.ShareSnapshotInstance.share_instance_id ==
+        instance_id).all()
+
+    for snapshot_instance in share_snapshot_instances:
+        snap_instance_export_locations = model_query(
+            context,
+            models.ShareSnapshotInstanceExportLocation,
+        ).filter(
+            models.ShareSnapshotInstanceExportLocation
+            .share_snapshot_instance_id ==
+            snapshot_instance.id).all()
+        for snap_iel in snap_instance_export_locations:
+            snap_iel.delete(session=context.session)
+        snapshot_instance.delete(session=context.session)
+
+    instance_ref = share_instance_get(context, instance_id)
+    instance_ref.delete(session=context.session)
+
+
 ################
 
 def _share_replica_get_with_filters(context, share_id=None, replica_id=None,

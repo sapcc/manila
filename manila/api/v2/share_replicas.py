@@ -17,7 +17,9 @@
 
 from http import client as http_client
 
+from oslo_log import log
 from oslo_utils import strutils
+from oslo_utils import uuidutils
 import webob
 from webob import exc
 
@@ -32,6 +34,7 @@ from manila.i18n import _
 from manila import share
 
 
+LOG = log.getLogger(__name__)
 MIN_SUPPORTED_API_VERSION = '2.11'
 PRE_GRADUATION_VERSION = '2.55'
 GRADUATION_VERSION = '2.56'
@@ -156,6 +159,38 @@ class ShareReplicationController(wsgi.Controller, wsgi.AdminActionsMixin):
         context = req.environ['manila.context']
         self._validate_body(body)
         share_id = body.get('share_replica').get('share_id')
+        share_replica_id = body.get('share_replica').get('id')
+        if context.is_admin and share_replica_id is not None:
+            if not uuidutils.is_uuid_like(share_replica_id):
+                msg = _("The 'id' attribute must be a uuid.")
+                raise exc.HTTPBadRequest(explanation=msg)
+            else:
+                share_instance_ref = None
+                try:
+                    share_instance_ref = db.share_instance_get(
+                        context.elevated(),
+                        share_replica_id)
+                except exception.NotFound:
+                    try:
+                        share_instance_ref = db.share_instance_get(
+                            context.elevated(read_deleted='yes'),
+                            share_replica_id)
+                    except exception.NotFound:
+                        pass
+
+                if share_instance_ref is not None:
+                    if share_instance_ref.deleted == 'False':
+                        msg = _("The 'id' attribute must not be in use.")
+                        raise exc.HTTPBadRequest(explanation=msg)
+                    else:
+                        # purge soft-deleted share instance to re-use UUID
+                        LOG.debug(f'purging {share_replica_id}')
+                        db.share_instance_purge(
+                            context.elevated(read_deleted='yes'),
+                            share_replica_id)
+        else:
+            share_replica_id = None
+
         availability_zone = body.get('share_replica').get('availability_zone')
         scheduler_hints = None
         if allow_scheduler_hints:
@@ -198,7 +233,7 @@ class ShareReplicationController(wsgi.Controller, wsgi.AdminActionsMixin):
             new_replica = self.share_api.create_share_replica(
                 context, share_ref, availability_zone=availability_zone,
                 share_network_id=share_network_id,
-                scheduler_hints=scheduler_hints)
+                scheduler_hints=scheduler_hints, replica_id=share_replica_id)
         except exception.AvailabilityZoneNotFound as e:
             raise exc.HTTPBadRequest(explanation=e.msg)
         except exception.ReplicationException as e:

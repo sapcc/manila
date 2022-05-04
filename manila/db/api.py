@@ -391,6 +391,11 @@ def share_instance_sizes_sum_by_host(context, host):
     """Returns sum of sizes of all share instances on given host."""
     return IMPL.share_instance_sizes_sum_by_host(context, host)
 
+
+def share_instance_purge(context, instance_id):
+    """Removes share instance from database."""
+    return IMPL.share_instance_purge(context, instance_id)
+
 ###################
 
 
