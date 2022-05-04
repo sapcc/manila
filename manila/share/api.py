@@ -616,7 +616,8 @@ class API(base.Base):
             share_group=None, host=None, share_network_id=None,
             share_type_id=None, cast_rules_to_readonly=False,
             availability_zones=None, snapshot_host=None,
-            az_request_multiple_subnet_support_map=None):
+            az_request_multiple_subnet_support_map=None,
+            share_instance_id=None):
 
         availability_zone_id = None
         if availability_zone:
@@ -629,6 +630,7 @@ class API(base.Base):
         share_instance = self.db.share_instance_create(
             context, share['id'],
             {
+                'id': share_instance_id if context.is_admin else None,
                 'share_network_id': share_network_id,
                 'status': constants.STATUS_CREATING,
                 'scheduled_at': timeutils.utcnow(),
@@ -694,7 +696,8 @@ class API(base.Base):
         return request_spec, share_instance
 
     def create_share_replica(self, context, share, availability_zone=None,
-                             share_network_id=None, scheduler_hints=None):
+                             share_network_id=None, scheduler_hints=None,
+                             replica_id=None):
 
         parent_share_network_id = share.get('share_network_id')
         if (parent_share_network_id and share_network_id and
@@ -813,6 +816,7 @@ class API(base.Base):
             request_spec, share_replica = (
                 self.create_share_instance_and_get_request_spec(
                     context, share, availability_zone=availability_zone,
+                    share_instance_id=replica_id,
                     share_network_id=share_network_id,
                     share_type_id=share['instance']['share_type_id'],
                     cast_rules_to_readonly=cast_rules_to_readonly,
