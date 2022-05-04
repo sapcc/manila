@@ -1078,6 +1078,7 @@ class ShareAPITestCase(test.TestCase):
         db_api.share_instance_create.assert_called_once_with(
             self.context, share['id'],
             {
+                'id': None,
                 'share_network_id': None,
                 'status': constants.STATUS_CREATING,
                 'scheduled_at': self.dt_utc,
@@ -4150,6 +4151,7 @@ class ShareAPITestCase(test.TestCase):
         (self.api.create_share_instance_and_get_request_spec.
          assert_called_once_with(
              self.context, share, availability_zone=None,
+             share_instance_id=None,
              share_network_id=share_network_id, share_type_id=share_type['id'],
              availability_zones=expected_azs,
              az_request_multiple_subnet_support_map={},
@@ -4290,6 +4292,7 @@ class ShareAPITestCase(test.TestCase):
         (share_api.API.create_share_instance_and_get_request_spec.
          assert_called_once_with(
              self.context, share, availability_zone='FAKE_AZ',
+             share_instance_id=None,
              share_network_id=share_network_id, share_type_id=share_type['id'],
              availability_zones=expected_azs,
              az_request_multiple_subnet_support_map=az_id,
@@ -4527,6 +4530,7 @@ class ShareAPITestCase(test.TestCase):
             self.context, share['instance']['share_type_id'])
         (share_api.API.create_share_instance_and_get_request_spec.
          assert_called_once_with(self.context, share, availability_zone=None,
+                                 share_instance_id=None,
                                  share_network_id=share_network_id,
                                  share_type_id=share_type['id'],
                                  availability_zones=expected_azs,
