@@ -304,7 +304,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                     # NOTE(dviroel): At this point, the lock was already
                     # acquired by the caller of _create_vserver.
                     # NOTE(carthaca): keep debris for analysis in debug
-                    if not CONF.keep_share_server_on_failure:
+                    if not (CONF.keep_share_server_on_failure or security_services):  # noqa: E501
                         self._delete_vserver(vserver_name,
                                              security_services=security_services,  # noqa: E501
                                              needs_lock=False)
@@ -528,7 +528,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                 if security_service['type'].lower() == 'active_directory':
                     try:
                         vserver_client.configure_certificates()
-                        vserver_client.configure_cifs_encryption()
+                        # vserver_client.configure_cifs_encryption()
                         vserver_client.configure_cifs_options()
                     except exception.NetAppException as e:
                         LOG.warning(e.message)
