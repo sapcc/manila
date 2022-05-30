@@ -764,10 +764,12 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             fake.IPSPACE,
             security_services=security_service,
             nfs_config=None)
-        self.library._delete_vserver.assert_called_once_with(
-            vserver_name,
-            needs_lock=False,
-            security_services=security_service)
+
+        if not security_service:
+            self.library._delete_vserver.assert_called_once_with(
+                vserver_name,
+                needs_lock=False,
+                security_services=security_service)
         self.assertFalse(vserver_client.enable_nfs.called)
         self.assertEqual(1, lib_multi_svm.LOG.warning.call_count)
 

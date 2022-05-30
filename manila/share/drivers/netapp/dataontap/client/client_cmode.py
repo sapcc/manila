@@ -1773,7 +1773,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         if security_service['ou'] is not None:
             api_args['organizational-unit'] = security_service['ou']
 
-        for attempt in range(3):
+        for attempt in range(6):
             try:
                 LOG.debug("Trying to setup CIFS server with args: %s",
                           api_args)
@@ -1782,8 +1782,10 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             except netapp_api.NaApiError as e:
                 LOG.debug("Failed to create CIFS server entry. %s", e.message)
                 time.sleep(3)
+                if attempt == 2:
+                    self.configure_cifs_encryption(secure=False)
                 continue
-        msg = _('Cannot setup CIFS server after 3 attempts.')
+        msg = _('Cannot setup CIFS server after 6 attempts.')
         raise exception.NetAppException(msg)
 
     @na_utils.trace
@@ -2087,12 +2089,16 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 raise exception.NetAppException(msg % e.message)
 
     @na_utils.trace
-    def configure_cifs_encryption(self):
+    def configure_cifs_encryption(self, secure=True):
         api_args = {
             'is-aes-encryption-enabled': 'true',
             'use-ldaps-for-ad-ldap': 'true',
             'session-security-for-ad-ldap': 'sign',
         }
+
+        if not secure:
+            api_args['use-ldaps-for-ad-ldap'] = 'false'
+            api_args['session-security-for-ad-ldap'] = 'none'
 
         try:
             self.send_request('cifs-security-modify', api_args)
