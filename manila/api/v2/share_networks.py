@@ -381,8 +381,9 @@ class ShareNetworkController(wsgi.Controller, wsgi.AdminActionsMixin):
             try:
                 share_network = db_api.share_network_create(
                     context, share_network_values)
-            except db_exception.DBError as e:
+            except Exception as e:
                 LOG.exception(e)
+                QUOTAS.rollback(context, reservations)
                 msg = "Could not create share network."
                 raise exc.HTTPInternalServerError(explanation=msg)
 
@@ -395,10 +396,16 @@ class ShareNetworkController(wsgi.Controller, wsgi.AdminActionsMixin):
             try:
                 db_api.share_network_subnet_create(
                     context, share_network_subnet_values)
-            except db_exception.DBError:
-                db_api.share_network_delete(context, share_network['id'])
-                msg = _('Could not create share network.')
-                raise exc.HTTPInternalServerError(explanation=msg)
+            except Exception as e:
+                LOG.exception(e)
+                try:
+                    db_api.share_network_delete(context, share_network['id'])
+                except Exception as e:
+                    LOG.exception(e)
+                finally:
+                    QUOTAS.rollback(context, reservations)
+                    msg = _('Could not create share network subnet.')
+                    raise exc.HTTPInternalServerError(explanation=msg)
 
             QUOTAS.commit(context, reservations)
             share_network = db_api.share_network_get(context,
