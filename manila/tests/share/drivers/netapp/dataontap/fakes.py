@@ -318,6 +318,7 @@ PROVISIONING_OPTIONS = {
     'encrypt': False,
     'hide_snapdir': False,
     'adaptive_qos_policy_group': None,
+    'logical_space_reporting': False,
 }
 
 PROVISIONING_OPTIONS_WITH_QOS = copy.deepcopy(PROVISIONING_OPTIONS)
