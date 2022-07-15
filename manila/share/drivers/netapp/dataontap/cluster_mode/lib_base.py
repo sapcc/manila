@@ -1122,8 +1122,13 @@ class NetAppCmodeFileStorageLibrary(object):
         provisioning_options = self._get_provisioning_options_for_share(
             share, vserver, vserver_client=vserver_client, set_qos=set_qos)
         # override dedup_enabled if not None
+        # compression must be disabled if dedup_enabled is False
         if dedup_enabled is not None:
-            provisioning_options['dedup_enabled'] = dedup_enabled
+            if dedup_enabled:
+                provisioning_options['dedup_enabled'] = True
+            else:
+                provisioning_options['dedup_enabled'] = False
+                provisioning_options['compression_enabled'] = False
         # override logical_space_reporting if not None
         if logical_space_reporting is not None:
             provisioning_options[
