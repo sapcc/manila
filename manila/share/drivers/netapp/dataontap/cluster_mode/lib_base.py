@@ -746,8 +746,19 @@ class NetAppCmodeFileStorageLibrary(object):
     @na_utils.trace
     def create_share(self, context, share, share_server):
         """Creates new share."""
+        # 2022.07.15 SAPCC
+        # force disabling deduplication
+        # force enabling logical-space-reporting for neo projects
+        logical_space_reporting = False
+        if context.project_domain_name in ['neo']:
+            logical_space_reporting = True
+        if context.project_domain_name == 'monsoon3':
+            if context.project_name in ['storage_support']:
+                logical_space_reporting = True
         vserver, vserver_client = self._get_vserver(share_server=share_server)
-        self._allocate_container(share, vserver, vserver_client)
+        self._allocate_container(
+            share, vserver, vserver_client, dedup_enabled=False,
+            logical_space_reporting=logical_space_reporting)
         return self._create_export(share, share_server, vserver,
                                    vserver_client)
 
@@ -1096,8 +1107,8 @@ class NetAppCmodeFileStorageLibrary(object):
 
     @na_utils.trace
     def _allocate_container(self, share, vserver, vserver_client,
-                            replica=False, create_fpolicy=True,
-                            set_qos=True):
+                            replica=False, create_fpolicy=True, set_qos=True,
+                            dedup_enabled=None, logical_space_reporting=None):
         """Create new share on aggregate."""
         share_name = self._get_backend_share_name(share['id'])
         share_comment = self._get_backend_share_comment(share)
@@ -1110,6 +1121,13 @@ class NetAppCmodeFileStorageLibrary(object):
 
         provisioning_options = self._get_provisioning_options_for_share(
             share, vserver, vserver_client=vserver_client, set_qos=set_qos)
+        # override dedup_enabled if not None
+        if dedup_enabled is not None:
+            provisioning_options['dedup_enabled'] = dedup_enabled
+        # override logical_space_reporting if not None
+        if logical_space_reporting is not None:
+            provisioning_options[
+                'logical_space_reporting'] = logical_space_reporting
 
         if replica:
             # If this volume is intended to be a replication destination,
