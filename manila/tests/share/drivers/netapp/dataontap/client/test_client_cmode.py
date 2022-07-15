@@ -3143,7 +3143,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         self.client._get_create_volume_api_args.assert_called_once_with(
             fake.SHARE_NAME, False, None, None, None,
-            'rw', '', None, None, None)
+            'rw', '', None, None, None, None)
         self.client.send_request.assert_called_with('volume-create',
                                                     volume_create_args)
         (self.client.update_volume_efficiency_attributes.
@@ -3198,7 +3198,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         self.client._get_create_volume_api_args.assert_called_once_with(
             fake.SHARE_NAME, False, None, None, None, 'rw', None, None,
-            False, None)
+            False, None, None)
         self.client.send_request.assert_called_with('volume-create-async',
                                                     volume_create_args)
         self.assertEqual(expected_result, result)
@@ -3226,11 +3226,12 @@ class NetAppClientCmodeTestCase(test.TestCase):
         qos_name = 'fake_qos'
         encrypt = True
         qos_adaptive_name = 'fake_adaptive_qos'
+        logical_space_reporting = False
 
         result_api_args = self.client._get_create_volume_api_args(
             fake.SHARE_NAME, thin_provisioned, snapshot_policy, language,
             reserve, volume_type, fake.VOLUME_COMMENT, qos_name, encrypt,
-            qos_adaptive_name)
+            qos_adaptive_name, logical_space_reporting)
 
         expected_api_args = {
             'volume-type': volume_type,
@@ -3243,6 +3244,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'qos-policy-group-name': qos_name,
             'qos-adaptive-policy-group-name': qos_adaptive_name,
             'encrypt': 'true',
+            'is-space-enforcement-logical': False,
+            'is-space-reporting-logical': False,
         }
         self.assertEqual(expected_api_args, result_api_args)
 
@@ -3258,16 +3261,19 @@ class NetAppClientCmodeTestCase(test.TestCase):
         encrypt = False
         qos_adaptive_name = None
         volume_comment = None
+        logical_space_reporting = False
 
         result_api_args = self.client._get_create_volume_api_args(
             fake.SHARE_NAME, thin_provisioned, snapshot_policy, language,
             reserve, volume_type, volume_comment, qos_name, encrypt,
-            qos_adaptive_name)
+            qos_adaptive_name, logical_space_reporting)
 
         expected_api_args = {
             'encrypt': 'false',
             'volume-type': volume_type,
             'volume-comment': volume_comment,
+            'is-space-enforcement-logical': False,
+            'is-space-reporting-logical': False,
         }
         self.assertEqual(expected_api_args, result_api_args)
 
@@ -3278,7 +3284,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
                           self.client._get_create_volume_api_args,
                           fake.SHARE_NAME, True, 'default', 'en-US',
                           15, 'rw', 'fake_comment', 'fake_qos',
-                          encrypt, 'fake_qos_adaptive')
+                          encrypt, 'fake_qos_adaptive', False)
 
     def test_is_flexvol_encrypted_unsupported(self):
 
@@ -4222,6 +4228,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
                     },
                     'volume-space-attributes': {
                         'size': None,
+                        'is-space-enforcement-logical': None,
+                        'is-space-reporting-logical': None
                     },
                     'volume-qos-attributes': {
                         'policy-group-name': None,
@@ -4237,6 +4245,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'name': fake.SHARE_NAME,
             'type': 'rw',
             'style': 'flex',
+            'is-space-enforcement-logical': None,
+            'is-space-reporting-logical': None,
             'size': fake.SHARE_SIZE,
             'owning-vserver-name': fake.VSERVER_NAME,
             'qos-policy-group-name': fake.QOS_POLICY_GROUP_NAME,
@@ -4281,6 +4291,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
                     },
                     'volume-space-attributes': {
                         'size': None,
+                        'is-space-enforcement-logical': None,
+                        'is-space-reporting-logical': None
                     },
                     'volume-qos-attributes': {
                         'policy-group-name': None,
@@ -4292,6 +4304,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
         expected = {
             'aggregate': fake.SHARE_AGGREGATE_NAME,
             'aggr-list': [],
+            'is-space-enforcement-logical': None,
+            'is-space-reporting-logical': None,
             'junction-path': '/%s' % fake.SHARE_NAME,
             'name': fake.SHARE_NAME,
             'type': 'rw',

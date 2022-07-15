@@ -195,7 +195,6 @@ class NetAppCmodeFileStorageLibrary(object):
         # Performance monitoring library
         self._perf_library = performance.PerformanceLibrary(self._client)
 
-
         if self._client.features.CIFS_CHANNEL_BINDING:
             self._channel_binding_support = True
 
@@ -412,7 +411,8 @@ class NetAppCmodeFileStorageLibrary(object):
             'share_backend_name': self._backend_name,
             'driver_name': self.driver_name,
             'vendor_name': 'NetApp',
-            'driver_version': self._client.get_system_version()['version-tuple'],
+            'driver_version': self._client.get_system_version(
+                )['version-tuple'],
             'netapp_storage_family': 'ontap_cluster',
             'storage_protocol': 'NFS_CIFS_MULTI',
             'pools': self._get_pools(get_filter_function=get_filter_function,
@@ -743,11 +743,30 @@ class NetAppCmodeFileStorageLibrary(object):
 
         return pool
 
+    def _get_dedup_and_logical_space_provisioning_opts(self, vserver_client,
+                                                       share_name):
+        provisioning_opts = {}
+        effi_status = vserver_client.get_volume_efficiency_status(share_name)
+        src_volume = vserver_client.get_volume(share_name)
+        provisioning_opts['dedup_enabled'] = effi_status.get('dedupe', False)
+        provisioning_opts['compression_enabled'] = effi_status.get(
+            'compression', False)
+        provisioning_opts['logical_space_reporting'] = src_volume.get(
+            'is-space-reporting-logical', False)
+        return provisioning_opts
+
     @na_utils.trace
     def create_share(self, context, share, share_server):
         """Creates new share."""
+        # SAPCC force enabling logical-space-reporting on new Volumes
+        provisioning_options = {'logical_space_reporting': True}
+        # SAPCC force disabling deduplication for neo projects
+        if context.project_domain_name in ['neo']:
+            provisioning_options['dedup_enabled'] = True
+            provisioning_options['compression_enabled'] = True
         vserver, vserver_client = self._get_vserver(share_server=share_server)
-        self._allocate_container(share, vserver, vserver_client)
+        self._allocate_container(share, vserver, vserver_client,
+                                 **provisioning_options)
         return self._create_export(share, share_server, vserver,
                                    vserver_client)
 
@@ -764,9 +783,19 @@ class NetAppCmodeFileStorageLibrary(object):
         if is_group_snapshot or parent_share['host'] == share['host']:
             src_vserver, src_vserver_client = self._get_vserver(
                 share_server=share_server)
+
+            # SAPCC use same dedup/compression/logical_space_reporting settings
+            # as parent share, overriding share type
+            parent_share_name = self._get_backend_share_name(
+                parent_share['id'])
+            provisioning_opts = \
+                self._get_dedup_and_logical_space_provisioning_opts(
+                    src_vserver_client, parent_share_name)
+
             # Creating a new share from snapshot in the source share's pool
             self._allocate_container_from_snapshot(
-                share, snapshot, src_vserver, src_vserver_client)
+                share, snapshot, src_vserver, src_vserver_client,
+                **provisioning_opts)
             return self._create_export(share, share_server, src_vserver,
                                        src_vserver_client)
 
@@ -845,6 +874,12 @@ class NetAppCmodeFileStorageLibrary(object):
             parent_aggr = share_utils.extract_host(parent_share['host'],
                                                    level='pool')
 
+        # SAPCC use same dedup/compression/logical_space_reporting settings as
+        # parent share, overriding share type
+        provisioning_opts = \
+            self._get_dedup_and_logical_space_provisioning_opts(
+                src_vserver_client, parent_share_name)
+
         try:
             # NOTE(felipe_rodrigues): no support to move volumes that are
             # FlexGroup or without the cluster credential. So, performs the
@@ -856,11 +891,11 @@ class NetAppCmodeFileStorageLibrary(object):
                 # to create fpolicies since this copy will be deleted.
                 self._allocate_container_from_snapshot(
                     dest_share, snapshot, src_vserver, src_vserver_client,
-                    split=False, create_fpolicy=False)
+                    split=False, create_fpolicy=False, **provisioning_opts)
                 # 2. Create a replica in destination host.
                 self._allocate_container(
                     dest_share, dest_vserver, dest_vserver_client,
-                    replica=True, set_qos=False)
+                    replica=True, set_qos=False, **provisioning_opts)
                 # 3. Initialize snapmirror relationship with cloned share.
                 src_share_instance['replica_state'] = (
                     constants.REPLICA_STATE_ACTIVE)
@@ -879,7 +914,7 @@ class NetAppCmodeFileStorageLibrary(object):
                 # vserver.
                 self._allocate_container_from_snapshot(
                     dest_share, snapshot, src_vserver,
-                    src_vserver_client, split=True)
+                    src_vserver_client, split=True, **provisioning_opts)
                 # The split volume clone operation can take some time to be
                 # concluded and we'll answer the call asynchronously.
                 state = self.STATE_SPLITTING_VOLUME_CLONE
@@ -960,7 +995,7 @@ class NetAppCmodeFileStorageLibrary(object):
         share['share_server'] = share_server
 
         # Source host info
-        __, src_vserver, src_backend = (
+        src_volume_name, src_vserver, src_backend = (
             dm_session.get_backend_info_for_share(src_share))
         src_aggr = src_share['aggregate']
         src_vserver_client = data_motion.get_client_for_backend(
@@ -1078,6 +1113,13 @@ class NetAppCmodeFileStorageLibrary(object):
                     provisioning_options['qos_policy_group'] = (
                         qos_policy_group_name)
                 share_name = self._get_backend_share_name(share['id'])
+
+                # SAPCC use same dedup/compression/logical_space_reporting
+                # settings as source share, overriding share type
+                dedup_provisioning_options = \
+                    self._get_dedup_and_logical_space_provisioning_opts(
+                        src_vserver_client, src_volume_name)
+                provisioning_options.update(dedup_provisioning_options)
                 # Modify volume to match extra specs
                 dest_vserver_client.modify_volume(
                     dest_aggr, share_name, **provisioning_options)
@@ -1096,8 +1138,8 @@ class NetAppCmodeFileStorageLibrary(object):
 
     @na_utils.trace
     def _allocate_container(self, share, vserver, vserver_client,
-                            replica=False, create_fpolicy=True,
-                            set_qos=True):
+                            replica=False, create_fpolicy=True, set_qos=True,
+                            **force_provisioning_options):
         """Create new share on aggregate."""
         share_name = self._get_backend_share_name(share['id'])
         share_comment = self._get_backend_share_comment(share)
@@ -1110,6 +1152,10 @@ class NetAppCmodeFileStorageLibrary(object):
 
         provisioning_options = self._get_provisioning_options_for_share(
             share, vserver, vserver_client=vserver_client, set_qos=set_qos)
+
+        # SAPCC override share type specs by force_provisioning_options
+        for k, v in force_provisioning_options.items():
+            provisioning_options[k] = v
 
         if replica:
             # If this volume is intended to be a replication destination,
@@ -1625,7 +1671,7 @@ class NetAppCmodeFileStorageLibrary(object):
     def _allocate_container_from_snapshot(
             self, share, snapshot, vserver, vserver_client,
             snapshot_name_func=_get_backend_snapshot_name, split=None,
-            create_fpolicy=True):
+            create_fpolicy=True, **force_provisioning_options):
         """Clones existing share."""
         share_name = self._get_backend_share_name(share['id'])
         parent_share_name = self._get_backend_share_name(snapshot['share_id'])
@@ -1638,6 +1684,10 @@ class NetAppCmodeFileStorageLibrary(object):
 
         provisioning_options = self._get_provisioning_options_for_share(
             share, vserver, vserver_client=vserver_client)
+
+        # SAPCC override share type specs by force_provisioning_options
+        for k, v in force_provisioning_options.items():
+            provisioning_options[k] = v
 
         hide_snapdir = provisioning_options.pop('hide_snapdir')
         if split is not None:
@@ -2547,6 +2597,13 @@ class NetAppCmodeFileStorageLibrary(object):
         provisioning_options = self._get_provisioning_options_for_share(
             share, vserver, vserver_client=vserver_client)
 
+        # SAPCC keep dedup/compression/logical_space_reporting settings when
+        # ensuring shares, overriding its share type
+        dedup_provisioning_options = \
+            self._get_dedup_and_logical_space_provisioning_opts(
+                vserver_client, share_name)
+        provisioning_options.update(dedup_provisioning_options)
+
         qos_policy_group_name = self._modify_or_create_qos_for_existing_share(
             share, extra_specs, vserver, vserver_client)
         if qos_policy_group_name:
@@ -2756,10 +2813,16 @@ class NetAppCmodeFileStorageLibrary(object):
         vserver_client = data_motion.get_client_for_backend(
             dest_backend, vserver_name=vserver)
 
+        # SAPCC use same dedup/compression/logical_space_reporting settings as
+        # source share, overriding share type
+        provisioning_opts = \
+            self._get_dedup_and_logical_space_provisioning_opts(
+                src_client, src_share_name)
+
         is_readable = self._is_readable_replica(new_replica)
         self._allocate_container(new_replica, vserver, vserver_client,
                                  replica=True, create_fpolicy=False,
-                                 set_qos=is_readable)
+                                 set_qos=is_readable, **provisioning_opts)
 
         # 2. Setup SnapMirror with mounting replica whether 'readable' type.
         relationship_type = na_utils.get_relationship_type(dest_is_flexgroup)
