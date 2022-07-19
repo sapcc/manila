@@ -1666,6 +1666,14 @@ class NetAppCmodeFileStorageLibrary(object):
         if split is not None:
             provisioning_options['split'] = split
 
+        # SAPCC use same dedup/compression settings as parent share, overriding
+        # share type
+        effi_status = vserver_client.get_volume_efficiency_status(parent_share_name)
+        provisioning_options['dedup_enabled'] = effi_status['dedupe']
+        provisioning_options['compression_enabled'] = effi_status['compression']
+        # src_volume = vserver_client.get_volume(parent_share_name)
+        # provisioning_options['logical_space_reporting'] = src_volume['is-space-reporting-logical']
+
         LOG.debug('Creating share from snapshot %s', snapshot['id'])
         vserver_client.create_volume_clone(
             share_name, parent_share_name, parent_snapshot_name,

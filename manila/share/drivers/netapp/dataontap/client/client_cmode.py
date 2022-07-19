@@ -3049,6 +3049,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                     },
                     'volume-space-attributes': {
                         'size': None,
+                        'is-space-enforcement-logical': None,
+                        'is-space-reporting-logical': None,
                     },
                 },
             },
@@ -3099,7 +3101,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'qos-policy-group-name': volume_qos_attributes.get_child_content(
                 'policy-group-name'),
             'style-extended': volume_id_attributes.get_child_content(
-                'style-extended')
+                'style-extended'),
+            'is-space-reporting-logical': volume_space_attributes.get_child_content('is-space-reporting-logical'),
+            'is-space-enforcement-logical': volume_space_attributes.get_child_content('is-space-enforcement-logical')
         }
         return volume
 
