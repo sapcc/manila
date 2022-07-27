@@ -2164,7 +2164,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                       compression_enabled=False, max_files=None,
                       snapshot_reserve=None, volume_type='rw', comment='',
                       qos_policy_group=None, adaptive_qos_policy_group=None,
-                      encrypt=None, logical_space_reporting=False, **options):
+                      encrypt=None, logical_space_reporting=None, **options):
         """Creates a volume."""
         if adaptive_qos_policy_group and not self.features.ADAPTIVE_QOS:
             msg = 'Adaptive QoS not supported on this backend ONTAP version.'
@@ -2216,7 +2216,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                             qos_policy_group=None, encrypt=False,
                             adaptive_qos_policy_group=None,
                             auto_provisioned=False,
-                            logical_space_reporting=False,
+                            logical_space_reporting=None,
                             **options):
         """Creates a volume asynchronously."""
 
@@ -2296,9 +2296,11 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             else:
                 api_args['encrypt'] = 'false'
 
-        if logical_space_reporting:
-            api_args['is-space-reporting-logical'] = True
-            api_args['is-space-enforcement-logical'] = True
+        # SAPCC If logical_space_reporting is not set, the settings are
+        # contrlled by parent share server
+        if logical_space_reporting in (True, False):
+            api_args['is-space-reporting-logical'] = logical_space_reporting
+            api_args['is-space-enforcement-logical'] = logical_space_reporting
 
         return api_args
 
@@ -2637,7 +2639,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                       compression_enabled=False, max_files=None,
                       qos_policy_group=None, hide_snapdir=None,
                       autosize_attributes=None, comment=None, replica=False,
-                      adaptive_qos_policy_group=None, **options):
+                      adaptive_qos_policy_group=None,
+                      logical_space_reporting=None, **options):
         """Update backend volume for a share as necessary.
 
         :param aggregate_name: either a list or a string. List for aggregate
@@ -2724,6 +2727,14 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             api_args['attributes']['volume-attributes'][
                 'volume-id-attributes'][
                     'comment'] = comment
+
+        # SAPCC If logical_space_reporting not set, the settings is controlled
+        # by the parent vserver.
+        if logical_space_reporting in (True, False):
+            api_args['attributes']['volume-space-attributes'][
+                    'is-space-reporting-logical'] = logical_space_reporting 
+            api_args['attributes']['volume-space-attributes'][
+                    'is-space-enforcement-logical'] = logical_space_reporting 
 
         self.send_request('volume-modify-iter', api_args)
 
