@@ -4756,7 +4756,6 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
 
         body = {
             'protocol.v3_enabled': 'true' if v3 else 'false',
-            'protocol.v40_enabled': 'true' if v40 else 'false',
             'protocol.v41_enabled': 'true' if v41 else 'false',
             'showmount_enabled': 'true',
             'windows.v3_ms_dos_client_enabled': 'true',
@@ -4764,6 +4763,18 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             'protocol.v3_features.ejukebox_enabled': 'false',
             'vstorage_enabled': 'true',
         }
+
+        if v40:
+            body['protocol.v40_enabled'] = 'true'
+        if v41:
+            nfs41_opts = {
+                'v41_features.pnfs_enabled': 'true',
+                'v41_features.acl_enabled': 'true',
+                'v41_features.read_delegation_enabled': 'true',
+                'v41_features.write_delegation_enabled': 'true',
+            }
+            body.update(nfs41_opts)
+
         self.client.send_request.assert_called_once_with(
             f'/protocols/nfs/services/{fake.FAKE_UUID}',
             'patch', body=body)

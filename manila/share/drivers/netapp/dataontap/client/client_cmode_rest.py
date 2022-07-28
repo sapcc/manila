@@ -4937,12 +4937,17 @@ class NetAppRestClient(object):
     def _enable_nfs_protocols(self, versions, svm_id):
         """Set the enabled NFS protocol versions."""
         nfs3 = 'true' if 'nfs3' in versions else 'false'
-        nfs40 = 'true' if 'nfs4.0' in versions else 'false'
+        # SAPCC absence of 'nfs4.0' should not equal 'false'
+        # instead it should mean:
+        #   don't touch existing value for existing vservers
+        #   and set the default value ('false' for ONTAP 9.7 and newer)
+        #   for new vservers
+        # Change back to upstream once all vservers have nfs4.0 disabled!
+        # nfs40 = 'true' if 'nfs4.0' in versions else 'false'
         nfs41 = 'true' if 'nfs4.1' in versions else 'false'
 
         body = {
             'protocol.v3_enabled': nfs3,
-            'protocol.v40_enabled': nfs40,
             'protocol.v41_enabled': nfs41,
             'showmount_enabled': 'true',
             'windows.v3_ms_dos_client_enabled': 'true',
@@ -4950,6 +4955,19 @@ class NetAppRestClient(object):
             'protocol.v3_features.ejukebox_enabled': 'false',
             'vstorage_enabled': 'true',
         }
+
+        if 'nfs4.0' in versions:
+            body['protocol.v40_enabled'] = 'true'
+
+        if 'nfs4.1' in versions:
+            nfs41_opts = {
+                'v41_features.pnfs_enabled': 'true',
+                'v41_features.acl_enabled': 'true',
+                'v41_features.read_delegation_enabled': 'true',
+                'v41_features.write_delegation_enabled': 'true',
+            }
+            body.update(nfs41_opts)
+
         self.send_request(f'/protocols/nfs/services/{svm_id}', 'patch',
                           body=body)
 
