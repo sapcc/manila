@@ -749,8 +749,7 @@ class NetAppCmodeFileStorageLibrary(object):
         # SAPCC force enabling logical-space-reporting on new Volumes
         provisioning_options = {'logical_space_reporting': True}
         # SAPCC force disabling deduplication for neo projects
-        if context.project_domain_name in ['neo'] \
-            or (context.project_domain_name == 'monsoon3' and context.project_name == 'storage_support'):
+        if context.project_domain_name in ['neo']:
                 provisioning_options['dedup_enabled'] = False
                 provisioning_options['compression_enabled'] = False
         vserver, vserver_client = self._get_vserver(share_server=share_server)
@@ -1148,7 +1147,6 @@ class NetAppCmodeFileStorageLibrary(object):
         provisioning_options = self._get_provisioning_options_for_share(
             share, vserver, vserver_client=vserver_client, set_qos=set_qos)
 
-        breakpoint()
         # SAPCC override share type specs by force_provisioning_options
         for k, v in force_provisioning_options.items():
             provisioning_options[k] = v
