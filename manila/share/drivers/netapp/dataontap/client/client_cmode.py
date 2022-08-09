@@ -2129,12 +2129,13 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 # no raise to be non-blocking
                 LOG.warning(msg, e.message)
 
-        if not security_service['server']:
+        if security_service['server'] is not None:
+            api_args = {'mode': 'none'}
+        elif security_service['defaultadsite'] is not None:
+            api_args = {'mode': 'site'}
+        else:
             return
 
-        api_args = {
-            'mode': 'none'
-        }
         try:
             self.send_request(
                 'cifs-domain-server-discovery-mode-modify',
