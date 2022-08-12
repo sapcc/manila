@@ -48,7 +48,8 @@ class GenericUtilsTestCase(test.TestCase):
                                mock.Mock(return_value=fts_func(fake_now))):
 
             # Up (equal)
-            service = {'updated_at': fts_func(fake_now - down_time),
+            service = {'id': 'fake_service_id',
+                       'updated_at': fts_func(fake_now - down_time),
                        'created_at': fts_func(fake_now - down_time)}
             result = utils.service_is_up(service)
             self.assertTrue(result)
@@ -57,7 +58,8 @@ class GenericUtilsTestCase(test.TestCase):
         with mock.patch.object(timeutils, 'utcnow',
                                mock.Mock(return_value=fts_func(fake_now))):
             # Up
-            service = {'updated_at': fts_func(fake_now - down_time + 1),
+            service = {'id': 'fake_service_id',
+                       'updated_at': fts_func(fake_now - down_time + 1),
                        'created_at': fts_func(fake_now - down_time + 1)}
             result = utils.service_is_up(service)
             self.assertTrue(result)
@@ -66,11 +68,14 @@ class GenericUtilsTestCase(test.TestCase):
         with mock.patch.object(timeutils, 'utcnow',
                                mock.Mock(return_value=fts_func(fake_now))):
             # Down
-            service = {'updated_at': fts_func(fake_now - down_time - 1),
+            service = {'id': 'fake_service_id',
+                       'updated_at': fts_func(fake_now - down_time - 1),
                        'created_at': fts_func(fake_now - down_time - 1)}
+            self.mock_object(db, 'service_get',
+                             mock.Mock(return_value=service))
             result = utils.service_is_up(service)
             self.assertFalse(result)
-            timeutils.utcnow.assert_called_once_with()
+            timeutils.utcnow.assert_called()
 
     @ddt.data(['ssh', '-D', 'my_name@name_of_remote_computer'],
               ['echo', '"quoted arg with space"'],
