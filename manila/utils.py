@@ -43,6 +43,7 @@ from webob import exc
 
 from manila.common import constants
 from manila.db import api as db_api
+from manila import context
 from manila import exception
 from manila.i18n import _
 
@@ -226,6 +227,14 @@ def service_is_up(service):
     """Check whether a service is up based on last heartbeat."""
     last_heartbeat = service['updated_at'] or service['created_at']
     # Timestamps in DB are UTC.
+    tdelta = timeutils.utcnow() - last_heartbeat
+    elapsed = tdelta.total_seconds()
+    up = (abs(elapsed) <= CONF.service_down_time)
+    if up:
+        return True
+    ctxt = context.get_admin_context()
+    db_service = db_api.service_get(ctxt, service['id'])
+    last_heartbeat = db_service['updated_at'] or db_service['created_at']
     tdelta = timeutils.utcnow() - last_heartbeat
     elapsed = tdelta.total_seconds()
     return abs(elapsed) <= CONF.service_down_time
