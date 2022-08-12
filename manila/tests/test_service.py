@@ -290,9 +290,12 @@ class ServiceTestCase(test.TestCase):
             serv.manager.is_service_ready.assert_called_once()
 
     @ddt.data(True, False)
+    @mock.patch.object(utils, 'service_is_up',
+                       mock.Mock(return_value=False))
     def test_cleanup_services(self, cleanup_interval_done):
         with mock.patch.object(service, 'db') as mock_db:
             mock_db.service_get_all.return_value = [service_ref]
+            mock_db.service_get.return_value = [service_ref_stopped]
             serv = service.Service(host, binary, topic, CONF.fake_manager)
             serv.start()
             serv.cleanup_services()
