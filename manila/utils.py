@@ -320,6 +320,13 @@ def service_is_up(service):
     # Timestamps in DB are UTC.
     tdelta = timeutils.utcnow() - last_heartbeat
     elapsed = tdelta.total_seconds()
+    up = (abs(elapsed) <= CONF.service_down_time)
+    if up:
+        return True
+    db_service = db_api.service_get(context, service['id'])
+    last_heartbeat = db_service['updated_at'] or db_service['created_at']
+    tdelta = timeutils.utcnow() - last_heartbeat
+    elapsed = tdelta.total_seconds()
     return abs(elapsed) <= CONF.service_down_time
 
 
