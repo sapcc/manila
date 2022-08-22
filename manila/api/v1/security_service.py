@@ -174,7 +174,8 @@ class SecurityServiceController(wsgi.Controller):
         security_service_data = body['security_service']
         valid_update_keys = (
             'description',
-            'name'
+            'name',
+            'password'
         )
 
         try:
@@ -190,6 +191,7 @@ class SecurityServiceController(wsgi.Controller):
                     msg = _("Cannot update security service %s. It is "
                             "attached to share network with share server "
                             "associated. Only 'name' and 'description' "
+                            "and 'password' "
                             "fields are available for update.") % id
                     raise exc.HTTPForbidden(explanation=msg)
 
