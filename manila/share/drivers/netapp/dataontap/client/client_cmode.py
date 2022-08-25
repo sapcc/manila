@@ -2188,7 +2188,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                       compression_enabled=False, max_files=None,
                       snapshot_reserve=None, volume_type='rw', comment='',
                       qos_policy_group=None, adaptive_qos_policy_group=None,
-                      encrypt=None, logical_space_reporting=None, **options):
+                      encrypt=None, logical_space_reporting=None,
+                      cross_dedup_disabled=False, **options):
         """Creates a volume."""
         if adaptive_qos_policy_group and not self.features.ADAPTIVE_QOS:
             msg = 'Adaptive QoS not supported on this backend ONTAP version.'
@@ -2220,7 +2221,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
 
         self.update_volume_efficiency_attributes(volume_name,
                                                  dedup_enabled,
-                                                 compression_enabled)
+                                                 compression_enabled,
+                                                 cross_dedup_disabled)
 
         if volume_type != 'dp':
             if options.get('max_files_multiplier') is not None:
@@ -2341,6 +2343,26 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         self.send_request('sis-disable', api_args)
 
     @na_utils.trace
+    def disable_cross_volume_dedupe(self, volume_name):
+        # SAPCC Avoid deduplication meta data from filling up the volume.
+        # Following setting are needed:
+        #   policy: inline-only
+        #   cross volume inline deduplication: false
+        #   cross volume background deduplication: false
+        # We also enable inline compression and data compaction
+        api_args = {
+            'path': '/vol/%s' % volume_name,
+            'policy-name': 'inline-only',
+            'enable-cross-volume-background-dedupe': 'false',
+            'enable-cross-volume-inline-dedupe': 'false',
+            'enable-inline-dedupe': 'true',
+            'enable-compression': 'true',
+            'enable-inline-compression': 'true',
+            'enable-data-compaction': 'true',
+        }
+        self.send_request('sis-set-config', api_args)
+
+    @na_utils.trace
     def enable_compression(self, volume_name):
         """Enable compression on volume."""
         api_args = {
@@ -2401,6 +2423,12 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 'sis-status-info': {
                     'state': None,
                     'is-compression-enabled': None,
+                    'is-inline-dedupe-enabled': None,
+                    'is-inline-compression-enabled': None,
+                    'is-cross-volume-backgroud-dedupe-enabled': None,
+                    'is-cross-volume-inline-dedeupe-enalbed': None,
+                    'is-data-compaction-enabled': None,
+                    'policy': None,
                 },
             },
         }
@@ -2415,11 +2443,21 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             LOG.error(msg, volume_name)
             sis_status_info = netapp_api.NaElement('none')
 
+        # SAPCC enable/disable x-inline and x-backgroud dedupe at the same time
+        cross_dedup_disabled = False
+        if not (sis_status_info.get_child_content(
+                'is-cross-volume-inline-dedeupe-enalbed') and \
+            sis_status_info.get_child_content(
+                'is-cross-volume-backgroud-dedupe-enabled')):
+            cross_dedup_disabled = True
+
         return {
             'dedupe': True if 'enabled' == sis_status_info.get_child_content(
                 'state') else False,
             'compression': True if 'true' == sis_status_info.get_child_content(
                 'is-compression-enabled') else False,
+            'policy': sis_status_info.get_child_content('policy'),
+            'cross-dedup-disabled': cross_dedup_disabled,
         }
 
     @na_utils.trace
@@ -2664,7 +2702,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                       qos_policy_group=None, hide_snapdir=None,
                       autosize_attributes=None, comment=None, replica=False,
                       adaptive_qos_policy_group=None,
-                      logical_space_reporting=None, **options):
+                      logical_space_reporting=None,
+                      cross_dedup_disabled=False, **options):
         """Update backend volume for a share as necessary.
 
         :param aggregate_name: either a list or a string. List for aggregate
@@ -2752,15 +2791,15 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 'volume-id-attributes'][
                     'comment'] = comment
 
-        # SAPCC If logical_space_reporting not set, the settings is controlled
-        # by the parent vserver.
+        # SAPCC Set logical_space_reporting on volume when the value is
+        # True/False. Otherwise we follow the setting of the volume's SVM.
         if logical_space_reporting in (True, False):
             api_args['attributes']['volume-attributes'][
                 'volume-space-attributes'][
                 'is-space-reporting-logical'] = logical_space_reporting
             api_args['attributes']['volume-attributes'][
                 'volume-space-attributes'][
-                'is-space-enforcement-logical'] = logical_space_reporting
+                    'is-space-enforcement-logical'] = logical_space_reporting
 
         self.send_request('volume-modify-iter', api_args)
 
@@ -2769,13 +2808,20 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             self.update_volume_efficiency_attributes(volume_name,
                                                      dedup_enabled,
                                                      compression_enabled,
+                                                     cross_dedup_disabled,
                                                      is_flexgroup=is_flexgroup)
 
     @na_utils.trace
     def update_volume_efficiency_attributes(self, volume_name, dedup_enabled,
                                             compression_enabled,
+                                            cross_dedup_disabled=False,
                                             is_flexgroup=False):
         """Update dedupe & compression attributes to match desired values."""
+        # SAPCC
+        if dedup_enabled and cross_dedup_disabled:
+            self.disable_cross_volume_dedupe(volume_name)
+            return
+
         efficiency_status = self.get_volume_efficiency_status(volume_name)
 
         # cDOT compression requires dedup to be enabled
@@ -2804,6 +2850,29 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 self.disable_compression_async(volume_name)
             else:
                 self.disable_compression(volume_name)
+
+
+    @na_utils.trace
+    def update_volume_logical_space_attributes(self, volume_name, is_logical):
+        api_args = {
+            'query': {
+                'volume-attributes': {
+                    'volume-id-attributes': {
+                        'name': volume_name,
+                    },
+                },
+            },
+            'attributes': {
+                'volume-attributes': {
+                    'volume-space-attributes': {
+                        'is-space-reporting-logical': is_logical,
+                        'is-space-enforcement-logical': is_logical,
+                    },
+                },
+            },
+        }
+        self.send_request('volume-modify-iter', api_args)
+
 
     @na_utils.trace
     def volume_exists(self, volume_name):
