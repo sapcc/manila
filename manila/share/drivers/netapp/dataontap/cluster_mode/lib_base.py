@@ -746,7 +746,7 @@ class NetAppCmodeFileStorageLibrary(object):
     def _get_logical_space_options(self, vserver_client, share_name):
         src_volume = vserver_client.get_volume(share_name)
         return {
-            'logical-space-reporting':
+            'logical_space_reporting':
                 src_volume.get('is-space-reporting-logical')
         }
 
