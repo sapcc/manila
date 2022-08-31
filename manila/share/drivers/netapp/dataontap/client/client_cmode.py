@@ -2800,7 +2800,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             else:
                 self.disable_compression(volume_name)
 
-    def update_volume_space_attributes(self, volume_name, logical_space_reporting):
+    def update_volume_space_attributes(self, volume_name,
+                                       logical_space_reporting):
         api_args = {
             'query': {
                 'volume-attributes': {
@@ -2812,8 +2813,10 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'attributes': {
                 'volume-attributes': {
                     'volume-space-attributes': {
-                        'is-space-reporting-logical': logical_space_reporting,
-                        'is-space-enforcement-logical': logical_space_reporting,
+                        'is-space-reporting-logical':
+                            logical_space_reporting,
+                        'is-space-enforcement-logical':
+                            logical_space_reporting,
                     },
                 },
             },

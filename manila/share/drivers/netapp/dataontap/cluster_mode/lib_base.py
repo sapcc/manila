@@ -195,7 +195,6 @@ class NetAppCmodeFileStorageLibrary(object):
         # Performance monitoring library
         self._perf_library = performance.PerformanceLibrary(self._client)
 
-
         if self._client.features.CIFS_CHANNEL_BINDING:
             self._channel_binding_support = True
 
@@ -412,7 +411,8 @@ class NetAppCmodeFileStorageLibrary(object):
             'share_backend_name': self._backend_name,
             'driver_name': self.driver_name,
             'vendor_name': 'NetApp',
-            'driver_version': self._client.get_system_version()['version-tuple'],
+            'driver_version': self._client.get_system_version(
+                )['version-tuple'],
             'netapp_storage_family': 'ontap_cluster',
             'storage_protocol': 'NFS_CIFS_MULTI',
             'pools': self._get_pools(get_filter_function=get_filter_function,
@@ -782,7 +782,8 @@ class NetAppCmodeFileStorageLibrary(object):
             logical_opts = self._get_logical_space_options(
                 src_vserver_client, src_share_name)
             self._allocate_container_from_snapshot(
-                share, snapshot, src_vserver, src_vserver_client, **logical_opts)
+                share, snapshot, src_vserver, src_vserver_client,
+                **logical_opts)
             return self._create_export(share, share_server, src_vserver,
                                        src_vserver_client)
 
