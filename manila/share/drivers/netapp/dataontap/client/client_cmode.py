@@ -2425,7 +2425,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                       qos_policy_group=None, adaptive_qos_policy_group=None,
                       encrypt=None, mount_point_name=None,
                       snaplock_type=None, unix_permissions=None,
-                      **options):
+                      logical_space_reporting=None, **options):
         """Creates a volume."""
         if adaptive_qos_policy_group and not self.features.ADAPTIVE_QOS:
             msg = 'Adaptive QoS not supported on this backend ONTAP version.'
@@ -2444,7 +2444,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             volume_name, thin_provisioned, snapshot_policy, language,
             snapshot_reserve, volume_type, comment, qos_policy_group, encrypt,
             adaptive_qos_policy_group, mount_point_name, snaplock_type,
-            unix_permissions))
+            unix_permissions, logical_space_reporting))
 
         self.send_request('volume-create', api_args)
 
@@ -2476,7 +2476,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                             adaptive_qos_policy_group=None,
                             auto_provisioned=False, mount_point_name=None,
                             snaplock_type=None, unix_permissions=None,
-                            **options):
+                            logical_space_reporting=None, **options):
         """Creates a volume asynchronously."""
 
         if adaptive_qos_policy_group and not self.features.ADAPTIVE_QOS:
@@ -2500,7 +2500,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             volume_name, thin_provisioned, snapshot_policy, language,
             snapshot_reserve, volume_type, comment, qos_policy_group, encrypt,
             adaptive_qos_policy_group, mount_point_name, snaplock_type,
-            unix_permissions))
+            unix_permissions, logical_space_reporting))
 
         result = self.send_request('volume-create-async', api_args)
         job_info = {
@@ -2524,7 +2524,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                                     adaptive_qos_policy_group,
                                     mount_point_name=None,
                                     snaplock_type=None,
-                                    unix_permissions=None):
+                                    unix_permissions=None,
+                                    logical_space_reporting=None):
         api_args = {
             'volume-type': volume_type,
             'volume-comment': comment,
@@ -2561,6 +2562,14 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
 
         if snaplock_type is not None:
             api_args['snaplock-type'] = snaplock_type
+
+        # SAPCC Ignore when logical_space_reporting is None. The attribue
+        # will be the same of its parent vserver.
+        if logical_space_reporting in (True, False):
+            api_args['is-space-reporting-logical'] = (
+                'true' if logical_space_reporting else 'false')
+            api_args['is-space-enforcement-logical'] = (
+                'true' if logical_space_reporting else 'false')
 
         return api_args
 
@@ -2974,7 +2983,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                       compression_enabled=False, max_files=None,
                       qos_policy_group=None, hide_snapdir=None,
                       autosize_attributes=None, comment=None, replica=False,
-                      adaptive_qos_policy_group=None, **options):
+                      adaptive_qos_policy_group=None,
+                      logical_space_reporting=None, **options):
         """Update backend volume for a share as necessary.
 
         :param aggregate_name: either a list or a string. List for aggregate
@@ -3061,6 +3071,15 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             api_args['attributes']['volume-attributes'][
                 'volume-id-attributes'][
                     'comment'] = comment
+        if logical_space_reporting in (True, False):
+            api_args['attributes']['volume-attributes'][
+                'volume-space-attributes'][
+                    'is-space-reporting-logical'] = (
+                        'true' if logical_space_reporting else 'false')
+            api_args['attributes']['volume-attributes'][
+                'volume-space-attributes'][
+                    'is-space-enforcement-logical'] = (
+                        'true' if logical_space_reporting else 'false')
 
         self.send_request('volume-modify-iter', api_args)
 
@@ -3115,6 +3134,29 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         else:
             self.apply_volume_efficiency_policy(
                 volume_name, efficiency_policy=efficiency_policy)
+
+    def update_volume_space_attributes(self, volume_name,
+                                       logical_space_reporting):
+        api_args = {
+            'query': {
+                'volume-attributes': {
+                    'volume-id-attributes': {
+                        'name': volume_name,
+                    },
+                },
+            },
+            'attributes': {
+                'volume-attributes': {
+                    'volume-space-attributes': {
+                        'is-space-reporting-logical':
+                            logical_space_reporting,
+                        'is-space-enforcement-logical':
+                            logical_space_reporting,
+                    },
+                },
+            },
+        }
+        self.send_request('volume-modify-iter', api_args)
 
     @na_utils.trace
     def volume_exists(self, volume_name):
@@ -3399,6 +3441,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                     'volume-space-attributes': {
                         'size': None,
                         'size-used': None,
+                        'is-space-enforcement-logical': None,
+                        'is-space-reporting-logical': None,
                     },
                     'volume-snaplock-attributes': {
                         'snaplock-type': None,
@@ -3460,6 +3504,14 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'snaplock-type': volume_snaplock_attributes.get_child_content(
                 'snaplock-type')
         }
+        volume.update({
+            'is-space-reporting-logical':
+                volume_space_attributes.get_child_content(
+                    'is-space-reporting-logical'),
+            'is-space-enforcement-logical':
+                volume_space_attributes.get_child_content(
+                    'is-space-enforcement-logical')
+        })
         return volume
 
     @na_utils.trace
