@@ -796,9 +796,9 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                                            fake.SHARE,
                                            share_server=fake.SHARE_SERVER)
 
-        mock_allocate_container.assert_called_once_with(fake.SHARE,
-                                                        fake.VSERVER1,
-                                                        vserver_client)
+        mock_allocate_container.assert_called_once_with(
+            fake.SHARE, fake.VSERVER1, vserver_client,
+            logical_space_reporting=True)
         mock_create_export.assert_called_once_with(fake.SHARE,
                                                    fake.SHARE_SERVER,
                                                    fake.VSERVER1,
@@ -815,6 +815,9 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                          '_get_vserver',
                          mock.Mock(return_value=(fake.VSERVER1,
                                                  vserver_client)))
+        self.mock_object(
+            vserver_client, 'get_volume',
+            mock.Mock(return_value={'is-space-reporting-logical': False}))
         mock_allocate_container_from_snapshot = self.mock_object(
             self.library,
             '_allocate_container_from_snapshot')
@@ -834,7 +837,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             share,
             fake.SNAPSHOT,
             fake.VSERVER1,
-            vserver_client)
+            vserver_client,
+            logical_space_reporting=False)
         mock_create_export.assert_called_once_with(share,
                                                    fake.SHARE_SERVER,
                                                    fake.VSERVER1,
@@ -907,6 +911,9 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             self.library.private_storage, 'update')
         self.mock_object(self.library, '_have_cluster_creds',
                          mock.Mock(return_value=True))
+        self.mock_object(
+            self.src_vserver_client, 'get_volume',
+            mock.Mock(return_value={'is-space-reporting-logical': False}))
 
         # Parent share on MANILA_HOST_2
         self.parent_share = copy.copy(fake.SHARE)
@@ -965,7 +972,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                 self.src_vserver_client, split=False, create_fpolicy=False)
             self.mock_allocate_container.assert_called_once_with(
                 self.fake_share, fake.VSERVER2,
-                self.dest_vserver_client, replica=True, set_qos=False)
+                self.dest_vserver_client, replica=True, set_qos=False,
+                logical_space_reporting=False)
             self.mock_dm_create_snapmirror.assert_called_once()
             self.temp_src_share['replica_state'] = (
                 constants.REPLICA_STATE_ACTIVE)
@@ -973,7 +981,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         else:
             self.mock_allocate_container_from_snapshot.assert_called_once_with(
                 self.fake_share, fake.SNAPSHOT, fake.VSERVER1,
-                self.src_vserver_client, split=True)
+                self.src_vserver_client, split=True,
+                logical_space_reporting=False)
             state = self.library.STATE_SPLITTING_VOLUME_CLONE
 
         self.temp_src_share['aggregate'] = ([fake.POOL_NAME] if is_flexgroup
@@ -1016,7 +1025,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.mock_get_dest_cluster.assert_called_once()
         self.mock_allocate_container_from_snapshot.assert_called_once_with(
             self.fake_share, fake.SNAPSHOT, fake.VSERVER1,
-            self.src_vserver_client, split=True)
+            self.src_vserver_client, split=True, logical_space_reporting=False)
         mock_delete_snapmirror.assert_called_once_with(self.temp_src_share,
                                                        self.fake_share)
         mock_delete_share.assert_called_once_with(
@@ -1240,6 +1249,11 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             mock.Mock(return_value=fake.QOS_POLICY_GROUP_NAME))
         self.mock_mark_qos_deletion = self.mock_object(
             self.src_vserver_client, 'mark_qos_policy_group_for_deletion')
+        self.mock_get_volume = self.mock_object(
+            self.src_vserver_client, 'get_volume',
+            mock.Mock(return_value={
+                'is-space-reporting-logical': True,
+            }))
 
     @ddt.data(fake.MANILA_HOST_NAME, fake.MANILA_HOST_NAME_2)
     def test__create_from_snapshot_continue_state_splitting(self, src_host):
@@ -1291,7 +1305,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                 fake.SHARE_ID)
             self.mock_modify_vol.assert_called_once_with(
                 fake.POOL_NAME, fake.SHARE_NAME,
-                **fake.PROVISIONING_OPTIONS_WITH_QOS)
+                **fake.PROVISIONING_OPTIONS_WITH_QOS,
+                logical_space_reporting=True)
             self.mock_pvt_storage_delete.assert_called_once_with(
                 fake.SHARE['id'])
             self.mock_create_export.assert_called_once_with(
@@ -1398,7 +1413,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                 self.dest_vserver_client)
             self.mock_modify_vol.assert_called_once_with(
                 fake.POOL_NAME, fake.SHARE_NAME,
-                **fake.PROVISIONING_OPTIONS_WITH_QOS)
+                **fake.PROVISIONING_OPTIONS_WITH_QOS,
+                logical_space_reporting=True)
             expect_result['status'] = constants.STATUS_AVAILABLE
             self.mock_pvt_storage_delete.assert_called_once_with(
                 fake.SHARE['id'])
