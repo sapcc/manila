@@ -984,7 +984,8 @@ class NetAppRestClient(object):
                       snapshot_reserve=None, volume_type='rw', comment='',
                       qos_policy_group=None, adaptive_qos_policy_group=None,
                       encrypt=None, mount_point_name=None,
-                      snaplock_type=None, **options):
+                      snaplock_type=None, logical_space_reporting=None,
+                      **options):
         """Creates a FlexVol volume synchronously."""
 
         # NOTE(nahimsouza): In REST API, both FlexVol and FlexGroup volumes are
@@ -999,7 +1000,7 @@ class NetAppRestClient(object):
             qos_policy_group=qos_policy_group, encrypt=encrypt,
             adaptive_qos_policy_group=adaptive_qos_policy_group,
             mount_point_name=mount_point_name, snaplock_type=snaplock_type,
-            **options)
+            logical_space_reporting=logical_space_reporting, **options)
         efficiency_policy = options.get('efficiency_policy', None)
         self.update_volume_efficiency_attributes(
             volume_name, dedup_enabled, compression_enabled,
@@ -1021,7 +1022,8 @@ class NetAppRestClient(object):
                             qos_policy_group=None, encrypt=None,
                             adaptive_qos_policy_group=None,
                             auto_provisioned=False, mount_point_name=None,
-                            snaplock_type=None, **options):
+                            snaplock_type=None, logical_space_reporting=None,
+                            **options):
         """Creates FlexGroup/FlexVol volumes.
 
         If the parameter `is_flexgroup` is False, the creation process is
@@ -1042,7 +1044,7 @@ class NetAppRestClient(object):
             volume_name, size_gb, thin_provisioned, snapshot_policy, language,
             snapshot_reserve, volume_type, qos_policy_group, encrypt,
             adaptive_qos_policy_group, mount_point_name, snaplock_type,
-            comment, **options))
+            comment, logical_space_reporting, **options))
 
         # NOTE(nahimsouza): When a volume is not a FlexGroup, volume creation
         # is made synchronously to replicate old ZAPI behavior. When ZAPI is
@@ -1066,6 +1068,7 @@ class NetAppRestClient(object):
                                 volume_type, qos_policy_group, encrypt,
                                 adaptive_qos_policy_group,
                                 mount_point_name, snaplock_type, comment,
+                                logical_space_reporting,
                                 **options):
         """Builds the body to volume creation request."""
 
@@ -1096,6 +1099,14 @@ class NetAppRestClient(object):
         else:
             size_b = size_gb * units.Gi
         body['size'] = size_b
+
+        if logical_space_reporting in (True, False):
+            if logical_space_reporting:
+                body['is_space_reporting_logical'] = 'true'
+                body['is_space_enforcement_logical'] = 'true'
+            else:
+                body['is_space_reporting_logical'] = 'false'
+                body['is_space_enforcement_logical'] = 'false'
 
         if encrypt is not None:
             if encrypt is True and not self.features.FLEXVOL_ENCRYPTION:
@@ -1159,6 +1170,22 @@ class NetAppRestClient(object):
             'dedupe': dedupe,
             'compression': compression,
         }
+
+    @na_utils.trace
+    def update_volume_space_attributes(self, volume_name,
+                                       logical_space_reporting):
+        """Update space attributes."""
+        volume = self._get_volume_by_args(vol_name=volume_name)
+        uuid = volume['uuid']
+        body = {}
+        if logical_space_reporting in (True, False):
+            if logical_space_reporting:
+                body['is_space_reporting_logical'] = 'true'
+                body['is_space_enforcement_logical'] = 'true'
+            else:
+                body['is_space_reporting_logical'] = 'false'
+                body['is_space_enforcement_logical'] = 'false'
+            self.send_request(f'/storage/volumes/{uuid}', 'patch', body=body)
 
     @na_utils.trace
     def update_volume_snapshot_policy(self, volume_name, snapshot_policy):

@@ -1070,7 +1070,7 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             volume_type='rw', qos_policy_group=None, encrypt=None,
             adaptive_qos_policy_group=None, mount_point_name=None,
             efficiency_policy=fake.VOLUME_EFFICIENCY_POLICY_NAME,
-            snaplock_type="enterprise",
+            snaplock_type="enterprise", logical_space_reporting=None
         )
         mock_update.assert_called_once_with(
             fake.VOLUME_NAMES[0], False, False,
@@ -1103,7 +1103,7 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
 
         self.client._get_create_volume_body.assert_called_once_with(
             fake.VOLUME_NAMES[0], 1, False, None, None, None, 'rw', None, None,
-            None, None, None, '')
+            None, None, None, '', None)
         self.client.send_request.assert_called_once_with(
             '/storage/volumes', 'post', body=body, wait_on_accepted=True)
         self.assertEqual(expected_result, result)
@@ -2857,7 +2857,8 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
                                                   fake.QOS_POLICY_GROUP_NAME,
                                                   fake.SHARE_MOUNT_POINT,
                                                   "compliance",
-                                                  'fake_comment')
+                                                  'fake_comment',
+                                                  None)
         self.assertEqual(expected, res)
 
     def test_get_job_state(self):
