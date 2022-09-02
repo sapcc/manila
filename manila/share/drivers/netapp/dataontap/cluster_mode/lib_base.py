@@ -2977,7 +2977,7 @@ class NetAppCmodeFileStorageLibrary(object):
             orig_active_replica_backend, vserver_name=orig_active_vserver)
         logical_opts = self._get_logical_space_options(
             orig_active_vserver_client, orig_active_replica_name)
-        is_logical_space_reporting = logical_opts['logical-space-reporting']
+        is_logical_space_reporting = logical_opts['logical_space_reporting']
 
         new_replica_list = []
 
