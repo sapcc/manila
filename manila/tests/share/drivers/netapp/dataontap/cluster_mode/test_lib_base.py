@@ -1289,6 +1289,12 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             mock.Mock(return_value={
                 'is-space-reporting-logical': True,
             }))
+        self.mock_get_volume_efficiency_status = self.mock_object(
+            self.src_vserver_client, 'get_volume_efficiency_status',
+            mock.Mock(return_value={
+                'dedupe': True,
+                'compression': False,
+            }))
 
     @ddt.data(fake.MANILA_HOST_NAME, fake.MANILA_HOST_NAME_2)
     def test__create_from_snapshot_continue_state_splitting(self, src_host):
@@ -1341,7 +1347,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             self.mock_modify_vol.assert_called_once_with(
                 fake.POOL_NAME, fake.SHARE_NAME,
                 **fake.PROVISIONING_OPTIONS_WITH_QOS,
-                logical_space_reporting=True)
+                logical_space_reporting=True, policy=None,
+                cross_dedup_disabled=None)
             self.mock_pvt_storage_delete.assert_called_once_with(
                 fake.SHARE['id'])
             self.mock_create_export.assert_called_once_with(
@@ -1449,7 +1456,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             self.mock_modify_vol.assert_called_once_with(
                 fake.POOL_NAME, fake.SHARE_NAME,
                 **fake.PROVISIONING_OPTIONS_WITH_QOS,
-                logical_space_reporting=True)
+                logical_space_reporting=True, policy=None,
+                cross_dedup_disabled=None)
             expect_result['status'] = constants.STATUS_AVAILABLE
             self.mock_pvt_storage_delete.assert_called_once_with(
                 fake.SHARE['id'])
