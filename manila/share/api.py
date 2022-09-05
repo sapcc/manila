@@ -694,6 +694,9 @@ class API(base.Base):
                     az_request_multiple_subnet_support_map),
                 mount_point_name=mount_point_name))
 
+        # SAPCC add project_domain_name in request_spec and pass to driver
+        request_spec['project_domain_name'] = context.project_domain_name
+
         if share_group_snapshot_member:
             # Inherit properties from the share_group_snapshot_member
             member_share_instance = share_group_snapshot_member[
