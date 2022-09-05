@@ -2241,7 +2241,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                       compression_enabled=False, max_files=None,
                       snapshot_reserve=None, volume_type='rw', comment='',
                       qos_policy_group=None, adaptive_qos_policy_group=None,
-                      encrypt=None, logical_space_reporting=None, **options):
+                      encrypt=None, logical_space_reporting=None,
+                      cross_dedup_disabled=False, **options):
         """Creates a volume."""
         if adaptive_qos_policy_group and not self.features.ADAPTIVE_QOS:
             msg = 'Adaptive QoS not supported on this backend ONTAP version.'
@@ -2258,9 +2259,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
 
         self.send_request('volume-create', api_args)
 
-        self.update_volume_efficiency_attributes(volume_name,
-                                                 dedup_enabled,
-                                                 compression_enabled)
+        self.update_volume_efficiency_attributes(
+            volume_name, dedup_enabled, compression_enabled,
+            cross_dedup_disabled=cross_dedup_disabled)
 
         if volume_type != 'dp':
             if options.get('max_files_multiplier') is not None:
@@ -2388,6 +2389,11 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         self.send_request('volume-modify-iter', api_args)
 
     @na_utils.trace
+    def set_sis_config(self, volume_name, api_args):
+        api_args.update({'path': '/vol/%s' % volume_name})
+        self.send_request('sis-set-config', api_args)
+
+    @na_utils.trace
     @manila_utils.retry(retry_param=exception.NetAppException,
                         interval=3,
                         retries=5,
@@ -2463,7 +2469,10 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'desired-attributes': {
                 'sis-status-info': {
                     'state': None,
+                    'policy': None,
                     'is-compression-enabled': None,
+                    'is-cross-volume-background-dedupe-enabled': None,
+                    'is-cross-volume-inline-dedupe-enabled': None,
                 },
             },
         }
@@ -2478,11 +2487,23 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             LOG.error(msg, volume_name)
             sis_status_info = netapp_api.NaElement('none')
 
+        # SAPCC disable cross volume dedup when both cross-volume-inline
+        # and cross-volume-background dedupe are 'false'
         return {
-            'dedupe': True if 'enabled' == sis_status_info.get_child_content(
-                'state') else False,
-            'compression': True if 'true' == sis_status_info.get_child_content(
-                'is-compression-enabled') else False,
+            'dedupe':
+                True if 'enabled' == sis_status_info.get_child_content('state')
+                else False,
+            'compression':
+                True if ('true' == sis_status_info.get_child_content(
+                    'is-compression-enabled')) else False,
+            'policy':
+                sis_status_info.get_child_content('policy'),
+            'cross_dedup_disabled':
+                True if
+                ('false' == sis_status_info.get_child_content(
+                    'is-cross-volume-inline-dedupe-enabled')
+                 and 'false' == sis_status_info.get_child_content(
+                     'is-cross-volume-background-dedupe-enabled')) else False,
         }
 
     @na_utils.trace
@@ -2727,7 +2748,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                       qos_policy_group=None, hide_snapdir=None,
                       autosize_attributes=None, comment=None, replica=False,
                       adaptive_qos_policy_group=None,
-                      logical_space_reporting=None, **options):
+                      logical_space_reporting=None, cross_dedup_disabled=False,
+                      **options):
         """Update backend volume for a share as necessary.
 
         :param aggregate_name: either a list or a string. List for aggregate
@@ -2826,17 +2848,32 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
 
         if not replica:
             # Efficiency options must be handled separately
-            self.update_volume_efficiency_attributes(volume_name,
-                                                     dedup_enabled,
-                                                     compression_enabled,
-                                                     is_flexgroup=is_flexgroup)
+            self.update_volume_efficiency_attributes(
+                volume_name, dedup_enabled, compression_enabled,
+                cross_dedup_disabled=cross_dedup_disabled,
+                is_flexgroup=is_flexgroup)
 
     @na_utils.trace
-    def update_volume_efficiency_attributes(self, volume_name, dedup_enabled,
-                                            compression_enabled,
-                                            is_flexgroup=False):
+    def update_volume_efficiency_attributes(
+            self, volume_name, dedup_enabled, compression_enabled,
+            cross_dedup_disabled=False, is_flexgroup=False):
         """Update dedupe & compression attributes to match desired values."""
         efficiency_status = self.get_volume_efficiency_status(volume_name)
+
+        # SAPCC Kepp deduplication metadata from filling up the volume
+        if cross_dedup_disabled:
+            if not efficiency_status['dedupe']:
+                self.enable_dedup(volume_name)
+            if not efficiency_status['compression']:
+                self.enable_compression(volume_name)
+            self.set_sis_config(
+                volume_name, {
+                    'policy-name': 'inline-only',
+                    'enable-cross-volume-background-dedupe': 'false',
+                    'enable-cross-volume-inline-dedupe': 'false',
+                    'enable-data-compaction': 'true',
+                })
+            return
 
         # cDOT compression requires dedup to be enabled
         dedup_enabled = dedup_enabled or compression_enabled
