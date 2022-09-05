@@ -3209,7 +3209,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.client.send_request.assert_called_with('volume-create',
                                                     volume_create_args)
         (self.client.update_volume_efficiency_attributes.
-            assert_called_once_with(fake.SHARE_NAME, False, False))
+         assert_called_once_with(fake.SHARE_NAME, False, False,
+                                 cross_dedup_disabled=False))
         if set_max_files:
             self.client.set_volume_max_files.assert_called_once_with(
                 fake.SHARE_NAME, fake.MAX_FILES)
@@ -3613,13 +3614,21 @@ class NetAppClientCmodeTestCase(test.TestCase):
                 'sis-status-info': {
                     'state': None,
                     'is-compression-enabled': None,
+                    'policy': None,
+                    'is-cross-volume-background-dedupe-enabled': None,
+                    'is-cross-volume-inline-dedupe-enabled': None,
                 },
             },
         }
         self.client.send_iter_request.assert_has_calls([
             mock.call('sis-get-iter', sis_get_iter_args)])
 
-        expected = {'dedupe': True, 'compression': True}
+        expected = {
+            'dedupe': True,
+            'compression': True,
+            'cross_dedup_disabled': False,
+            'policy': 'auto'
+        }
         self.assertDictEqual(expected, result)
 
     def test_get_volume_efficiency_status_not_found(self):
@@ -3631,7 +3640,12 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         result = self.client.get_volume_efficiency_status(fake.SHARE_NAME)
 
-        expected = {'dedupe': False, 'compression': False}
+        expected = {
+            'dedupe': False,
+            'compression': False,
+            'policy': None,
+            'cross_dedup_disabled': False
+        }
         self.assertDictEqual(expected, result)
 
     def test_set_volume_max_files(self):
@@ -3740,7 +3754,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.client.send_request.assert_called_once_with(
             'volume-modify-iter', volume_modify_iter_api_args)
         mock_update_volume_efficiency_attributes.assert_called_once_with(
-            fake.SHARE_NAME, False, False, is_flexgroup=is_flexgroup)
+            fake.SHARE_NAME, False, False, is_flexgroup=is_flexgroup,
+            cross_dedup_disabled=False)
 
     @ddt.data((fake.QOS_POLICY_GROUP_NAME, None),
               (None, fake.ADAPTIVE_QOS_POLICY_GROUP_NAME))
@@ -3818,7 +3833,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.client.send_request.assert_called_once_with(
             'volume-modify-iter', volume_modify_iter_api_args)
         mock_update_volume_efficiency_attributes.assert_called_once_with(
-            fake.SHARE_NAME, True, False, is_flexgroup=False)
+            fake.SHARE_NAME, True, False, is_flexgroup=False,
+            cross_dedup_disabled=False)
 
     @ddt.data(
         {'existing': (True, True), 'desired': (True, True), 'fg': False},
