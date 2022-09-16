@@ -4608,9 +4608,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         self.send_request('cg-commit', api_args)
 
     @na_utils.trace
-    def create_cifs_share(self, share_name):
-        share_path = '/%s' % share_name
-        api_args = {'path': share_path, 'share-name': share_name}
+    def create_cifs_share(self, share_name, path):
+        api_args = {'path': path, 'share-name': share_name}
         try:
             self.send_request('cifs-share-create', api_args)
         except netapp_api.NaApiError as e:
