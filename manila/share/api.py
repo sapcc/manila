@@ -783,6 +783,9 @@ class API(base.Base):
 
     def promote_share_replica(self, context, share_replica):
 
+        # Get the latest replica state from backend
+        self.share_rpcapi.update_share_replica(context, share_replica)
+        share_replica = self.db.share_replica_get(context, share_replica['id'])
         if share_replica.get('status') != constants.STATUS_AVAILABLE:
             msg = _("Replica %(replica_id)s must be in %(status)s state to be "
                     "promoted.")

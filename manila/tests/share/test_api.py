@@ -4033,6 +4033,10 @@ class ShareAPITestCase(test.TestCase):
     def test_promote_share_replica_non_available_status(self, status):
         replica = fakes.fake_replica(
             status=status, replica_state=constants.REPLICA_STATE_IN_SYNC)
+        mock_rpcapi_update_share_replica_call = self.mock_object(
+            self.share_rpcapi, 'update_share_replica')
+        self.mock_object(db_api, 'share_replica_get',
+                         mock.Mock(return_value=replica))
         mock_rpcapi_promote_share_replica_call = self.mock_object(
             self.share_rpcapi, 'promote_share_replica')
 
@@ -4040,6 +4044,7 @@ class ShareAPITestCase(test.TestCase):
                           self.api.promote_share_replica,
                           self.context,
                           replica)
+        self.assertTrue(mock_rpcapi_update_share_replica_call.called)
         self.assertFalse(mock_rpcapi_promote_share_replica_call.called)
 
     @ddt.data(constants.REPLICA_STATE_OUT_OF_SYNC, constants.STATUS_ERROR)
@@ -4050,6 +4055,10 @@ class ShareAPITestCase(test.TestCase):
         replica = fakes.fake_replica(
             status=constants.STATUS_AVAILABLE,
             replica_state=replica_state)
+        mock_rpcapi_update_share_replica_call = self.mock_object(
+            self.share_rpcapi, 'update_share_replica')
+        self.mock_object(db_api, 'share_replica_get',
+                         mock.Mock(return_value=replica))
         mock_rpcapi_promote_share_replica_call = self.mock_object(
             self.share_rpcapi, 'promote_share_replica')
 
@@ -4057,6 +4066,7 @@ class ShareAPITestCase(test.TestCase):
                           self.api.promote_share_replica,
                           fake_user_context,
                           replica)
+        self.assertTrue(mock_rpcapi_update_share_replica_call.called)
         self.assertFalse(mock_rpcapi_promote_share_replica_call.called)
 
     @ddt.data(constants.REPLICA_STATE_OUT_OF_SYNC, constants.STATUS_ERROR)

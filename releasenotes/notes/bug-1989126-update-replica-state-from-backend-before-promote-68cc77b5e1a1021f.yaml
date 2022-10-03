@@ -1,0 +1,6 @@
+---
+fixes:
+  - During promotion of replica, replica state is retrieved from DB and it is
+    updated by periodic task for every 5 minute. User try to promote replica
+    looking at DB state, while actual state in backend might be different. Fix
+    this by fetching latest replica state from backend before promotion.
