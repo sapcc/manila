@@ -642,6 +642,45 @@ class NeutronBindNetworkPlugin(NeutronNetworkPlugin):
                         context, port['id'], port_info)
         return ports
 
+    def extend_network_allocations(self, context, host, share_server):
+        """Extend network to target host.
+
+        Create extra (inactive) port bindings on target host. Network
+        is streched to the host with new segementation id.
+        """
+        phys_net_name = self.configuration.neutron_physical_net_name
+        vnic_type = self.configuration.neutron_vnic_type
+        vlan_id = None
+
+        # create port binding
+        for port in share_server['network_allocations']:
+            try:
+                self.neutron_api.bind_port_to_host(port.id, host, vnic_type)
+            except exception.NetworkException:
+                LOG.errorf('Failed to add extra port bindings to %s', host)
+                raise
+
+            # Get the segmentation id on target host
+            if vlan_id is None:
+                neutron_network_id = share_server['share_network_subnet'].get(
+                    'neutron_net_id')
+                neutron_network = self.neutron_api.get_network(
+                    neutron_network_id)
+                for segment in neutron_network['segments']:
+                    if (segment['provider:physical_network'] == phys_net_name):
+                        vlan_id = segment['provider:segmentation_id']
+                    break
+            
+            # vlan id not found
+            if vlan_id is None:
+                msg = _('Network segment not found on host %s') % host
+                raise exception.NetworkException(msg)
+
+            port_data = self.db.network_allocation_get(context, port.id)
+            port_data['segmentation_id'] = vlan_id
+            port_data['label'] = 'svmmig'
+            port_data.pop(id)
+            self.db.network_allocation_create(context, port_data)
 
 class NeutronBindSingleNetworkPlugin(NeutronSingleNetworkPlugin,
                                      NeutronBindNetworkPlugin):

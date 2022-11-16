@@ -55,6 +55,14 @@ CONF = cfg.CONF
 LOG = log.getLogger(__name__)
 
 
+class PortBindingAlreadyExistsClient(neutron_client_exc.Conflict):
+    pass
+
+
+neutron_client_exc.PortBindingAlreadyExistsClient = \
+    PortBindingAlreadyExistsClient
+
+
 def list_opts():
     return client_auth.AuthClientLoader.list_opts(NEUTRON_GROUP)
 
@@ -286,6 +294,25 @@ class API(object):
         except neutron_client_exc.NeutronClientException as e:
             raise exception.NetworkException(code=e.status_code,
                                              message=e.message)
+
+    def bind_port_to_host(self, port_id, host, vnic_type):
+        """Add an extra binding to an already bound port. The newly added
+       binding is in INACTIVE state."""
+        try:
+            data = {"binding": {"host": host, "vnic_type": vnic_type}}
+            return self.client.create_port_binding(port_id, data)['binding']
+        except neutron_client_exc.PortBindingAlreadyExistsClient as e:
+            LOG.warning('Port binding already exists')
+        except neutron_client_exc.NeutronClientException as e:
+            raise exception.NetworkException(
+                code=e.status_code, message=e.message)
+
+    def delete_inactive_port_binding(self, port_id, host=''):
+        pass
+
+    def activate_port_binding(self, port_id, host):
+        pass
+
 
     def show_router(self, router_id):
         try:
