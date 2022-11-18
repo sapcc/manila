@@ -645,42 +645,64 @@ class NeutronBindNetworkPlugin(NeutronNetworkPlugin):
     def extend_network_allocations(self, context, host, share_server):
         """Extend network to target host.
 
-        Create extra (inactive) port bindings on target host. Network
+        Create extra (inactive) port bindings on given host. Network
         is streched to the host with new segementation id.
         """
-        phys_net_name = self.configuration.neutron_physical_net_name
+        phys_net = self.configuration.neutron_physical_net_name
         vnic_type = self.configuration.neutron_vnic_type
-        vlan_id = None
+        vlan = None
 
-        # create port binding
-        for port in share_server['network_allocations']:
-            try:
-                self.neutron_api.bind_port_to_host(port.id, host, vnic_type)
-            except exception.NetworkException:
-                LOG.errorf('Failed to add extra port bindings to %s', host)
-                raise
+        # Active port bindings are labeled as 'user'. Destination port bindings
+        # are labeled with physical network name.
+        active_port_bindings = (
+            self.db.network_allocations_get_for_share_server(
+                context, share_server.id, label='user'))
+        dest_port_bindings = (
+            self.db.network_allocations_get_for_share_server(
+                context, share_server.id, label=phys_net))
 
-            # Get the segmentation id on target host
-            if vlan_id is None:
-                neutron_network_id = share_server['share_network_subnet'].get(
-                    'neutron_net_id')
-                neutron_network = self.neutron_api.get_network(
-                    neutron_network_id)
-                for segment in neutron_network['segments']:
-                    if (segment['provider:physical_network'] == phys_net_name):
-                        vlan_id = segment['provider:segmentation_id']
+        if len(active_port_bindings) == 0:
+            raise exception.NetworkException(
+                'Can not extend network with no active bindings')
+
+        if len(dest_port_bindings) == 0:
+            # Create port binding on destination backend. Exception is ignored
+            # in the neutron api call, if the port is already bound to
+            # destination host.
+            for port in active_port_bindings:
+                try:
+                    self.neutron_api.bind_port_to_host(
+                        port.id, host, vnic_type)
+                except exception.NetworkException as e:
+                    msg = _('Failed to bind port to %s: %s') % (host, e)
+                    LOG.error(msg)
+                    raise
+
+            # Get the segmentation id on destination host
+            neutron_network_id = share_server['share_network_subnet'].get(
+                'neutron_net_id')
+            neutron_network = self.neutron_api.get_network(neutron_network_id)
+            for segment in neutron_network['segments']:
+                if (segment['provider:physical_network'] == phys_net):
+                    vlan = segment['provider:segmentation_id']
                     break
-            
-            # vlan id not found
-            if vlan_id is None:
+            if vlan is None:
                 msg = _('Network segment not found on host %s') % host
                 raise exception.NetworkException(msg)
 
-            port_data = self.db.network_allocation_get(context, port.id)
-            port_data['segmentation_id'] = vlan_id
-            port_data['label'] = 'svmmig'
-            port_data.pop(id)
-            self.db.network_allocation_create(context, port_data)
+            # Label the new port bindings with physical network name.
+            for port in active_port_bindings:
+                port_data = self.db.network_allocation_get(context, port.id)
+                port_data['label'] = phys_net
+                port_data['segmentation_id'] = vlan
+                port_data['id'] = None
+                self.db.network_allocation_create(context, port_data)
+            dest_port_bindings = (
+                self.db.network_allocations_get_for_share_server(
+                    context, share_server.id, label=phys_net))
+
+        return dest_port_bindings
+
 
 class NeutronBindSingleNetworkPlugin(NeutronSingleNetworkPlugin,
                                      NeutronBindNetworkPlugin):
