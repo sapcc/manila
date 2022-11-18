@@ -5373,13 +5373,22 @@ class ShareManager(manager.SchedulerDependentManager):
         service = self.db.service_get_by_args(
             context, service_host, 'manila-share')
 
-        # Bind port to destination host
-        try:
-            neutron_host = share_utils.extract_host(dest_host, level='host')
-            self.driver.network_api.extend_network_allocations(
-                context, neutron_host, share_server)
-        except Exception:
-            return result
+        # SAPCC: Extend network to destination host, i.e. create inactive port
+        # bindings on destination host with the same ports in the share network
+        # subnet. Refresh share_server with new network allocations, so that
+        # correct segmentation id is used in the compatibility check.
+        if True:
+            try:
+                neutron_host = share_utils.extract_host(
+                    dest_host, level='host')
+                dest_ports = (
+                    self.driver.network_api.extend_network_allocations(
+                        context, share_server, neutron_host))
+                share_server['network_allocations'] = dest_ports
+            except Exception:
+                self.driver.network_api.delete_port_bindings(
+                    context, share_server, neutron_host)
+                return result
 
         # NOTE(dviroel): We'll build a list of request specs and send it to
         # the driver so vendors have a chance to validate if the destination
