@@ -642,7 +642,7 @@ class NeutronBindNetworkPlugin(NeutronNetworkPlugin):
                         context, port['id'], port_info)
         return ports
 
-    def extend_network_allocations(self, context, host, share_server):
+    def extend_network_allocations(self, context, share_server, host):
         """Extend network to target host.
 
         Create extra (inactive) port bindings on given host. Network
@@ -702,6 +702,33 @@ class NeutronBindNetworkPlugin(NeutronNetworkPlugin):
                     context, share_server.id, label=phys_net))
 
         return dest_port_bindings
+
+    def delete_port_bindings(self, context, share_server, host):
+        phys_net = self.configuration.neutron_physical_net_name
+
+        ports = (
+            self.db.network_allocations_get_for_share_server(
+                context, share_server.id, label='user'))
+        if len(ports) == 0:
+            msg = 'No ports found for Share server %s'
+            raise exception.NetworkException(msg % share_server.id)
+        dest_port_bindings = (
+            self.db.network_allocations_get_for_share_server(
+                context, share_server.id, label=phys_net))
+        if len(dest_port_bindings) == 0:
+            msg = 'No port bindings found on %{host}s'
+            raise exception.NetworkException(msg % {'host': host})
+        # Parent port are not tracked in network allocations; so we have to use
+        # the port id's extracted from source share server
+        for port in ports:
+            try:
+                self.neutron_api.delete_port_binding(port.id, host)
+            except exception.NetworkException as e:
+                msg = _(
+                    'Failed to delete port binding on port %{port}s: %{err}s')
+                LOG.warn(msg, {'port': port.id, 'err': e})
+        for binding in dest_port_bindings:
+            self.db.network_allocation_delete(context, binding.id)
 
 
 class NeutronBindSingleNetworkPlugin(NeutronSingleNetworkPlugin,

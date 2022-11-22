@@ -302,13 +302,17 @@ class API(object):
             data = {"binding": {"host": host, "vnic_type": vnic_type}}
             return self.client.create_port_binding(port_id, data)['binding']
         except neutron_client_exc.PortBindingAlreadyExistsClient as e:
-            LOG.warning('Port binding already exists')
+            LOG.warning('Port binding already exists: %s', e)
         except neutron_client_exc.NeutronClientException as e:
             raise exception.NetworkException(
                 code=e.status_code, message=e.message)
 
-    def delete_inactive_port_binding(self, port_id, host=''):
-        pass
+    def delete_port_binding(self, port_id, host):
+        try:
+            return self.client.delete_port_binding(port_id, host)
+        except neutron_client_exc.NeutronClientException as e:
+            raise exception.NetworkException(
+                code=e.status_code, message=e.message)
 
     def activate_port_binding(self, port_id, host):
         pass

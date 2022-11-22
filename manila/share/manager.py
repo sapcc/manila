@@ -5417,6 +5417,8 @@ class ShareManager(manager.SchedulerDependentManager):
             # the validations.
             driver_result['compatible'] = False
 
+        self.driver.network_api.delete_port_bindings(
+            context, share_server, neutron_host)
         result.update(driver_result)
 
         return result
