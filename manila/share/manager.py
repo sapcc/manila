@@ -5222,6 +5222,19 @@ class ShareManager(manager.SchedulerDependentManager):
 
         dest_share_server = None
         try:
+            # SAPCC: Extend network allocations to destination host, i.e.,
+            # create inactive port bindings on the destination host. Refresh
+            # network_allocations field in source_share_server with the new
+            # bindings, so that correct segmentation id is used during
+            # compatibility check and migration.
+            if True:
+                neutron_host = share_utils.extract_host(
+                    dest_host, level='host')
+                new_allocations = (
+                    self.driver.network_api.extend_network_allocations(
+                        context, source_share_server, neutron_host))
+                source_share_server['network_allocations'] = new_allocations
+
             compatibility = (
                 self.driver.share_server_migration_check_compatibility(
                     context, source_share_server, dest_host, old_share_network,
