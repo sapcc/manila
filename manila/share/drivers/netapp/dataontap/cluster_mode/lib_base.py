@@ -3007,6 +3007,17 @@ class NetAppCmodeFileStorageLibrary(object):
                 LOG.exception("Could not resync snapmirror.")
                 return constants.STATUS_ERROR
 
+        current_schedule = snapmirror.get('schedule')
+        new_schedule = self.configuration.netapp_snapmirror_schedule
+        if current_schedule != new_schedule:
+            dm_session.modify_snapmirror(active_replica, replica,
+                                         schedule=new_schedule)
+            LOG.debug('Modify snapmirror schedule for replica:'
+                      '%(replica)s from %(from)s to %(to)s',
+                      {'replica': replica['id'],
+                       'from': current_schedule,
+                       'to': new_schedule})
+
         last_update_timestamp = float(
             snapmirror.get('last-transfer-end-timestamp', 0))
         # Recovery Point Objective (RPO) indicates the point in time to
@@ -3016,18 +3027,7 @@ class NetAppCmodeFileStorageLibrary(object):
             (timeutils.is_older_than(
                 datetime.datetime.utcfromtimestamp(last_update_timestamp)
                 .isoformat(), (2 * self._snapmirror_schedule)))):
-            current_schedule = snapmirror.get('schedule')
-            new_schedule = self.configuration.netapp_snapmirror_schedule
-            if current_schedule == new_schedule:
-                return constants.REPLICA_STATE_OUT_OF_SYNC
-            else:
-                LOG.debug('Modify snapmirror schedule for replica:'
-                          '%(replica)s from %(from)s to %(to)s',
-                          {'replica': replica['id'],
-                           'from': current_schedule,
-                           'to': new_schedule})
-                dm_session.modify_snapmirror(active_replica, replica,
-                                             schedule=new_schedule)
+            return constants.REPLICA_STATE_OUT_OF_SYNC
 
         replica_backend = share_utils.extract_host(replica['host'],
                                                    level='backend_name')
