@@ -5220,6 +5220,7 @@ class ShareManager(manager.SchedulerDependentManager):
                 availability_zone_id=service['availability_zone_id'],
                 share_network_id=new_share_network_id))
 
+        new_allocations = None
         dest_share_server = None
         try:
             # SAPCC: Extend network allocations to destination host, i.e.,
@@ -5323,6 +5324,12 @@ class ShareManager(manager.SchedulerDependentManager):
                 context, constants.STATUS_AVAILABLE,
                 share_instance_ids=share_instance_ids,
                 snapshot_instance_ids=snapshot_instance_ids)
+            # Rollback port bindings on destination host
+            if new_allocations:
+                neutron_host = share_utils.extract_host(
+                    dest_host, level='host')
+                self.driver.network_api.delete_port_bindings(
+                    context, source_share_server, neutron_host)
             # Rollback read only access rules
             self._reset_read_only_access_rules_for_server(
                 context, share_instances, source_share_server,
