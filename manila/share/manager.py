@@ -5674,6 +5674,20 @@ class ShareManager(manager.SchedulerDependentManager):
         dest_sn = self.db.share_network_get(context, dest_sn_id)
         dest_sns = self.db.share_network_subnet_get(context, dest_sns_id)
 
+        # SAPCC: Network are extended to the destination host on previous
+        # (migration_start) step, i.e. port bindings are created on destination
+        # host using the old ports. The network allocations will be cut over on
+        # this (migration_complete) step, i.e. port bindings on destination
+        # host will be activated and bindings on source host will be deleted.
+        # Since network allocations has been taken care of in the cutover,
+        # driver should not touch them. Therefore source_share_server and
+        # dest_share_server are not refreshed with the new network allocations,
+        # so that driver does not know about them.
+        if True:
+            self.driver.network_api.cutover_network_allocations(
+                context, source_share_server, dest_share_server)
+            dest_sns = self.db.share_network_subnet_get(context, dest_sns_id)
+
         migration_reused_network_allocations = (len(
             self.db.network_allocations_get_for_share_server(
                 context, dest_share_server['id'])) == 0)

@@ -26,6 +26,7 @@ from manila.i18n import _
 from manila import network
 from manila.network.neutron import api as neutron_api
 from manila.network.neutron import constants as neutron_constants
+from manila.share import utils as share_utils
 from manila import utils
 
 LOG = log.getLogger(__name__)
@@ -729,6 +730,46 @@ class NeutronBindNetworkPlugin(NeutronNetworkPlugin):
                 LOG.warn(msg, {'port': port.id, 'err': e})
         for binding in dest_port_bindings:
             self.db.network_allocation_delete(context, binding.id)
+
+    def cutover_network_allocations(self, context, src_share_server,
+                                    dest_share_server):
+        physnet = self.configuration.neutron_physical_net_name
+        src_host = share_utils.extract_host(src_share_server['host'], 'host')
+        dest_host = share_utils.extract_host(dest_share_server['host'], 'host')
+
+        active_allocations = (
+            self.db.network_allocations_get_for_share_server(
+                context, src_share_server.id, label='user'))
+        inactive_allocations = (
+            self.db.network_allocations_get_for_share_server(
+                context, src_share_server.id, label=physnet))
+
+        if len(inactive_allocations) == 0:
+            msg = _(
+                'No target network allocations for cutover from '
+                '%{src_ss}s to %{dest_ss}s')
+            raise exception.NetworkException(
+                msg % {
+                    'src_ss': src_share_server.id,
+                    'dest_ss': dest_share_server.id
+                })
+        vlan_to_activate = inactive_allocations[0]['segmentation_id']
+
+        # Cutting over network allocations
+        alloc_data = {
+            'share_server_id': dest_share_server.id,
+            'segmentation_id': vlan_to_activate
+        }
+        for alloc in active_allocations:
+            self.neutron_api.activate_port_binding(alloc.id, dest_host)
+            self.neutron_api.delete_port_binding(alloc.id, src_host)
+            self.db.network_allocation_update(context, alloc.id, alloc_data)
+        for alloc in inactive_allocations:
+            self.db.network_allocation_delete(context, alloc.id)
+        # Update segmentation id of the share network subnet after cutting over
+        subnet_data = {'segmentation_id': vlan_to_activate}
+        sns_id = src_share_server['share_network_subnet']['id']
+        self.db.share_network_subnet_update(context, sns_id, subnet_data)
 
 
 class NeutronBindSingleNetworkPlugin(NeutronSingleNetworkPlugin,
