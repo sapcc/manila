@@ -315,8 +315,11 @@ class API(object):
                 code=e.status_code, message=e.message)
 
     def activate_port_binding(self, port_id, host):
-        pass
-
+        try:
+            return self.client.activate_port_binding(port_id, host)
+        except neutron_client_exc.NeutronClientException as e:
+            raise exception.NetworkException(
+                code=e.status_code, message=e.message)
 
     def show_router(self, router_id):
         try:
