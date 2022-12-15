@@ -727,7 +727,7 @@ class NeutronBindNetworkPlugin(NeutronNetworkPlugin):
             except exception.NetworkException as e:
                 msg = _(
                     'Failed to delete port binding on port %{port}s: %{err}s')
-                LOG.warn(msg, {'port': port.id, 'err': e})
+                LOG.warning(msg, {'port': port.id, 'err': e})
         for binding in dest_port_bindings:
             self.db.network_allocation_delete(context, binding.id)
 
