@@ -3213,14 +3213,14 @@ class NetAppCmodeFileStorageLibrary(object):
         except exception.StorageCommunicationException as e:
             # Ignore any errors since the current source replica may be
             # unreachable
-            msg = ('failed to update snapmirror from %(source)s to '
-                   '%(target)s: %(error)s')
-            values = {
+            msg_args = {
                 'source': orig_active_replica['id'],
                 'target': replica['id'],
                 'error': e
             }
-            LOG.warning(msg % values)
+            msg = ('failed to update snapmirror from %(source)s to '
+                   '%(target)s: %(error)s') % msg_args
+            LOG.warning(msg)
             pass
         # 2. Break SnapMirror
         dm_session.break_snapmirror(orig_active_replica, replica)
