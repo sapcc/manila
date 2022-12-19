@@ -3210,9 +3210,17 @@ class NetAppCmodeFileStorageLibrary(object):
             # 1. Start an update to try to get a last minute transfer before we
             # quiesce and break
             dm_session.update_snapmirror(orig_active_replica, replica)
-        except exception.StorageCommunicationException:
+        except exception.StorageCommunicationException as e:
             # Ignore any errors since the current source replica may be
             # unreachable
+            msg = ('failed to update snapmirror from %(source)s to '
+                   '%(target)s: %(error)s')
+            values = {
+                'source': orig_active_replica['id'],
+                'target': replica['id'],
+                'error': e
+            }
+            LOG.warning(msg % values)
             pass
         # 2. Break SnapMirror
         dm_session.break_snapmirror(orig_active_replica, replica)
