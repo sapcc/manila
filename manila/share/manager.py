@@ -2272,8 +2272,9 @@ class ShareManager(manager.SchedulerDependentManager):
     def _update_share_instance_access_rules_state(self, context,
                                                   share_instance_id, state):
         """Update the access_rules_status for the share instance."""
-        self.access_helper.get_and_update_share_instance_access_rules_status(
-            context, status=state, share_instance_id=share_instance_id)
+        updates = {'state': state}
+        self.access_helper.get_and_update_share_instance_access_rules(
+            context, updates=updates, share_instance_id=share_instance_id)
 
     def _get_replica_snapshots_for_snapshot(self, context, snapshot_id,
                                             active_replica_id,
