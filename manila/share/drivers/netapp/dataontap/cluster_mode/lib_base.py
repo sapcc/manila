@@ -2817,11 +2817,20 @@ class NetAppCmodeFileStorageLibrary(object):
             LOG.warning('update share %(share)s on aggregate %(aggr)s with '
                         'provisioning options %(options)s failed', modify_args)
 
-        # non-active replicas do not have export locations
+        # TODO(carthaca): change to 'is_readable' condition
+        # non-active (i.e. 'dr') replicas do not have export locations
+        # and cannot have their max files modified
         replica_state = share.get('replica_state')
         if (replica_state is not None and
                 replica_state != constants.REPLICA_STATE_ACTIVE):
             return []
+
+        if provisioning_options.get('max_files_multiplier') is not None:
+            max_files_multiplier = provisioning_options.pop(
+                'max_files_multiplier')
+            max_files = na_utils.calculate_max_files(share['size'],
+                                                     max_files_multiplier)
+            vserver_client.set_volume_max_files(share_name, max_files)
 
         return self._create_export(share, share_server, vserver,
                                    vserver_client,
