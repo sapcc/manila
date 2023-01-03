@@ -671,13 +671,7 @@ class NeutronBindNetworkPlugin(NeutronNetworkPlugin):
             # in the neutron api call, if the port is already bound to
             # destination host.
             for port in active_port_bindings:
-                try:
-                    self.neutron_api.bind_port_to_host(
-                        port.id, host, vnic_type)
-                except exception.NetworkException as e:
-                    msg = _('Failed to bind port to %s: %s') % (host, e)
-                    LOG.error(msg)
-                    raise
+                self.neutron_api.bind_port_to_host(port.id, host, vnic_type)
 
             # Get the segmentation id on destination host
             neutron_network_id = share_server['share_network_subnet'].get(
@@ -712,13 +706,15 @@ class NeutronBindNetworkPlugin(NeutronNetworkPlugin):
                 context, share_server.id, label='user'))
         if len(ports) == 0:
             msg = 'No ports found for Share server %s'
-            raise exception.NetworkException(msg % share_server.id)
+            LOG.warning(msg % share_server.id)
         dest_port_bindings = (
             self.db.network_allocations_get_for_share_server(
                 context, share_server.id, label=phys_net))
         if len(dest_port_bindings) == 0:
-            msg = 'No port bindings found on %{host}s'
-            raise exception.NetworkException(msg % {'host': host})
+            msg = (
+                'No port bindings found on %{host}s for '
+                'share server %{share_server}s')
+            LOG.warning(msg, {'host': host, 'share_server': share_server.id})
         # Parent port are not tracked in network allocations; so we have to use
         # the port id's extracted from source share server
         for port in ports:
