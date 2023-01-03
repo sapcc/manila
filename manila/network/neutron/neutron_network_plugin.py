@@ -686,15 +686,14 @@ class NeutronBindNetworkPlugin(NeutronNetworkPlugin):
                 raise exception.NetworkException(msg)
 
             # Label the new port bindings with physical network name.
+            dest_port_bindings = []
             for port in active_port_bindings:
                 port_data = self.db.network_allocation_get(context, port.id)
                 port_data['label'] = phys_net
                 port_data['segmentation_id'] = vlan
                 port_data['id'] = None
-                self.db.network_allocation_create(context, port_data)
-            dest_port_bindings = (
-                self.db.network_allocations_get_for_share_server(
-                    context, share_server.id, label=phys_net))
+                dest_port_bindings.append(
+                    self.db.network_allocation_create(context, port_data))
 
         return dest_port_bindings
 
