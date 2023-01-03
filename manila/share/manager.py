@@ -118,6 +118,10 @@ share_manager_opts = [
                     'the share manager will poll the driver to perform the '
                     'next step of migration in the storage backend, for a '
                     'migrating share server.'),
+    cfg.BoolOpt('server_migration_extend_neutron_network',
+                default=False,
+                help='If set to True, neutron network are extended to '
+                     'destination host during share server migration'),
     cfg.IntOpt('share_usage_size_update_interval',
                default=300,
                help='This value, specified in seconds, determines how often '
@@ -5228,7 +5232,7 @@ class ShareManager(manager.SchedulerDependentManager):
             # network_allocations field in source_share_server with the new
             # bindings, so that correct segmentation id is used during
             # compatibility check and migration.
-            if True:
+            if CONF.server_migration_extend_neutron_network:
                 neutron_host = share_utils.extract_host(
                     dest_host, level='host')
                 new_allocations = (
@@ -5397,7 +5401,7 @@ class ShareManager(manager.SchedulerDependentManager):
         # bindings on destination host with the same ports in the share network
         # subnet. Refresh share_server with new network allocations, so that
         # correct segmentation id is used in the compatibility check.
-        if True:
+        if CONF.server_migration_extend_neutron_network:
             try:
                 neutron_host = share_utils.extract_host(
                     dest_host, level='host')
@@ -5690,7 +5694,7 @@ class ShareManager(manager.SchedulerDependentManager):
         # driver should not touch them. Therefore source_share_server and
         # dest_share_server are not refreshed with the new network allocations,
         # so that driver does not know about them.
-        if True:
+        if CONF.server_migration_extend_neutron_network:
             self.driver.network_api.cutover_network_allocations(
                 context, source_share_server, dest_share_server)
             dest_sns = self.db.share_network_subnet_get(context, dest_sns_id)
