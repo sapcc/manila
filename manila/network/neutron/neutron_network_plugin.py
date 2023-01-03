@@ -704,8 +704,8 @@ class NeutronBindNetworkPlugin(NeutronNetworkPlugin):
             self.db.network_allocations_get_for_share_server(
                 context, share_server.id, label='user'))
         if len(ports) == 0:
-            msg = 'No ports found for Share server %s'
-            LOG.warning(msg % share_server.id)
+            msg = 'No ports found for Share server %{share_server}s'
+            LOG.warning(msg, {'share_server': share_server.id})
         dest_port_bindings = (
             self.db.network_allocations_get_for_share_server(
                 context, share_server.id, label=phys_net))
