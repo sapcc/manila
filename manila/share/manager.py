@@ -5401,10 +5401,10 @@ class ShareManager(manager.SchedulerDependentManager):
             try:
                 neutron_host = share_utils.extract_host(
                     dest_host, level='host')
-                dest_ports = (
+                new_allocations = (
                     self.driver.network_api.extend_network_allocations(
                         context, share_server, neutron_host))
-                share_server['network_allocations'] = dest_ports
+                share_server['network_allocations'] = new_allocations
             except Exception:
                 self.driver.network_api.delete_port_bindings(
                     context, share_server, neutron_host)
