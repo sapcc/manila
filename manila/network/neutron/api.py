@@ -55,18 +55,15 @@ CONF = cfg.CONF
 LOG = log.getLogger(__name__)
 
 
-# We need to monkey-patch neutron_client_exc to make neutron client to raise
-# exception for specific type of error. When neutron API returns a error of
-# type NeutronError, the exception NeutronErrorClient is raised, if it is
-# defined in the neutronclient.common.exceptions module. Monkey-patching the
-# module with PortBindingAlreadyExistsClient means the API error
-# PortBindingAlreadyExists can be handled as a python exception.
-
-
 class PortBindingAlreadyExistsClient(neutron_client_exc.Conflict):
     pass
 
 
+# We need to monkey-patch neutronclient.common.exceptions module, to make
+# neutron client to raise error specific exceptions. E.g., exception
+# PortBindingAlreadyExistsClient is raised for Neutron API error
+# PortBindingAlreadyExists. If not defined, a general exception Conflict will
+# be raised.
 neutron_client_exc.PortBindingAlreadyExistsClient = \
     PortBindingAlreadyExistsClient
 
