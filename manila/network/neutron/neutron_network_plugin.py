@@ -413,7 +413,7 @@ class NeutronNetworkPlugin(network.NetworkBaseAPI):
         """Extend network to target host.
 
         Create extra (inactive) port bindings on given host. Network
-        is streched to the host with new segementation id.
+        is bound to the host with new segementation id.
         """
         phys_net = self.configuration.neutron_physical_net_name
         vnic_type = self.configuration.neutron_vnic_type
