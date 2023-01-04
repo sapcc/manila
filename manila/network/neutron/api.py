@@ -301,7 +301,7 @@ class API(object):
                                              message=e.message)
 
     def bind_port_to_host(self, port_id, host, vnic_type):
-        """Add an inactive binding to exisiting port."""
+        """Add an inactive binding to existing port."""
 
         try:
             data = {"binding": {"host": host, "vnic_type": vnic_type}}
