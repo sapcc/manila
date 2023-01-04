@@ -5695,10 +5695,11 @@ class ShareManager(manager.SchedulerDependentManager):
         # destination host with existing ports. The network allocations will be
         # cut over on this (migration_complete) step, i.e. port bindings on
         # destination host will be activated and bindings on source host will
-        # be deleted. Since network allocations has been taken care of in the
-        # cutover, driver should not touch them. Therefore source_share_server
-        # and dest_share_server are not updated with the new network
-        # allocations.
+        # be deleted. Since manager takes care of the cutover of network
+        # allocations, driver should not touch them. Therefore the cached
+        # source_share_server and dest_share_server are not updated with the
+        # new network allocations after the cutover_network_allocations call.
+        # Only dest_sns is updated to have the correct segmentation id.
         if CONF.server_migration_extend_neutron_network:
             self.driver.network_api.cutover_network_allocations(
                 context, source_share_server, dest_share_server)
