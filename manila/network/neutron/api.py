@@ -60,10 +60,10 @@ class PortBindingAlreadyExistsClient(neutron_client_exc.Conflict):
 
 
 # We need to monkey-patch neutronclient.common.exceptions module, to make
-# neutron client to raise error specific exceptions. E.g., exception
+# neutron client to raise error specific exceptions. E.g. exception
 # PortBindingAlreadyExistsClient is raised for Neutron API error
-# PortBindingAlreadyExists. If not defined, a general exception Conflict will
-# be raised.
+# PortBindingAlreadyExists. If not defined, a general exception of type
+# Conflict will be raised.
 neutron_client_exc.PortBindingAlreadyExistsClient = \
     PortBindingAlreadyExistsClient
 

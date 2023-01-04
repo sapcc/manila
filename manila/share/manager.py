@@ -5227,7 +5227,7 @@ class ShareManager(manager.SchedulerDependentManager):
         new_allocations = None
         dest_share_server = None
         try:
-            # NOTE(sapcc): Extend network allocations to destination host, i.e.,
+            # NOTE(sapcc): Extend network allocations to destination host, i.e.
             # create inactive port bindings on the destination host. Refresh
             # network_allocations field in source_share_server with the new
             # bindings, so that correct segmentation id is used during
