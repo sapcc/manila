@@ -121,7 +121,9 @@ share_manager_opts = [
     cfg.BoolOpt('server_migration_extend_neutron_network',
                 default=False,
                 help='If set to True, neutron network are extended to '
-                     'destination host during share server migration'),
+                     'destination host during share server migration. This '
+                     'option should only be enabled when multiple bindings of '
+                     'Manila ports are supported by Neutron ML2 plugin.'),
     cfg.IntOpt('share_usage_size_update_interval',
                default=300,
                help='This value, specified in seconds, determines how often '
