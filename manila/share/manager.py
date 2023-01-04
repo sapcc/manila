@@ -5227,7 +5227,7 @@ class ShareManager(manager.SchedulerDependentManager):
         new_allocations = None
         dest_share_server = None
         try:
-            # SAPCC: Extend network allocations to destination host, i.e.,
+            # NOTE(sapcc): Extend network allocations to destination host, i.e.,
             # create inactive port bindings on the destination host. Refresh
             # network_allocations field in source_share_server with the new
             # bindings, so that correct segmentation id is used during
@@ -5397,10 +5397,11 @@ class ShareManager(manager.SchedulerDependentManager):
         service = self.db.service_get_by_args(
             context, service_host, 'manila-share')
 
-        # SAPCC: Extend network to destination host, i.e. create inactive port
-        # bindings on destination host with the same ports in the share network
-        # subnet. Refresh share_server with new network allocations, so that
-        # correct segmentation id is used in the compatibility check.
+        # NOTE(sapcc): Extend network allocations to destination host, i.e.
+        # create inactive port bindings on destination host with the same ports
+        # in the share network subnet. Refresh share_server with new network
+        # allocations, so that correct segmentation id is used in the
+        # compatibility check.
         if CONF.server_migration_extend_neutron_network:
             try:
                 neutron_host = share_utils.extract_host(
@@ -5441,8 +5442,12 @@ class ShareManager(manager.SchedulerDependentManager):
             # the validations.
             driver_result['compatible'] = False
 
-        self.driver.network_api.delete_port_bindings(
-            context, share_server, neutron_host)
+        # NOTE(sapcc): Delete port bindings on destination host after
+        # compatibility check
+        if CONF.server_migration_extend_neutron_network:
+            neutron_host = share_utils.extract_host(dest_host, level='host')
+            self.driver.network_api.delete_port_bindings(
+                context, share_server, neutron_host)
         result.update(driver_result)
 
         return result
@@ -5685,15 +5690,15 @@ class ShareManager(manager.SchedulerDependentManager):
         dest_sn = self.db.share_network_get(context, dest_sn_id)
         dest_sns = self.db.share_network_subnet_get(context, dest_sns_id)
 
-        # SAPCC: Network are extended to the destination host on previous
-        # (migration_start) step, i.e. port bindings are created on destination
-        # host using the old ports. The network allocations will be cut over on
-        # this (migration_complete) step, i.e. port bindings on destination
-        # host will be activated and bindings on source host will be deleted.
-        # Since network allocations has been taken care of in the cutover,
-        # driver should not touch them. Therefore source_share_server and
-        # dest_share_server are not refreshed with the new network allocations,
-        # so that driver does not know about them.
+        # NOTE(sapcc): Network allocations are extended to the destination host
+        # on previous (migration_start) step, i.e. port bindings are created on
+        # destination host with existing ports. The network allocations will be
+        # cut over on this (migration_complete) step, i.e. port bindings on
+        # destination host will be activated and bindings on source host will
+        # be deleted. Since network allocations has been taken care of in the
+        # cutover, driver should not touch them. Therefore source_share_server
+        # and dest_share_server are not updated with the new network
+        # allocations.
         if CONF.server_migration_extend_neutron_network:
             self.driver.network_api.cutover_network_allocations(
                 context, source_share_server, dest_share_server)
