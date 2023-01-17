@@ -2305,8 +2305,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             try:
                 self.send_request('security-certificate-install', api_args)
             except netapp_api.NaApiError as e:
-                msg = _("Failed to install certificate. %s")
-                raise exception.NetAppException(msg % e.message)
+                if e.code != netapp_api.EDUPLICATEENTRY:
+                    msg = _("Failed to install certificate. %s")
+                    raise exception.NetAppException(msg % e.message)
 
     @na_utils.trace
     def configure_cifs_encryption(self, secure=True):
