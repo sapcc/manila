@@ -338,10 +338,15 @@ class NeutronNetworkPlugin(network.NetworkBaseAPI):
     def _delete_port(self, context, port):
         try:
             self.neutron_api.delete_port(port['id'])
-        except exception.NetworkException:
-            self.db.network_allocation_update(
-                context, port['id'], {'status': constants.STATUS_ERROR})
-            raise
+        except exception.NetworkException as e:
+            if e.kwargs.get('code') != 404:
+                self.db.network_allocation_update(
+                    context, port['id'], {'status': constants.STATUS_ERROR})
+                raise
+            else:  # Not found means already deleted, we are usually fine
+                msg = _('Neutron error deleting port %(port)s: %(err)s')
+                msg_args = {'port': port['id'], 'err': e.msg}
+                LOG.debug(msg, msg_args)
         else:
             self.db.network_allocation_delete(context, port['id'])
 
