@@ -3716,6 +3716,9 @@ class ShareManager(manager.SchedulerDependentManager):
         # see https://bugs.launchpad.net/manila/+bug/1700660
         # on other possible workaround
         share_instance.get('export_location')
+        # and explicitly load backend_details
+        if share_server:
+            share_server.get('backend_details')
 
         self._notify_about_share_usage(context, share,
                                        share_instance, "delete.start")
