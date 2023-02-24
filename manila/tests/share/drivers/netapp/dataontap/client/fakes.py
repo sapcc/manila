@@ -86,7 +86,9 @@ DELETED_EXPORT_POLICIES = {
 }
 QOS_POLICY_GROUP_NAME = 'fake_qos_policy_group_name'
 QOS_MAX_THROUGHPUT = '5000B/s'
+QOS_MAX_THROUGHPUT_IOPS = '5000iops'
 QOS_MAX_THROUGHPUT_NO_UNIT = 5000
+QOS_MAX_THROUGHPUT_IOPS_NO_UNIT = 5000
 ADAPTIVE_QOS_POLICY_GROUP_NAME = 'fake_adaptive_qos_policy_group_name'
 VSERVER_TYPE_DEFAULT = 'default'
 VSERVER_TYPE_DP_DEST = 'dp_destination'
@@ -1042,15 +1044,36 @@ NFS_LIFS = [
 ]
 
 NFS_LIFS_REST = [
-    {'uuid': FAKE_UUID,
-     'address': IP_ADDRESS,
-     'home-node': NODE_NAME,
-     'home-port': VLAN_PORT,
-     'interface-name': LIF_NAME,
-     'netmask': NETMASK,
-     'role': 'data',
-     'vserver': VSERVER_NAME,
-     },
+    {
+        'uuid': 'fake_uuid_1',
+        'address': IP_ADDRESS,
+        'home-node': NODE_NAME,
+        'home-port': VLAN_PORT,
+        'interface-name': LIF_NAME,
+        'netmask': NETMASK,
+        'role': 'data',
+        'vserver': VSERVER_NAME,
+    },
+    {
+        'uuid': 'fake_uuid_2',
+        'address': IP_ADDRESS,
+        'home-node': NODE_NAME,
+        'home-port': VLAN_PORT,
+        'interface-name': LIF_NAME,
+        'netmask': NETMASK,
+        'role': 'data',
+        'vserver': VSERVER_NAME,
+    },
+    {
+        'uuid': 'fake_uuid_3',
+        'address': IP_ADDRESS,
+        'home-node': NODE_NAME,
+        'home-port': VLAN_PORT,
+        'interface-name': LIF_NAME,
+        'netmask': NETMASK,
+        'role': 'data',
+        'vserver': VSERVER_NAME,
+    },
 ]
 
 NET_INTERFACE_GET_ONE_RESPONSE = etree.XML("""
@@ -3707,7 +3730,8 @@ GENERIC_NETWORK_INTERFACES_GET_REPONSE = {
                 },
             }
         }
-    ]
+    ],
+    "num_records": 1,
 }
 
 GENERIC_EXPORT_POLICY_RESPONSE_AND_VOLUMES = {
@@ -3957,6 +3981,9 @@ SNAPMIRROR_GET_ITER_RESPONSE_REST = {
             "transfer_schedule": {
                 "name": "hourly",
             },
+            "transfer": {
+                "state": "success"
+            }
         }
     ],
     "num_records": 1,
@@ -3967,12 +3994,13 @@ REST_GET_SNAPMIRRORS_RESPONSE = [{
     'destination-vserver': SM_DEST_VSERVER,
     'last-transfer-end-timestamp': 0,
     'mirror-state': 'snapmirrored',
-    'relationship-status': 'snapmirrored',
+    'relationship-status': 'idle',
     'source-volume': SM_SOURCE_VOLUME,
     'source-vserver': SM_SOURCE_VSERVER,
     'uuid': FAKE_UUID,
     'policy-type': 'async',
-    'schedule': 'hourly'
+    'schedule': 'hourly',
+    'transferring-state': 'success'
 }]
 
 FAKE_CIFS_RECORDS = {
@@ -4639,7 +4667,8 @@ FAKE_AGGREGATES_RESPONSE = {
                 {
                     "name": SHARE_AGGREGATE_NAME
                 }
-            ]
+            ],
+            "name": VSERVER_NAME,
         }
     ]
 }
@@ -4709,3 +4738,65 @@ DATA_LIF_CAPACITY_DETAILS = etree.XML("""
         </attributes-list>
         <num-records>1</num-records>
     </results>""")
+
+FAKE_CIFS_LOCAL_USER = {
+    'records': [
+        {
+            'sid': 'S-1-5-21-256008430-3394229847-3930036330-1001'
+        }
+    ]
+}
+
+FAKE_SERVER_SWITCH_NAME = 'fake_ss_name'
+FAKE_SUBTYPE = 'fake_subtype'
+FAKE_DNS_CONFIG = {
+    'dns-state': 'true',
+    'domains': ['fake_domain'],
+    'dns-ips': ['fake_ip']
+}
+
+FAKE_VOLUME_MANAGE = {
+    'records': [
+        {
+            'name': VOLUME_NAMES[0],
+            'aggregates': [
+                {
+                    'name': SHARE_AGGREGATE_NAME
+                }
+            ],
+            'nas': {
+                'path': VOLUME_JUNCTION_PATH
+            },
+            'style': 'flex',
+            'type': 'fake_type',
+            'svm': {
+                'name': VSERVER_NAME
+            },
+            'qos': {
+                'policy': {
+                    'name': QOS_POLICY_GROUP_NAME
+                }
+            },
+            'space': {
+                'size': SHARE_SIZE
+            }
+        }
+    ],
+    'num_records': 1
+}
+
+FAKE_PORTS = [
+    {'speed': ''},
+    {'speed': '4'},
+    {'speed': 'auto'},
+    {'speed': 'undef'},
+    {'speed': 'fake_speed'}
+    ]
+
+FAKE_ROOT_AGGREGATES_RESPONSE = {
+    "records": [
+        {
+            "aggregate": SHARE_AGGREGATE_NAME
+        }
+    ]
+}
