@@ -70,6 +70,7 @@ AGGR_POOL_NAME = 'manila_aggr_1'
 FLEXGROUP_POOL_NAME = 'flexgroup_pool'
 ROOT_AGGREGATES = ('root_aggr_1', 'root_aggr_2')
 ROOT_VOLUME_AGGREGATE = 'manila1'
+SECURITY_CERT_EXPIRE_DAYS = 2190
 ROOT_VOLUME = 'root'
 CLUSTER_NODE = 'cluster1_01'
 CLUSTER_NODES = ('cluster1_01', 'cluster1_02')
