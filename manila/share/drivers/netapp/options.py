@@ -207,6 +207,19 @@ netapp_provisioning_opts = [
                default=60,  # Default to one minutes
                help='Sets maximum amount of time in seconds to wait for a '
                     'synchronous ONTAP REST API operation to be completed.'),
+    cfg.IntOpt('netapp_security_cert_expire_days',
+               min=1,
+               max=3652,
+               default=2190,
+               help='Create security certificate while creating vserver with '
+                    'specified expire days.'),
+    cfg.BoolOpt('netapp_volume_provision_net_capacity',
+                help='This option provisions a volume with the specified size '
+                     'available as net capacity to the end user. The size of '
+                     'snapshot reserve is then added on top of net capacity. '
+                     'The total size is calculated as (size * 100) divided by '
+                     '(100 - netapp_volume_snapshot_reserve_percent)',
+                default=False),
     cfg.BoolOpt('netapp_restrict_lif_creation_per_ha_pair',
                 default=False,
                 help='Prevent the creation of a share server if total number'
