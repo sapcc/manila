@@ -1663,8 +1663,7 @@ class ShareManagerTestCase(test.TestCase):
         mock_db_update_call = self.mock_object(
             self.share_manager.db, 'share_replica_update')
 
-        self.share_manager._share_replica_update(
-            self.context, replica, share_id=replica['share_id'])
+        self.share_manager._share_replica_update(self.context, replica)
 
         mock_db_update_call.assert_called_once_with(
             self.context, replica['id'],
@@ -1696,8 +1695,7 @@ class ShareManagerTestCase(test.TestCase):
         mock_db_update_call = self.mock_object(
             self.share_manager.db, 'share_replica_update')
 
-        self.share_manager._share_replica_update(
-            self.context, replica, share_id=replica['share_id'])
+        self.share_manager._share_replica_update(self.context, replica)
 
         mock_db_update_call.assert_called_once_with(
             self.context, replica['id'],
@@ -1740,8 +1738,7 @@ class ShareManagerTestCase(test.TestCase):
         self.mock_object(db, 'share_replica_get',
                          mock.Mock(return_value=replica))
 
-        self.share_manager._share_replica_update(self.context, replica,
-                                                 share_id=replica['share_id'])
+        self.share_manager._share_replica_update(self.context, replica)
 
         self.assertFalse(mock_debug_log.called)
         self.assertFalse(mock_warning_log.called)
@@ -1785,8 +1782,7 @@ class ShareManagerTestCase(test.TestCase):
         self.mock_object(db, 'share_snapshot_instance_get_all_with_filters',
                          mock.Mock(return_value=snapshot_instances))
 
-        self.share_manager._share_replica_update(
-            self.context, replica, share_id=replica['share_id'])
+        self.share_manager._share_replica_update(self.context, replica)
 
         if retval == constants.REPLICA_STATE_ACTIVE:
             self.assertEqual(1, mock_warning_log.call_count)
@@ -1808,13 +1804,11 @@ class ShareManagerTestCase(test.TestCase):
                 side_effect=exception.ShareReplicaNotFound(replica_id='fake')))
         self.mock_object(self.share_manager, '_get_share_server')
         driver_call = self.mock_object(
-            self.share_manager, '_share_replica_update')
+            self.share_manager.driver, 'update_replica_state')
 
-        self.assertRaises(
-            exception.ShareReplicaNotFound,
-            self.share_manager.update_share_replica,
-            self.context, replica, share_id=replica['share_id'])
+        retval = self.share_manager.update_share_replica(self.context, replica)
 
+        self.assertIsNone(retval)
         self.assertFalse(driver_call.called)
 
     def test_update_share_replica_replica(self):
@@ -1823,7 +1817,7 @@ class ShareManagerTestCase(test.TestCase):
         self.mock_object(self.share_manager.db, 'share_replica_get')
 
         retval = self.share_manager.update_share_replica(
-            self.context, 'fake_replica_id', share_id='fake_share_id')
+            self.context, 'fake_replica_id')
 
         self.assertIsNone(retval)
         self.assertTrue(replica_update_call.called)

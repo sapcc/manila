@@ -385,8 +385,7 @@ class ShareAPI(object):
         call_context = self.client.prepare(server=host, version='1.8')
         call_context.cast(context,
                           'update_share_replica',
-                          share_replica_id=share_replica['id'],
-                          share_id=share_replica['share_id'])
+                          share_replica_id=share_replica['id'])
 
     def migration_complete(self, context, src_share_instance,
                            dest_instance_id):
