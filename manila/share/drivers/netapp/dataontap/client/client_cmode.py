@@ -2369,8 +2369,12 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         # SAPCC Ignore when logical_space_reporting is None. The attribue
         # will be the same of its parent vserver.
         if logical_space_reporting in (True, False):
-            api_args['is-space-reporting-logical'] = logical_space_reporting
-            api_args['is-space-enforcement-logical'] = logical_space_reporting
+            if logical_space_reporting:
+                api_args['is-space-reporting-logical'] = 'true'
+                api_args['is-space-enforcement-logical'] = 'true'
+            else:
+                api_args['is-space-reporting-logical'] = 'false'
+                api_args['is-space-enforcement-logical'] = 'false'
 
         return api_args
 
