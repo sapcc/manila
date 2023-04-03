@@ -771,7 +771,8 @@ class NetAppCmodeFileStorageLibrary(object):
         # Disable cross volume dedupe in neo projects.
         # Set logical space settings to False for hypervisor_storage types
         provisioning_options = {'logical_space_reporting': True}
-        share_type = share_types.get_share_type(context, share.share_type_id)
+        share_type = (
+            share_types.get_share_type(context, share.get('share_type_id')))
         if share_type['name'].startswith('hypervisor_storage'):
             provisioning_options = {'logical_space_reporting': False}
         if context.project_domain_name in ['neo']:
