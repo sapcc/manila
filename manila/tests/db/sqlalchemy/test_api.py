@@ -343,6 +343,29 @@ class ShareDatabaseAPITestCase(test.TestCase):
         super(ShareDatabaseAPITestCase, self).setUp()
         self.ctxt = context.get_admin_context()
 
+    @ddt.data('yes', 'no', 'only')
+    def test_share_read_deleted(self, read_deleted):
+        share = db_utils.create_share()
+        test_ctxt = context.get_admin_context(read_deleted=read_deleted)
+        admin_ctxt = context.get_admin_context(read_deleted='yes')
+
+        if read_deleted in ('yes', 'no'):
+            self.assertIsNotNone(db_api.share_get(test_ctxt, share['id']))
+        elif read_deleted == 'only':
+            self.assertRaises(exception.NotFound, db_api.share_get,
+                              test_ctxt, share['id'])
+
+        # we don't use the to be tested context here and
+        # we need to delete the share instance before we can delete the share
+        db_api.share_instance_delete(admin_ctxt, share['instance']['id'])
+        db_api.share_delete(admin_ctxt, share['id'])
+
+        if read_deleted in ('yes', 'only'):
+            self.assertIsNotNone(db_api.share_get(test_ctxt, share['id']))
+        elif read_deleted == 'no':
+            self.assertRaises(exception.NotFound, db_api.share_get,
+                              test_ctxt, share['id'])
+
     def test_share_filter_by_host_with_pools(self):
         share_instances = [[
             db_api.share_create(self.ctxt, {'host': value}).instance
@@ -4170,9 +4193,7 @@ class PurgeDeletedTest(test.TestCase):
 
     def setUp(self):
         super(PurgeDeletedTest, self).setUp()
-        # FIXME: adjust to read_deleted="yes" after 2023.2 bobcat
-        # because of https://review.opendev.org/c/openstack/manila/+/879294
-        self.context = context.get_admin_context(read_deleted="only")
+        self.context = context.get_admin_context(read_deleted="yes")
 
     def _days_ago(self, begin, end):
         return timeutils.utcnow() - datetime.timedelta(
