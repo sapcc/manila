@@ -6835,3 +6835,55 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
 
         self.assertRaises(netapp_utils.NetAppDriverException,
                           self.client._break_snapmirror)
+
+    def test_get_svm_volumes_total_size(self):
+        expected = 1
+
+        fake_query = {
+            'svm.name': fake.VSERVER_NAME,
+            'fields': 'size'
+        }
+
+        self.mock_object(self.client, 'send_request',
+                         mock.Mock(return_value=fake.FAKE_GET_VOLUME))
+
+        result = self.client.get_svm_volumes_total_size(fake.VSERVER_NAME)
+
+        self.client.send_request.assert_called_once_with(
+            '/storage/volumes/', 'get', query=fake_query)
+
+        self.assertEqual(expected, result)
+
+    @ddt.data(fake.CIFS_SECURITY_SERVICE, fake.CIFS_SECURITY_SERVICE_3)
+    def test_configure_active_directory_credential_error(self,
+                                                         security_service):
+        msg = "could not authenticate"
+        fake_security = copy.deepcopy(security_service)
+
+        self.mock_object(self.client, 'configure_dns')
+        self.mock_object(self.client, 'set_preferred_dc')
+        self.mock_object(self.client, '_get_cifs_server_name')
+        self.mock_object(self.client, 'send_request',
+                         self._mock_api_error(code=netapp_api.api.EAPIERROR,
+                                              message=msg))
+        self.assertRaises(exception.SecurityServiceFailedAuth,
+                          self.client.configure_active_directory,
+                          fake_security,
+                          fake.VSERVER_NAME)
+
+    @ddt.data(fake.CIFS_SECURITY_SERVICE, fake.CIFS_SECURITY_SERVICE_3)
+    def test_configure_active_directory_user_privilege_error(self,
+                                                             security_service):
+        msg = "insufficient access"
+        fake_security = copy.deepcopy(security_service)
+
+        self.mock_object(self.client, 'configure_dns')
+        self.mock_object(self.client, 'set_preferred_dc')
+        self.mock_object(self.client, '_get_cifs_server_name')
+        self.mock_object(self.client, 'send_request',
+                         self._mock_api_error(code=netapp_api.api.EAPIERROR,
+                                              message=msg))
+        self.assertRaises(exception.SecurityServiceFailedAuth,
+                          self.client.configure_active_directory,
+                          fake_security,
+                          fake.VSERVER_NAME)
