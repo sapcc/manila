@@ -79,6 +79,7 @@ class NetAppCmodeFileStorageLibrary(object):
     HOUSEKEEPING_INTERVAL_SECONDS = 600  # ten minutes
 
     SUPPORTED_PROTOCOLS = ('nfs', 'cifs', 'multi')
+    SUPPORTED_HW_STATES = ('in_build', 'live', 'in_decom', 'replacing_decom')
 
     DEFAULT_FILTER_FUNCTION = 'capabilities.utilization < 70'
     DEFAULT_GOODNESS_FUNCTION = '100 - capabilities.utilization'
@@ -211,6 +212,7 @@ class NetAppCmodeFileStorageLibrary(object):
 
         self._licenses = self._get_licenses()
         self._revert_to_snapshot_support = self._check_snaprestore_license()
+        self._check_hw_state(self.configuration.netapp_hardware_state)
 
         # Performance monitoring library
         self._perf_library = performance.PerformanceLibrary(self._client)
@@ -398,6 +400,12 @@ class NetAppCmodeFileStorageLibrary(object):
         else:
             return self._client.check_snaprestore_license()
 
+    def _check_hw_state(self, hw_state):
+        if hw_state not in self.SUPPORTED_HW_STATES:
+            err_msg = (f"Invalid hardware state supplied: {hw_state}. "
+                       f"Must be one of {self.SUPPORTED_HW_STATES}")
+            raise exception.NetAppException(err_msg)
+
     @na_utils.trace
     def _get_aggregate_node(self, aggregate_name):
         """Get home node for the specified aggregate, or None."""
@@ -539,6 +547,7 @@ class NetAppCmodeFileStorageLibrary(object):
             self.configuration.reserved_share_extend_percentage or
             reserved_percentage)
         max_over_ratio = self.configuration.max_over_subscription_ratio
+        hw_state = self.configuration.netapp_hardware_state
 
         if total_capacity_gb == 0.0:
             total_capacity_gb = 'unknown'
@@ -547,6 +556,7 @@ class NetAppCmodeFileStorageLibrary(object):
             'pool_name': pool_name,
             'filter_function': None,
             'goodness_function': None,
+            'hardware_state': hw_state,
             'total_capacity_gb': total_capacity_gb,
             'free_capacity_gb': free_capacity_gb,
             'allocated_capacity_gb': allocated_capacity_gb,
