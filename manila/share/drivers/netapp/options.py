@@ -272,6 +272,11 @@ netapp_provisioning_opts = [
                     'certificate created during the vserver creation.  This '
                     'option only applies when the option '
                     'driver_handles_share_servers is set to True.'),
+    cfg.StrOpt('netapp_hardware_state',
+               help='NetApp Hardware state, that will be reported as pool '
+                    'property. Valid values are `in_build`, `live`, '
+                    '`in_decom` and `replacing_decom`',
+               default='live'),
     cfg.BoolOpt('netapp_restrict_lif_creation_per_ha_pair',
                 default=False,
                 help='Prevent the creation of a share server if total number'
