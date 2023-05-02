@@ -272,6 +272,18 @@ netapp_provisioning_opts = [
                     'certificate created during the vserver creation.  This '
                     'option only applies when the option '
                     'driver_handles_share_servers is set to True.'),
+    cfg.BoolOpt('netapp_volume_provision_net_capacity',
+                help='This option provisions a volume with the specified size '
+                     'available as net capacity to the end user. The size of '
+                     'snapshot reserve is then added on top of net capacity. '
+                     'The total size is calculated as (size * 100) divided by '
+                     '(100 - netapp_volume_snapshot_reserve_percent)',
+                default=False),
+    cfg.StrOpt('netapp_hardware_state',
+               help='NetApp Hardware state, that will be reported as pool '
+                    'property. Valid values are `in_build`, `live`, '
+                    '`in_decom` and `replacing_decom`',
+               default='live'),
     cfg.BoolOpt('netapp_restrict_lif_creation_per_ha_pair',
                 default=False,
                 help='Prevent the creation of a share server if total number'
