@@ -1023,6 +1023,7 @@ POOLS = [
     {
         'pool_name': AGGREGATES[0],
         'netapp_aggregate': AGGREGATES[0],
+        'hardware_state': 'live',
         'total_capacity_gb': 3.3,
         'free_capacity_gb': 1.1,
         'allocated_capacity_gb': 2.2,
@@ -1052,6 +1053,7 @@ POOLS = [
     {
         'pool_name': AGGREGATES[1],
         'netapp_aggregate': AGGREGATES[1],
+        'hardware_state': 'live',
         'total_capacity_gb': 6.0,
         'free_capacity_gb': 2.0,
         'allocated_capacity_gb': 4.0,
@@ -1086,6 +1088,7 @@ POOLS_VSERVER_CREDS = [
         'filter_function': None,
         'goodness_function': None,
         'netapp_aggregate': AGGREGATES[0],
+        'hardware_state': 'live',
         'total_capacity_gb': 'unknown',
         'free_capacity_gb': 1.1,
         'allocated_capacity_gb': 0.0,
@@ -1110,6 +1113,7 @@ POOLS_VSERVER_CREDS = [
     {
         'pool_name': AGGREGATES[1],
         'netapp_aggregate': AGGREGATES[1],
+        'hardware_state': 'live',
         'total_capacity_gb': 'unknown',
         'free_capacity_gb': 2.0,
         'allocated_capacity_gb': 0.0,

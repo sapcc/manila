@@ -220,6 +220,11 @@ netapp_provisioning_opts = [
                      'The total size is calculated as (size * 100) divided by '
                      '(100 - netapp_volume_snapshot_reserve_percent)',
                 default=False),
+    cfg.StrOpt('netapp_hardware_state',
+               help='NetApp Hardware state, that will be reported as pool '
+                    'property. Valid values are `in_build`, `live`, '
+                    '`in_decom` and `replacing_decom`',
+               default='live'),
     cfg.BoolOpt('netapp_restrict_lif_creation_per_ha_pair',
                 default=False,
                 help='Prevent the creation of a share server if total number'
