@@ -1196,9 +1196,10 @@ class PoolStateTestCase(test.TestCase):
     @ddt.unpack
     def test_update_from_share_capability(self, share_capability, instances):
         fake_context = context.RequestContext('user', 'project', is_admin=True)
+        sizes = [instance['size'] or 0 for instance in instances]
         self.mock_object(
-            db, 'share_instances_get_all_by_host',
-            mock.Mock(return_value=instances))
+            db, 'share_instance_sizes_sum_by_host',
+            mock.Mock(return_value=sum(sizes)))
         fake_pool = host_manager.PoolState('host1', None, 'pool0')
         self.assertIsNone(fake_pool.free_capacity_gb)
 
@@ -1228,7 +1229,7 @@ class PoolStateTestCase(test.TestCase):
                 else:
                     self.assertEqual(0, fake_pool.provisioned_capacity_gb)
             else:
-                self.assertFalse(db.share_instances_get_all_by_host.called)
+                self.assertFalse(db.share_instance_sizes_sum_by_host.called)
                 self.assertEqual(share_capability['provisioned_capacity_gb'],
                                  fake_pool.provisioned_capacity_gb)
         else:
