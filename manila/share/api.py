@@ -503,8 +503,6 @@ class API(base.Base):
             # snapshot
             return
 
-        LOG.debug("Sending create_share_instance message. share_instance_id: "
-                  "%s", share_instance['id'])
         if host:
             self.share_rpcapi.create_share_instance(
                 context,
