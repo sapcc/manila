@@ -134,11 +134,6 @@ class SchedulerManager(manager.Manager):
 
     def create_share_instance(self, context, request_spec=None,
                               filter_properties=None):
-        if 'share_instance_properties' in request_spec:
-            LOG.debug(
-                "Attempting to create share instance: "
-                "share_instance_id=%s.",
-                request_spec['share_instance_properties']['id'])
         try:
             self.driver.schedule_create_share(context, request_spec,
                                               filter_properties)
