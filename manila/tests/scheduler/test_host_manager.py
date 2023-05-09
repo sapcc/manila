@@ -1221,8 +1221,8 @@ class PoolStateTestCase(test.TestCase):
             self.assertEqual(thin_provisioned, fake_pool.thin_provisioning)
             if 'provisioned_capacity_gb' not in share_capability or (
                     share_capability['provisioned_capacity_gb'] is None):
-                db.share_instances_get_all_by_host.assert_called_once_with(
-                    fake_context, fake_pool.host, with_share_data=True)
+                db.share_instance_sizes_sum_by_host.assert_called_once_with(
+                    fake_context, fake_pool.host)
                 if len(instances) > 0:
                     self.assertEqual(4, fake_pool.provisioned_capacity_gb)
                 else:
@@ -1233,7 +1233,7 @@ class PoolStateTestCase(test.TestCase):
                                  fake_pool.provisioned_capacity_gb)
         else:
             self.assertFalse(fake_pool.thin_provisioning)
-            self.assertFalse(db.share_instances_get_all_by_host.called)
+            self.assertFalse(db.share_instance_sizes_sum_by_host.called)
             if 'provisioned_capacity_gb' not in share_capability or (
                     share_capability['provisioned_capacity_gb'] is None):
                 self.assertIsNone(fake_pool.provisioned_capacity_gb)
