@@ -1794,7 +1794,7 @@ def share_instance_sizes_sum_by_host(context, host):
         models.ShareInstance.host == host,
         models.ShareInstance.host.like("{0}#%".format(host)),
     )).first()
-    return int(result[0])
+    return int(result[0] or 0)
 
 
 @require_context
