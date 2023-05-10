@@ -4942,7 +4942,7 @@ class NetAppRestClient(object):
                           body=body)
 
     @na_utils.trace
-    def enable_nfs(self, versions, nfs_config=None):
+    def enable_nfs(self, versions, nfs_config=None, method='create'):
         """Enables NFS on Vserver."""
         svm_id = self._get_unique_svm_by_name()
 
@@ -4953,15 +4953,16 @@ class NetAppRestClient(object):
         self.send_request('/protocols/nfs/services/', 'post',
                           body=body)
 
-        self._enable_nfs_protocols(versions, svm_id)
+        self._enable_nfs_protocols(versions, svm_id, method)
 
         if nfs_config:
             self._configure_nfs(nfs_config, svm_id)
 
-        self._create_default_nfs_export_rules()
+        if method == 'create':
+            self._create_default_nfs_export_rules()
 
     @na_utils.trace
-    def _enable_nfs_protocols(self, versions, svm_id):
+    def _enable_nfs_protocols(self, versions, svm_id, method='create'):
         """Set the enabled NFS protocol versions."""
         nfs3 = 'true' if 'nfs3' in versions else 'false'
         # SAPCC absence of 'nfs4.0' should not equal 'false'
@@ -4982,6 +4983,15 @@ class NetAppRestClient(object):
             'protocol.v3_features.ejukebox_enabled': 'false',
             'vstorage_enabled': 'true',
         }
+
+        if method == 'create':
+            flexgroup_opts = {
+                # default false
+                'protocol.v3_64bit_identifiers_enabled': 'true',
+                # default true
+                'protocol.v4_64bit_identifiers_enabled': 'true',
+            }
+            body.update(flexgroup_opts)
 
         if 'nfs4.0' in versions:
             body['protocol.v40_enabled'] = 'true'

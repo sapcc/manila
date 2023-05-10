@@ -4731,7 +4731,7 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             '/protocols/nfs/services/', 'post', body=body)
         self.client._get_unique_svm_by_name.assert_called_once_with()
         self.client._enable_nfs_protocols.assert_called_once_with(
-            fake.NFS_VERSIONS, fake.FAKE_UUID)
+            fake.NFS_VERSIONS, fake.FAKE_UUID, 'create')
         if nfs_config:
             self.client._configure_nfs.assert_called_once_with(nfs_config,
                                                                fake.FAKE_UUID)
@@ -4739,9 +4739,28 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             self.client._configure_nfs.assert_not_called()
         self.client._create_default_nfs_export_rules.assert_called_once_with()
 
-    @ddt.data((True, True, True), (True, False, False), (False, True, True))
+    @ddt.data(
+        {'v3': True, 'v40': True, 'v41': True, 'method': 'create'},
+        {'v3': True, 'v40': False, 'v41': False, 'method': 'create'},
+        {'v3': False, 'v40': True, 'v41': True, 'method': 'create'},
+        {'v3': True, 'v40': True, 'v41': True, 'method': 'update'},
+        {'v3': True, 'v40': False, 'v41': False, 'method': 'update'},
+        {'v3': False, 'v40': True, 'v41': True, 'method': 'update'},
+        {'v3': True, 'v40': True, 'v41': True, 'method': 'create'},
+        {'v3': True, 'v40': False, 'v41': False, 'method': 'create'},
+        {'v3': False, 'v40': True, 'v41': True, 'method': 'create'},
+        {'v3': True, 'v40': True, 'v41': True, 'method': 'update'},
+        {'v3': True, 'v40': False, 'v41': False, 'method': 'update'},
+        {'v3': False, 'v40': True, 'v41': True, 'method': 'update'},
+        {'v3': True, 'v40': True, 'v41': True, 'method': 'create'},
+        {'v3': True, 'v40': False, 'v41': False, 'method': 'create'},
+        {'v3': False, 'v40': True, 'v41': True, 'method': 'create'},
+        {'v3': True, 'v40': True, 'v41': True, 'method': 'update'},
+        {'v3': True, 'v40': False, 'v41': False, 'method': 'update'},
+        {'v3': False, 'v40': True, 'v41': True, 'method': 'update'},
+        )
     @ddt.unpack
-    def test_enable_nfs_protocols(self, v3, v40, v41):
+    def test_enable_nfs_protocols(self, v3, v40, v41, method):
 
         self.mock_object(self.client, 'send_request')
 
@@ -4753,7 +4772,8 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
         if v41:
             versions.append('nfs4.1')
 
-        self.client._enable_nfs_protocols(versions, fake.FAKE_UUID)
+        self.client._enable_nfs_protocols(versions, fake.FAKE_UUID,
+                                          method=method)
 
         body = {
             'protocol.v3_enabled': 'true' if v3 else 'false',
@@ -4775,6 +4795,13 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
                 'v41_features.write_delegation_enabled': 'true',
             }
             body.update(nfs41_opts)
+
+        if method == 'create':
+            flexgroup_opts = {
+                'protocol.v3_64bit_identifiers_enabled': 'true',
+                'protocol.v4_64bit_identifiers_enabled': 'true',
+            }
+            body.update(flexgroup_opts)
 
         self.client.send_request.assert_called_once_with(
             f'/protocols/nfs/services/{fake.FAKE_UUID}',
