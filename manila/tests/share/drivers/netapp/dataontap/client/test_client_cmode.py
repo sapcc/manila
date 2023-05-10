@@ -2580,28 +2580,59 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.client.send_request.assert_called_once_with(
             'nfs-service-modify', nfs_service_modify_args)
 
-    @ddt.data({'tcp-max-xfer-size': 10000}, {}, None)
-    def test_enable_nfs(self, nfs_config):
-
+    def test_enable_nfs(self):
+        nfs_config = {'tcp-max-xfer-size': 10000}
         self.mock_object(self.client, 'send_request')
         self.mock_object(self.client, '_enable_nfs_protocols')
         self.mock_object(self.client, '_create_default_nfs_export_rules')
-        self.mock_object(self.client, '_configure_nfs')
 
         self.client.enable_nfs(fake.NFS_VERSIONS, nfs_config)
 
         self.client.send_request.assert_called_once_with('nfs-enable')
         self.client._enable_nfs_protocols.assert_called_once_with(
-            fake.NFS_VERSIONS)
+            fake.NFS_VERSIONS, 'create', nfs_config)
         self.client._create_default_nfs_export_rules.assert_called_once_with()
-        if nfs_config:
-            self.client._configure_nfs.assert_called_once_with(nfs_config)
-        else:
-            self.client._configure_nfs.assert_not_called()
 
-    @ddt.data((True, True, True), (True, False, False), (False, True, True))
+    @ddt.data(
+        {'v3': True, 'v40': True, 'v41': True, 'method': 'create',
+         'extra': None},
+        {'v3': True, 'v40': False, 'v41': False, 'method': 'create',
+         'extra': None},
+        {'v3': False, 'v40': True, 'v41': True, 'method': 'create',
+         'extra': None},
+        {'v3': True, 'v40': True, 'v41': True, 'method': 'update',
+         'extra': None},
+        {'v3': True, 'v40': False, 'v41': False, 'method': 'update',
+         'extra': None},
+        {'v3': False, 'v40': True, 'v41': True, 'method': 'update',
+         'extra': None},
+        {'v3': True, 'v40': True, 'v41': True, 'method': 'create',
+         'extra': {}},
+        {'v3': True, 'v40': False, 'v41': False, 'method': 'create',
+         'extra': {}},
+        {'v3': False, 'v40': True, 'v41': True, 'method': 'create',
+         'extra': {}},
+        {'v3': True, 'v40': True, 'v41': True, 'method': 'update',
+         'extra': {}},
+        {'v3': True, 'v40': False, 'v41': False, 'method': 'update',
+         'extra': {}},
+        {'v3': False, 'v40': True, 'v41': True, 'method': 'update',
+         'extra': {}},
+        {'v3': True, 'v40': True, 'v41': True, 'method': 'create',
+         'extra': {'tcp-max-xfer-size': 10000}},
+        {'v3': True, 'v40': False, 'v41': False, 'method': 'create',
+         'extra': {'tcp-max-xfer-size': 10000}},
+        {'v3': False, 'v40': True, 'v41': True, 'method': 'create',
+         'extra': {'tcp-max-xfer-size': 10000}},
+        {'v3': True, 'v40': True, 'v41': True, 'method': 'update',
+         'extra': {'tcp-max-xfer-size': 10000}},
+        {'v3': True, 'v40': False, 'v41': False, 'method': 'update',
+         'extra': {'tcp-max-xfer-size': 10000}},
+        {'v3': False, 'v40': True, 'v41': True, 'method': 'update',
+         'extra': {'tcp-max-xfer-size': 10000}},
+    )
     @ddt.unpack
-    def test_enable_nfs_protocols(self, v3, v40, v41):
+    def test_enable_nfs_protocols(self, v3, v40, v41, method, extra):
 
         self.mock_object(self.client, 'send_request')
 
@@ -2613,7 +2644,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
         if v41:
             versions.append('nfs4.1')
 
-        self.client._enable_nfs_protocols(versions)
+        self.client._enable_nfs_protocols(versions, method, extra)
 
         nfs_service_modify_args = {
             'is-nfsv3-enabled': 'true' if v3 else 'false',
@@ -2637,19 +2668,18 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
             nfs_service_modify_args.update(nfs41_opts)
 
+        if method == 'create':
+            flexgroup_opts = {
+                'is-nfsv3-64bit-identifiers-enabled': 'true',
+                'is-nfsv4-64bit-identifiers-enabled': 'true',
+            }
+            nfs_service_modify_args.update(flexgroup_opts)
+
+        if extra:
+            nfs_service_modify_args.update(extra)
+
         self.client.send_request.assert_called_once_with(
             'nfs-service-modify', nfs_service_modify_args)
-
-    def test_configure_nfs(self):
-        fake_nfs = {
-            'tcp-max-xfer-size': 10000,
-        }
-        self.mock_object(self.client, 'send_request')
-
-        self.client._configure_nfs(fake_nfs)
-
-        self.client.send_request.assert_called_once_with(
-            'nfs-service-modify', fake_nfs)
 
     def test_create_default_nfs_export_rules(self):
 
