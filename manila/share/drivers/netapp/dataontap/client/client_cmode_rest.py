@@ -4604,7 +4604,8 @@ class NetAppRestClient(object):
                           body=body)
 
     @na_utils.trace
-    def enable_nfs(self, versions, nfs_config=None):
+    def enable_nfs(self, versions, nfs_config=None,
+                   create_default_nfs_export_rules=True):
         """Enables NFS on Vserver."""
         svm_id = self._get_unique_svm_by_name()
 
@@ -4620,7 +4621,8 @@ class NetAppRestClient(object):
         if nfs_config:
             self._configure_nfs(nfs_config, svm_id)
 
-        self._create_default_nfs_export_rules()
+        if create_default_nfs_export_rules:
+            self._create_default_nfs_export_rules()
 
     @na_utils.trace
     def _enable_nfs_protocols(self, versions, svm_id):
