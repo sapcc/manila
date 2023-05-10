@@ -1674,18 +1674,18 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         self.send_request('nfs-service-modify', nfs_service_modify_arg)
 
     @na_utils.trace
-    def enable_nfs(self, versions, nfs_config=None):
+    def enable_nfs(self, versions, nfs_config=None,
+                   method='create'):
         """Enables NFS on Vserver."""
         self.send_request('nfs-enable')
-        self._enable_nfs_protocols(versions)
+        self._enable_nfs_protocols(versions, method, nfs_config)
 
-        if nfs_config:
-            self._configure_nfs(nfs_config)
-
-        self._create_default_nfs_export_rules()
+        if method == 'create':
+            self._create_default_nfs_export_rules()
 
     @na_utils.trace
-    def _enable_nfs_protocols(self, versions):
+    def _enable_nfs_protocols(self, versions, method='create',
+                              extra_config=None):
         """Set the enabled NFS protocol versions."""
         nfs3 = 'true' if 'nfs3' in versions else 'false'
         # SAPCC absence of 'nfs4.0' should not equal 'false'
@@ -1706,6 +1706,12 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'enable-ejukebox': 'false',
             'is-vstorage-enabled': 'true',
         }
+        if method == 'create':
+            flexgroup_opts = {
+                'is-nfsv3-64bit-identifiers-enabled': 'true',   # default false
+                'is-nfsv4-64bit-identifiers-enabled': 'true',   # default true
+            }
+            nfs_service_modify_args.update(flexgroup_opts)
 
         if 'nfs4.0' in versions:
             nfs_service_modify_args['is-nfsv40-enabled'] = 'true'
@@ -1719,12 +1725,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
 
             nfs_service_modify_args.update(nfs41_opts)
 
+        if extra_config:
+            nfs_service_modify_args.update(extra_config)
         self.send_request('nfs-service-modify', nfs_service_modify_args)
-
-    @na_utils.trace
-    def _configure_nfs(self, nfs_config):
-        """Sets the nfs configuraton"""
-        self.send_request('nfs-service-modify', nfs_config)
 
     @na_utils.trace
     def _create_default_nfs_export_rules(self):
