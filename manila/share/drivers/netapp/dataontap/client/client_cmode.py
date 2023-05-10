@@ -1556,7 +1556,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 raise exception.NetAppException(msg % security_service['type'])
 
     @na_utils.trace
-    def enable_nfs(self, versions, nfs_config=None):
+    def enable_nfs(self, versions, nfs_config=None,
+                   create_default_nfs_export_rules=True):
         """Enables NFS on Vserver."""
         self.send_request('nfs-enable')
         self._enable_nfs_protocols(versions)
@@ -1564,7 +1565,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         if nfs_config:
             self._configure_nfs(nfs_config)
 
-        self._create_default_nfs_export_rules()
+        if create_default_nfs_export_rules:
+            self._create_default_nfs_export_rules()
 
     @na_utils.trace
     def _enable_nfs_protocols(self, versions):
