@@ -215,11 +215,13 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
 
     @na_utils.trace
     def create_vserver_dp_destination(self, vserver_name, aggregate_names,
-                                      ipspace_name, delete_retention_hours):
+                                      ipspace_name, delete_retention_hours,
+                                      logical_space_reporting=False):
         """Creates new 'dp_destination' vserver and assigns aggregates."""
         self._create_vserver(
             vserver_name, aggregate_names, ipspace_name,
-            delete_retention_hours, subtype='dp_destination')
+            delete_retention_hours, subtype='dp_destination',
+            logical_space_reporting=logical_space_reporting)
 
     @na_utils.trace
     def _create_vserver(self, vserver_name, aggregate_names, ipspace_name,
