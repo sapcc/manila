@@ -225,7 +225,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
     @na_utils.trace
     def create_vserver_dp_destination(self, vserver_name, aggregate_names,
                                       ipspace_name, delete_retention_hours,
-                                      logical_space_reporting):
+                                      logical_space_reporting=False):
         """Creates new 'dp_destination' vserver and assigns aggregates."""
         self._create_vserver(
             vserver_name, aggregate_names, ipspace_name,
@@ -2568,8 +2568,12 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         # SAPCC Ignore when logical_space_reporting is None. The attribue
         # will be the same of its parent vserver.
         if logical_space_reporting in (True, False):
-            api_args['is-space-reporting-logical'] = logical_space_reporting
-            api_args['is-space-enforcement-logical'] = logical_space_reporting
+            if logical_space_reporting:
+                api_args['is-space-reporting-logical'] = 'true'
+                api_args['is-space-enforcement-logical'] = 'true'
+            else:
+                api_args['is-space-reporting-logical'] = 'false'
+                api_args['is-space-enforcement-logical'] = 'false'
 
         return api_args
 

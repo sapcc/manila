@@ -3638,6 +3638,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
             reserve, volume_type, cmnt, qos_name, encrypt, qos_adaptive_name,
             mount_point_name, snaplock_type, logical_space_reporting)
 
+        logical_space_reporting = (
+            'true' if logical_space_reporting else 'false')
         expected_api_args = {
             'volume-type': volume_type,
             'volume-comment': cmnt,
@@ -3677,6 +3679,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
             reserve, volume_type, cmt, qos_name, encrypt, qos_adaptive_name,
             mount_point_name, snaplock_type, logical_space_reporting)
 
+        logical_space_reporting = (
+            'true' if logical_space_reporting else 'false')
         expected_api_args = {
             'volume-type': volume_type,
             'volume-comment': cmt,
