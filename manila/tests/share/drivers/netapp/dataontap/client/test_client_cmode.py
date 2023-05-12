@@ -427,7 +427,9 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'root-volume-security-style': 'unix',
             'root-volume-aggregate': fake.ROOT_VOLUME_AGGREGATE_NAME,
             'root-volume': fake.ROOT_VOLUME_NAME,
-            'name-server-switch': {'nsswitch': 'file'}
+            'name-server-switch': {'nsswitch': 'file'},
+            'is-space-reporting-logical': 'false',
+            'is-space-enforcement-logical': 'false',
         }
         vserver_modify_args = {
             'aggr-list': [{'aggr-name': aggr_name} for aggr_name
@@ -460,6 +462,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'root-volume': fake.ROOT_VOLUME_NAME,
             'name-server-switch': {'nsswitch': 'file'},
             'ipspace': fake.IPSPACE_NAME,
+            'is-space-reporting-logical': 'false',
+            'is-space-enforcement-logical': 'false',
         }
         vserver_modify_args = {
             'aggr-list': [{'aggr-name': aggr_name} for aggr_name
@@ -489,6 +493,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'vserver-name': fake.VSERVER_NAME,
             'ipspace': fake.IPSPACE_NAME,
             'vserver-subtype': fake.VSERVER_TYPE_DP_DEST,
+            'is-space-reporting-logical': 'false',
+            'is-space-enforcement-logical': 'false',
         }
         vserver_modify_args = {
             'aggr-list': [{'aggr-name': aggr_name} for aggr_name
