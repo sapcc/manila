@@ -255,6 +255,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         if logical_space_reporting:
             create_args['is-space-reporting-logical'] = 'true'
             create_args['is-space-enforcement-logical'] = 'true'
+        else:
+            create_args['is-space-reporting-logical'] = 'false'
+            create_args['is-space-enforcement-logical'] = 'false'
 
         LOG.debug('Creating Vserver %(vserver)s with create args '
                   '%(args)s', {'vserver': vserver_name, 'args': create_args})
