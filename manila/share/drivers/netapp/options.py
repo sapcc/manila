@@ -158,7 +158,7 @@ netapp_provisioning_opts = [
                     'expired cache leads to refreshing it.'),
     cfg.BoolOpt('netapp_enable_logical_space_reporting',
                 help='This option enables the logical space reporting on a '
-                     'newly created vserver and locical space accounting '
+                     'newly created vserver and logical space accounting '
                      'on newly created volumes on this vserver. ',
                 default=False),
     cfg.BoolOpt('netapp_enable_flexgroup',
