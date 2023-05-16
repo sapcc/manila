@@ -2117,7 +2117,7 @@ class ShareManager(manager.SchedulerDependentManager):
                 with excutils.save_and_reraise_exception():
                     error = ("Creation of share instance %s failed: "
                              "failed to allocate network")
-                    LOG.error(error, share_instance_id)
+                    LOG.warning(error, share_instance_id)
                     self.db.share_instance_update(
                         context, share_instance_id,
                         {'status': constants.STATUS_ERROR}
