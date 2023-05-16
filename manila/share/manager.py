@@ -623,7 +623,14 @@ class ShareManager(manager.SchedulerDependentManager):
                 self.db.export_locations_update(
                     ctxt, share_instance['id'], update_export_locations)
 
-            share_server = self._get_share_server(ctxt, share_instance)
+            try:
+                share_server = self._get_share_server(ctxt, share_instance)
+            except exception.ShareServerNotFound:
+                LOG.warning("Share server corresponding to share instance "
+                            " %s not found. Continuing to next share "
+                            "instance ", share_instance['id'])
+                continue
+
             driver_has_to_reapply_access_rules = (
                 share_instance_update_dict.get('reapply_access_rules') is True
             )
