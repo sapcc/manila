@@ -2579,6 +2579,22 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
 
         return api_args
 
+    def _send_volume_modify_iter(self, api_args):
+        """Send volume-modify-iter and return (error_code, error_message).
+
+        Returns (None, None) on success. The caller decides whether to raise.
+        """
+        result = self.send_request('volume-modify-iter', api_args)
+        failures = result.get_child_content('num-failed')
+        if failures and int(failures) > 0:
+            failure_list = result.get_child_by_name(
+                'failure-list') or netapp_api.NaElement('none')
+            errors = failure_list.get_children()
+            if errors:
+                return (errors[0].get_child_content('error-code'),
+                        errors[0].get_child_content('error-message'))
+        return (None, None)
+
     @na_utils.trace
     def update_volume_snapshot_policy(self, volume_name, snapshot_policy):
         """Set snapshot policy for the specified volume."""
@@ -2813,45 +2829,32 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 },
             },
         }
-        result = self.send_request('volume-modify-iter', api_args)
-        failures = result.get_child_content('num-failed')
-        if failures and int(failures) > 0:
-            failure_list = result.get_child_by_name(
-                'failure-list') or netapp_api.NaElement('none')
-            errors = failure_list.get_children()
-            if not errors:
-                return
-            error_code = errors[0].get_child_content('error-code')
-            if retry_allocated:
-                if error_code == netapp_api.EVOLOPNOTSUPP:
-                    alloc_files = self.get_volume_allocated_files(
-                        volume_name)
-                    new_max_files = alloc_files['used']
-                    # no need to act if current max files are set to
-                    # allocated files
-                    if new_max_files == alloc_files['max']:
-                        return
+        error_code, error_msg = self._send_volume_modify_iter(api_args)
+        if error_code:
+            if retry_allocated and error_code == netapp_api.EVOLOPNOTSUPP:
+                alloc_files = self.get_volume_allocated_files(volume_name)
+                new_max_files = alloc_files['used']
+                # no need to act if current max files are set to
+                # allocated files
+                if new_max_files == alloc_files['max']:
+                    return
 
-                    msg = _('Set current allocated inodes to max files '
-                            '%(new_max_files)s on %(vol)s. Requested was '
-                            '%(max_files)s.')
-                    msg_args = {'vol': volume_name,
-                                'max_files': max_files,
-                                'new_max_files': new_max_files}
+                msg = _('Set current allocated inodes to max files '
+                        '%(new_max_files)s on %(vol)s. Requested was '
+                        '%(max_files)s.')
+                msg_args = {'vol': volume_name,
+                            'max_files': max_files,
+                            'new_max_files': new_max_files}
 
-                    if int(new_max_files) <= max_files:
-                        raise netapp_api.NaApiError(
-                            error_code,
-                            errors[0].get_child_content('error-message'))
-                    else:
-                        LOG.info(msg, msg_args)
+                if int(new_max_files) <= max_files:
+                    raise netapp_api.NaApiError(error_code, error_msg)
+                else:
+                    LOG.info(msg, msg_args)
 
-                    self.set_volume_max_files(volume_name, new_max_files,
-                                              retry_allocated=False)
+                self.set_volume_max_files(volume_name, new_max_files,
+                                          retry_allocated=False)
             else:
-                raise netapp_api.NaApiError(
-                    error_code,
-                    errors[0].get_child_content('error-message'))
+                raise netapp_api.NaApiError(error_code, error_msg)
 
     @na_utils.trace
     def set_volume_size(self, volume_name, size_gb, **options):
@@ -2880,16 +2883,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 },
             },
         }
-        result = self.send_request('volume-modify-iter', api_args)
-        failures = result.get_child_content('num-failed')
-        if failures and int(failures) > 0:
-            failure_list = result.get_child_by_name(
-                'failure-list') or netapp_api.NaElement('none')
-            errors = failure_list.get_children()
-            if errors:
-                raise netapp_api.NaApiError(
-                    errors[0].get_child_content('error-code'),
-                    errors[0].get_child_content('error-message'))
+        error_code, error_msg = self._send_volume_modify_iter(api_args)
+        if error_code:
+            raise netapp_api.NaApiError(error_code, error_msg)
 
     @na_utils.trace
     def set_volume_snapdir_access(self, volume_name, hide_snapdir):
@@ -2911,16 +2907,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 },
             },
         }
-        result = self.send_request('volume-modify-iter', api_args)
-        failures = result.get_child_content('num-failed')
-        if failures and int(failures) > 0:
-            failure_list = result.get_child_by_name(
-                'failure-list') or netapp_api.NaElement('none')
-            errors = failure_list.get_children()
-            if errors:
-                raise netapp_api.NaApiError(
-                    errors[0].get_child_content('error-code'),
-                    errors[0].get_child_content('error-message'))
+        error_code, error_msg = self._send_volume_modify_iter(api_args)
+        if error_code:
+            raise netapp_api.NaApiError(error_code, error_msg)
 
     @na_utils.trace
     def set_volume_filesys_size_fixed(self,
@@ -2943,16 +2932,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 },
             },
         }
-        result = self.send_request('volume-modify-iter', api_args)
-        failures = result.get_child_content('num-failed')
-        if failures and int(failures) > 0:
-            failure_list = result.get_child_by_name(
-                'failure-list') or netapp_api.NaElement('none')
-            errors = failure_list.get_children()
-            if errors:
-                raise netapp_api.NaApiError(
-                    errors[0].get_child_content('error-code'),
-                    errors[0].get_child_content('error-message'))
+        error_code, error_msg = self._send_volume_modify_iter(api_args)
+        if error_code:
+            raise netapp_api.NaApiError(error_code, error_msg)
 
     @na_utils.trace
     def set_volume_security_style(self, volume_name, security_style='unix'):
@@ -2973,16 +2955,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 },
             },
         }
-        result = self.send_request('volume-modify-iter', api_args)
-        failures = result.get_child_content('num-failed')
-        if failures and int(failures) > 0:
-            failure_list = result.get_child_by_name(
-                'failure-list') or netapp_api.NaElement('none')
-            errors = failure_list.get_children()
-            if errors:
-                raise netapp_api.NaApiError(
-                    errors[0].get_child_content('error-code'),
-                    errors[0].get_child_content('error-message'))
+        error_code, error_msg = self._send_volume_modify_iter(api_args)
+        if error_code:
+            raise netapp_api.NaApiError(error_code, error_msg)
 
     @na_utils.trace
     def set_volume_name(self, volume_name, new_volume_name):
@@ -3108,7 +3083,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                     'is-space-enforcement-logical'] = (
                         'true' if logical_space_reporting else 'false')
 
-        self.send_request('volume-modify-iter', api_args)
+        error_code, error_msg = self._send_volume_modify_iter(api_args)
+        if error_code:
+            raise netapp_api.NaApiError(error_code, error_msg)
 
         if not replica:
             efficiency_policy = options.get('efficiency_policy', None)
@@ -3200,7 +3177,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 },
             },
         }
-        self.send_request('volume-modify-iter', api_args)
+        error_code, error_msg = self._send_volume_modify_iter(api_args)
+        if error_code:
+            raise netapp_api.NaApiError(error_code, error_msg)
 
     @na_utils.trace
     def volume_exists(self, volume_name):
@@ -4427,7 +4406,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 },
             },
         }
-        self.send_request('volume-modify-iter', api_args)
+        error_code, error_msg = self._send_volume_modify_iter(api_args)
+        if error_code:
+            raise netapp_api.NaApiError(error_code, error_msg)
 
     @na_utils.trace
     def set_qos_policy_group_for_volume(self, volume_name,
@@ -4448,7 +4429,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 },
             },
         }
-        self.send_request('volume-modify-iter', api_args)
+        error_code, error_msg = self._send_volume_modify_iter(api_args)
+        if error_code:
+            raise netapp_api.NaApiError(error_code, error_msg)
 
     @na_utils.trace
     def set_qos_adaptive_policy_group_for_volume(self, volume_name,
@@ -4473,7 +4456,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 },
             },
         }
-        self.send_request('volume-modify-iter', api_args)
+        error_code, error_msg = self._send_volume_modify_iter(api_args)
+        if error_code:
+            raise netapp_api.NaApiError(error_code, error_msg)
 
     @na_utils.trace
     def get_nfs_export_policy_for_volume(self, volume_name):
