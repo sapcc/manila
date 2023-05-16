@@ -152,6 +152,19 @@ class Detail(object):
     DRIVER_FAILED_TRANSFER_ACCEPT = (
         '026',
         _("Share transfer cannot be accepted without clearing access rules."))
+    SHARE_NETWORK_PORT_QUOTA_LIMIT_EXCEEDED = (
+        '027',
+        _("Failed to create a new network port on the share network subnet. "
+          "The limit of the number of ports has been exceeded. You may "
+          "increase the network port quotas or free up some ports and retry. "
+          "If this doesn't work, contact your administrator to troubleshoot "
+          "issues with your network."))
+    SHARE_BACKEND_NOT_READY_YET = (
+        '028',
+        _("No storage could be allocated for this share "
+          "request. Share back end services are not "
+          "ready yet. Contact your administrator in case "
+          "retrying does not help."))
     UPDATE_METADATA_SUCCESS = (
         '029',
         _("Metadata passed to share driver successfully performed required "
@@ -195,6 +208,8 @@ class Detail(object):
         NO_DEFAULT_SHARE_TYPE,
         MISSING_SECURITY_SERVICE,
         DRIVER_FAILED_TRANSFER_ACCEPT,
+        SHARE_NETWORK_PORT_QUOTA_LIMIT_EXCEEDED,
+        SHARE_BACKEND_NOT_READY_YET,
         UPDATE_METADATA_SUCCESS,
         UPDATE_METADATA_FAILURE,
         UPDATE_METADATA_NOT_DELETED
