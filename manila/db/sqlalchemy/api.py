@@ -1624,9 +1624,13 @@ def share_instance_get(context, share_instance_id, session=None,
 def share_instances_get_all(context, filters=None, session=None):
     session = session or get_session()
     query = model_query(
-        context, models.ShareInstance, session=session, read_deleted="no",
+        context, models.ShareInstance, session=session, read_deleted="no"
     ).options(
-        joinedload('export_locations'),
+        joinedload('export_locations')
+    ).join(
+        models.Share
+    ).filter(
+        models.ShareInstance.share_id == models.Share.id
     )
 
     filters = filters or {}
@@ -1635,9 +1639,11 @@ def share_instances_get_all(context, filters=None, session=None):
     export_location_path = filters.get('export_location_path')
     if export_location_id or export_location_path:
         query = query.join(
-            models.ShareInstanceExportLocations,
+            models.ShareInstanceExportLocations
+        ).filter(
             models.ShareInstanceExportLocations.share_instance_id ==
-            models.ShareInstance.id)
+            models.ShareInstance.id
+        )
         if export_location_path:
             query = query.filter(
                 models.ShareInstanceExportLocations.path ==
@@ -1656,9 +1662,12 @@ def share_instances_get_all(context, filters=None, session=None):
     host = filters.get('host')
     if host:
         query = query.filter(
-            or_(models.ShareInstance.host == host,
-                models.ShareInstance.host.like("{0}#%".format(host)))
+            or_(
+                models.ShareInstance.host == host,
+                models.ShareInstance.host.like(f"{host}#%")
+            )
         )
+
     share_server_id = filters.get('share_server_id')
     if share_server_id:
         query = query.filter(
@@ -4354,9 +4363,11 @@ def _server_get_query(context, session=None):
     if session is None:
         session = get_session()
     return (model_query(context, models.ShareServer, session=session).
-            options(joinedload('share_instances'),
-                    joinedload('network_allocations'),
-                    joinedload('share_network_subnet')))
+            options(
+                subqueryload('share_instances'),
+                joinedload('network_allocations'),
+                subqueryload('share_network_subnets'),
+    ))
 
 
 @require_context
