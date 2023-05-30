@@ -300,7 +300,7 @@ class API(object):
             raise exception.NetworkException(code=e.status_code,
                                              message=e.message)
 
-    def bind_port_to_host(self, port_id, host, vnic_type):
+    def bind_port_to_host(self, port_id, host, vnic_type=None):
         """Add an inactive binding to existing port."""
 
         try:

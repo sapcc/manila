@@ -81,6 +81,15 @@ class FakeNeutronClient(object):
     def list_extensions(self):
         pass
 
+    def create_port_binding(self, port_id, body):
+        pass
+
+    def delete_port_binding(self, port_id):
+        pass
+
+    def activate_port_binding(self, port_id, body):
+        pass
+
 
 class NeutronclientTestCase(test.TestCase):
 
@@ -531,6 +540,66 @@ class NeutronApiTest(test.TestCase):
         self.neutron_api.client.update_port.assert_called_once_with(
             port_id, {'port': fixed_ips})
         self.assertTrue(clientv20.Client.called)
+
+    def test_bind_port_to_host(self):
+        # Set up test data
+        port_id = 'test_port'
+        host_id = 'test_host'
+        vnic_type = 'normal'
+        binding = {'host': host_id, 'vnic_type': vnic_type}
+        self.mock_object(
+            self.neutron_api.client, 'create_port_binding',
+            mock.Mock(return_value={'binding': binding}))
+
+        # Execute method 'bind_port_to_host'
+        self.neutron_api.bind_port_to_host(port_id, host_id, vnic_type)
+
+        # Verify results
+        self.assertTrue(clientv20.Client.called)
+
+    def test_bind_port_to_host_exception(self):
+        # Set up test data
+        port_id = 'test_port'
+        host_id = 'test_host'
+        vnic_type = 'normal'
+        self.mock_object(
+            self.neutron_api.client, 'create_port_binding',
+            mock.Mock(side_effect=neutron_client_exc.NeutronClientException))
+
+        # Execute method 'bind_port_to_host'
+        self.assertRaises(
+            exception.NetworkException, self.neutron_api.bind_port_to_host,
+            port_id, host_id, vnic_type)
+        self.assertTrue(clientv20.Client.called)
+
+    def test_delete_port_binding(self):
+        # Set up test data
+        port_id = 'test_port'
+        host_id = 'test_host'
+        self.mock_object(
+            self.neutron_api.client, 'delete_port_binding',
+            mock.Mock(return_value=None))
+
+        # Execute method 'delete_port_binding'
+        self.neutron_api.delete_port_binding(port_id, host_id)
+
+        # Verify results
+        self.assertTrue(clientv20.Client.called)
+
+    def test_activate_port_binding(self):
+        # Set up test data
+        port_id = 'test_port'
+        host_id = 'test_host'
+        self.mock_object(
+            self.neutron_api.client, 'activate_port_binding',
+            mock.Mock(return_value=None))
+
+        # Execute method 'activate_port_binding'
+        self.neutron_api.activate_port_binding(port_id, host_id)
+
+        # Verify results
+        self.assertTrue(clientv20.Client.called)
+
 
     def test_router_update_routes(self):
         # Set up test data

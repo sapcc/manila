@@ -1226,6 +1226,112 @@ class NeutronBindNetworkPluginTest(test.TestCase):
 
         self.assertEqual(expected_create_args, create_args)
 
+    # @mock.patch.object(db_api, 'network_allocations_get_for_share_server',
+    #                    mock.Mock(return_value=[fake_network_allocation]))
+    # def test_extend_network_allocations_exceptions_no_active_allocation(self):
+    #     self.plugin.extend_network_allocations(
+    #         self.fake_context, fake_share_server, 'fake_host')
+    #     # self.assertRaises(
+    #     #     exception.NetworkException, self.plugin.extend_network_allocations,
+    #     #     self.fake_context, fake_share_server, 'fake_host')
+    #     db_api.network_allocations_get_for_share_server.assert_called_with(
+    #         self.fake_context, fake_share_server['id'], read_deleted=False)
+    #     db_api.network_allocations_get_for_share_server.assert_called_with(
+    #         self.fake_context, fake_share_server['id'], read_deleted=False)
+
+# import unittest
+# from unittest.mock import MagicMock
+#
+# class TestNetworkAllocation(unittest.TestCase):
+
+# def setUp(self):
+#     self.context = MagicMock()
+#     self.share_server = {'id': '1234', 'share_network_subnet': {'neutron_net_id': '5678'}}
+#     self.host = 'test_host'
+#     self.configuration = MagicMock()
+#     self.neutron_api = MagicMock()
+#     self.db = MagicMock()
+#     self.net_alloc = NetworkAllocation(self.configuration, self.neutron_api, self.db)
+
+
+    @mock.patch.object(db_api, 'network_allocations_get_for_share_server',
+                       mock.Mock(return_value=[]))
+    def test_extend_network_allocations_no_active_bindings(self):
+        config_data = {
+            'DEFAULT': {
+                'neutron_vnic_type': 'baremetal',
+            }
+        }
+
+        with test_utils.create_temp_config_with_opts(config_data):
+            self.bind_plugin.extend_network_allocations(
+                self.fake_context, fake_share_server, 'fake@host2')
+        self.assertRaises( exception.NetworkException,
+            self.bind_plugin.extend_network_allocations, self.fake_context,
+            fake_share_server, 'fake@host2')
+
+    # def test_extend_network_allocations(self):
+    #     # Test case with no active bindings
+    #     self.db.network_allocations_get_for_share_server.return_value = []
+    #     self.assertRaisesRegex(
+    #         exception.NetworkException,
+    #         'Can not extend network with no active bindings',
+    #         self.net_alloc.extend_network_allocations, self.context, self.share_server, self.host
+    #     )
+    #
+    #     # Test case with no existing port bindings on destination backend
+    #     self.db.network_allocations_get_for_share_server.side_effect = [
+    #         [{'id': 1, 'label': 'user'}, {'id': 2, 'label': 'user'}, {'id': 3, 'label': 'user'}],
+    #         []
+    #     ]
+    #     self.neutron_api.get_network.return_value = {
+    #         'segments': [{'provider:physical_network': 'phys_net', 'provider:segmentation_id': '1234'}]
+    #     }
+    #     self.db.network_allocation_create.side_effect = [{'id': 4}, {'id': 5}, {'id': 6}]
+    #     result = self.net_alloc.extend_network_allocations(self.context, self.share_server, self.host)
+    #     self.assertEqual(len(result), 3)
+    #     self.assertEqual(result[0]['id'], 4)
+    #     self.assertEqual(result[1]['id'], 5)
+    #     self.assertEqual(result[2]['id'], 6)
+    #     self.assertEqual(result[0]['label'], 'phys_net')
+    #     self.assertEqual(result[1]['label'], 'phys_net')
+    #     self.assertEqual(result[2]['label'], 'phys_net')
+    #     self.assertEqual(result[0]['segmentation_id'], '1234')
+    #     self.assertEqual(result[1]['segmentation_id'], '1234')
+    #     self.assertEqual(result[2]['segmentation_id'], '1234')
+    #     self.db.network_allocation_create.assert_called_with(
+    #         self.context, {'id': None, 'ip_address': None, 'mac_address': None, 'network_id': None,
+    #                        'server_id': None, 'label': 'phys_net', 'segmentation_id': '1234', 'ip_version': None}
+    #     )
+    #     self.neutron_api.bind_port_to_host.assert_has_calls([
+    #         MagicMock(id=1), self.host, self.configuration.neutron_vnic_type,
+    #         MagicMock(id=2), self.host, self.configuration.neutron_vnic_type,
+    #         MagicMock(id=3), self.host, self.configuration.neutron_vnic_type
+    #     ])
+    #     self.neutron_api.get_network.assert_called_with('5678')
+    #
+    #     # Test case with existing port bindings on destination backend
+    #     self.db.network_allocations_get_for_share_server.side_effect = [
+    #         [{'id': 1, 'label': 'user'}, {'id': 2, 'label': 'user'}, {'id': 3, 'label': 'user'}],
+    #         [{'id': 4, 'label': 'phys_net', 'segmentation_id': '1234'},
+    #          {'id': 5, 'label': 'phys_net', 'segmentation_id': '1234'},
+    #          {'id': 6, 'label': 'phys_net', 'segmentation_id': '1234'}]
+    #     ]
+    #     result = self.net_alloc.extend_network_allocations(self.context, self.share_server, self.host)
+    #     self.assertEqual(len(result), 3)
+    #     self.assertEqual(result[0]['id'], 4)
+    #     self.assertEqual(result[1]['id'], 5)
+    #     self.assertEqual(result[2]['id'], 6)
+    #     self.assertEqual(result[0]['label'], 'phys_net')
+    #     self.assertEqual(result[1]['label'], 'phys_net')
+    #     self.assertEqual(result[2]['label'], 'phys_net')
+    #     self.assertEqual(result[0]['segmentation_id'], '1234')
+    #     self.assertEqual(result[1]['segmentation_id'], '1234')
+    #     self.assertEqual(result[2]['segmentation_id'], '1234')
+    #     self.db.network_allocation_create.assert_not_called()
+    #     self.neutron_api.bind_port_to_host.assert_not_called()
+    #     self.neutron_api.get_network.assert_not_called()
+    #
 
 @ddt.ddt
 class NeutronBindSingleNetworkPluginTest(test.TestCase):
