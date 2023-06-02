@@ -494,6 +494,18 @@ class ShareManager(manager.SchedulerDependentManager):
                 )
                 continue
 
+            server_details = share_server.backend_details
+            if 'skip_ensure' in server_details:
+                if server_details['skip_ensure'] == 'yes':
+                    LOG.info(
+                        "Share server %(id)s: skipping export, "
+                        "because it has skip_ensure flag set with reason "
+                        "'%(reason)s'.",
+                        {'id': share_server['id'],
+                         'reason': server_details.get('skip_ensure_comment')},
+                    )
+                    continue
+
             share_network = self.db.share_network_get(
                 ctxt, share_server.share_network_id)
 
