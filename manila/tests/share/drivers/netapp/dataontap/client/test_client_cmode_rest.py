@@ -4789,10 +4789,9 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             body['protocol.v40_enabled'] = 'true'
         if v41:
             nfs41_opts = {
-                'v41_features.pnfs_enabled': 'true',
-                'v41_features.acl_enabled': 'true',
-                'v41_features.read_delegation_enabled': 'true',
-                'v41_features.write_delegation_enabled': 'true',
+                'v41_features.acl_enabled': 'false',
+                'v41_features.read_delegation_enabled': 'false',
+                'v41_features.write_delegation_enabled': 'false',
             }
             body.update(nfs41_opts)
 

@@ -4998,10 +4998,10 @@ class NetAppRestClient(object):
 
         if 'nfs4.1' in versions:
             nfs41_opts = {
-                'v41_features.pnfs_enabled': 'true',
-                'v41_features.acl_enabled': 'true',
-                'v41_features.read_delegation_enabled': 'true',
-                'v41_features.write_delegation_enabled': 'true',
+                # 'v41_features.pnfs_enabled': 'true',   # default false, use default on new vservers, don't touch old vservers  # noqa: E501
+                'v41_features.acl_enabled': 'false',
+                'v41_features.read_delegation_enabled': 'false',
+                'v41_features.write_delegation_enabled': 'false',
             }
             body.update(nfs41_opts)
 
