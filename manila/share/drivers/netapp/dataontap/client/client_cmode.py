@@ -2934,6 +2934,14 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         }
         error_code, error_msg = self._send_volume_modify_iter(api_args)
         if error_code:
+            if (error_code == netapp_api.EAPIERROR and
+                    'is migrating' in error_msg):
+                msg = ('Could not set volume file system size fixed '
+                       'for %(vol)s due to ongoing vserver migration: '
+                       '%(error)s')
+                msg_args = {'vol': volume_name, 'error': error_msg}
+                LOG.warning(msg, msg_args)
+                return
             raise netapp_api.NaApiError(error_code, error_msg)
 
     @na_utils.trace
