@@ -3367,7 +3367,8 @@ def share_snapshot_get(context, snapshot_id, project_only=True, session=None):
 def _share_snapshot_get_all_with_filters(context, project_id=None,
                                          share_id=None, filters=None,
                                          limit=None, offset=None,
-                                         sort_key=None, sort_dir=None):
+                                         sort_key=None, sort_dir=None,
+                                         show_count=False):
     """Retrieves all snapshots.
 
     If no sorting parameters are specified then returned snapshots are sorted
@@ -3437,13 +3438,25 @@ def _share_snapshot_get_all_with_filters(context, project_id=None,
     query = exact_filter(query, models.ShareSnapshot,
                          filters, legal_filter_keys)
 
-    query = utils.paginate_query(query, models.ShareSnapshot, limit,
-                                 sort_key=sort_key,
-                                 sort_dir=sort_dir,
-                                 offset=offset)
+    query = apply_sorting(models.ShareSnapshot, query, sort_key, sort_dir)
 
-    # Returns list of shares that satisfy filters
-    return query.all()
+    count = None
+    if show_count:
+        count = query.count()
+
+    if limit is not None:
+        query = query.limit(limit)
+
+    if offset:
+        query = query.offset(offset)
+
+    # Returns list of share snapshots that satisfy filters
+    query = query.all()
+
+    if show_count:
+        return count, query
+
+    return query
 
 
 def share_snapshot_get_all(context, filters=None, limit=None, offset=None,
@@ -3451,6 +3464,17 @@ def share_snapshot_get_all(context, filters=None, limit=None, offset=None,
     return _share_snapshot_get_all_with_filters(
         context, filters=filters, limit=limit,
         offset=offset, sort_key=sort_key, sort_dir=sort_dir)
+
+
+@require_admin_context
+def share_snapshot_get_all_with_count(context, filters=None, limit=None,
+                                      offset=None, sort_key=None,
+                                      sort_dir=None):
+    count, query = _share_snapshot_get_all_with_filters(
+        context, filters=filters, limit=limit,
+        offset=offset, sort_key=sort_key, sort_dir=sort_dir,
+        show_count=True)
+    return count, query
 
 
 @require_context
@@ -3461,6 +3485,19 @@ def share_snapshot_get_all_by_project(context, project_id, filters=None,
     return _share_snapshot_get_all_with_filters(
         context, project_id=project_id, filters=filters, limit=limit,
         offset=offset, sort_key=sort_key, sort_dir=sort_dir)
+
+
+@require_context
+def share_snapshot_get_all_by_project_with_count(context, project_id,
+                                                 filters=None, limit=None,
+                                                 offset=None, sort_key=None,
+                                                 sort_dir=None):
+    authorize_project_context(context, project_id)
+    count, query = _share_snapshot_get_all_with_filters(
+        context, project_id=project_id, filters=filters, limit=limit,
+        offset=offset, sort_key=sort_key, sort_dir=sort_dir,
+        show_count=True)
+    return count, query
 
 
 @require_context
