@@ -249,6 +249,17 @@ REPLICATION_TYPE_WRITABLE = 'writable'
 REPLICATION_TYPE_DR = 'dr'
 
 
+RESOURCE_ACTION_DELETE = 'delete'  # delete, soft-delete, unmanage
+
+RESOURCE_LOCK_RESOURCE_TYPES = (
+    SHARE_RESOURCE_TYPE,
+)
+
+RESOURCE_LOCK_RESOURCE_ACTIONS = (
+    RESOURCE_ACTION_DELETE,
+)
+
+
 class ExtraSpecs(object):
 
     # Extra specs key names
