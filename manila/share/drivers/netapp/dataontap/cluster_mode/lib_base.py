@@ -4156,6 +4156,34 @@ class NetAppCmodeFileStorageLibrary(object):
                 else:
                     LOG.warning(msg)
 
+        for share in shares:
+            replica_state = share.get('replica_state')
+            share_server = share.get('share_server')
+            vserver, vserver_client = self._get_vserver(
+                share_server=share_server)
+
+            if replica_state != constants.REPLICA_STATE_ACTIVE:
+                continue
+
+            share_name = self._get_backend_share_name(share['id'])
+            extra_specs = share_types.get_extra_specs_from_share(share)
+            provisioning_options = self._get_provisioning_options(extra_specs)
+            provisioning_options.update(
+                self._get_logical_space_options(vserver_client, share_name))
+            provisioning_options.update(
+                self._get_efficiency_options(vserver_client, share_name))
+
+            max_files_multiplier = provisioning_options.pop(
+                'max_files_multiplier', 0)
+            max_files = na_utils.calculate_max_files(share['size'],
+                                                     max_files_multiplier)
+            try:
+                vserver_client.set_volume_max_files(share_name, max_files)
+            except Exception as e:
+                LOG.exception(
+                    f"Ensure: Could not apply max_files '{max_files}' to "
+                    f"the promoted replica. {e}")
+
         return updates
 
     def ensure_share_server(self, context, share_server, network_info):
