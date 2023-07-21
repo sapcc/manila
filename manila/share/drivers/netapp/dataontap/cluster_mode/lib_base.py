@@ -368,12 +368,14 @@ class NetAppCmodeFileStorageLibrary(object):
         ems_periodic_task.start(interval=self.AUTOSUPPORT_INTERVAL_SECONDS,
                                 initial_delay=0)
 
-        # Start the task that runs other housekeeping tasks, such as deletion
-        # of previously soft-deleted storage artifacts.
+        # Start the task that runs other housekeeping tasks, such as
+        # deletion of previously soft-deleted storage artifacts.
         housekeeping_periodic_task = loopingcall.FixedIntervalLoopingCall(
             self._handle_housekeeping_tasks)
         housekeeping_periodic_task.start(
-            interval=self.HOUSEKEEPING_INTERVAL_SECONDS, initial_delay=0)
+            interval=self.HOUSEKEEPING_INTERVAL_SECONDS,
+            initial_delay=0,
+            stop_on_exception=False)
 
     def _get_backend_share_name(self, share_id):
         """Get share name according to share name template."""
@@ -1952,7 +1954,8 @@ class NetAppCmodeFileStorageLibrary(object):
         if force_delete_sec > 0 and duration_sec < force_delete_sec:
             force_delete = True
         if self._share_exists(share_name, vserver_client):
-            if vserver_client.volume_clone_split_status(share_name) != 100:
+            clone_status = vserver_client.volume_clone_split_status(share_name)
+            if clone_status == 'ongoing':
                 vserver_client.volume_clone_split_stop(share_name)
             if remove_export:
                 self._remove_export(share, vserver_client)

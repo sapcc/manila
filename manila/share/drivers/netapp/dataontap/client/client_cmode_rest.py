@@ -1800,6 +1800,32 @@ class NetAppRestClient(object):
         raise exception.NetAppException(msg % msg_args)
 
     @na_utils.trace
+    def get_clones_of_parent_volume(self, vserver, volume):
+        """get one or more clones of given parent volume"""
+
+        query = {
+            'clone.parent_svm.name': vserver,
+            'clone.parent_volume.name': volume,
+            'fields': 'name'
+        }
+        result = self.get_records('/storage/volumes', query=query)
+        clones = []
+        records = result.get('records', [])
+        for record in records:
+            clones.append(record.get('name'))
+        return clones
+
+    @na_utils.trace
+    def online_volume(self, volume_name):
+        """Onlines a volume."""
+        # Get volume UUID.
+        volume = self._get_volume_by_args(vol_name=volume_name)
+        uuid = volume['uuid']
+
+        body = {'state': 'online'}
+        self.send_request(f'/storage/volumes/{uuid}', 'patch', body=body)
+
+    @na_utils.trace
     def offline_volume(self, volume_name):
         """Offlines a volume."""
         # Get volume UUID.
@@ -1810,17 +1836,112 @@ class NetAppRestClient(object):
         self.send_request(f'/storage/volumes/{uuid}', 'patch', body=body)
 
     @na_utils.trace
-    def delete_volume(self, volume_name, force_delete):
-        """Deletes a volume."""
-        # Get volume UUID.
+    def rename_volume(self, volume_name, new_volume_name):
+        """Renames a volume."""
         volume = self._get_volume_by_args(vol_name=volume_name)
         uuid = volume['uuid']
-        query = None
-        if force_delete:
-            query = {"force": "true"}
 
-        # delete volume async operation.
-        self.send_request(f'/storage/volumes/{uuid}', 'delete', query=query)
+        body = {'name': new_volume_name}
+        self.send_request(f'/storage/volumes/{uuid}', 'patch', body=body)
+        msg = _('Soft-deleted volume %(volume)s.')
+        msg_args = {'volume': volume_name}
+        LOG.debug(msg, msg_args)
+
+    @na_utils.trace
+    def soft_delete_volume(self, volume_name, force_delete, in_prune=False):
+        """Soft deletes a volume."""
+        try:
+            # Get volume UUID.
+            volume = self._get_volume_by_args(vol_name=volume_name)
+            uuid = volume['uuid']
+
+            query = None
+            if force_delete:
+                query = {"force": "true"}
+
+            # delete volume async operation.
+            self.send_request(f'/storage/volumes/{uuid}', 'delete',
+                              query=query)
+        except netapp_api.api.NaApiError as e:
+            if e.code == netapp_api.EREST_VOLDEL_NOT_ALLOW_BY_CLONE:
+                if in_prune:
+                    return 'del_not_allow_by_clone'
+                LOG.warning('Delete volume %s failed, renaming..', volume_name)
+                self.rename_volume(volume_name, DELETED_PREFIX + volume_name)
+            else:
+                if in_prune:
+                    return 'error'
+                raise exception.NetAppException(message=e.message)
+        if in_prune:
+            return 'success'
+
+    @na_utils.trace
+    def delete_volume(self, volume_name, force_delete=False, in_prune=False):
+        """Deletes a volume."""
+        return self.soft_delete_volume(volume_name, force_delete=force_delete,
+                                       in_prune=in_prune)
+
+    @na_utils.trace
+    def get_deleted_volumes_to_prune(self):
+        """Returns a list of deleted volumes to prune."""
+
+        query = {
+            'name': DELETED_PREFIX + '*',
+            'type': 'rw',
+            'fields': 'name,state,svm.name'
+        }
+        try:
+            result = self.get_records('/storage/volumes', query=query)
+        except netapp_api.api.NaApiError:
+            LOG.error("Failed to get deleted volumes to prune")
+            return []
+        return result.get('records', [])
+
+    def prune_deleted_volumes(self):
+        """Prunes deleted volumes."""
+        LOG.debug('Checking for deleted volumes to prune.')
+
+        records = self.get_deleted_volumes_to_prune()
+        for record in records:
+            vol_name = record.get('name')
+            vol_state = record.get('state')
+            vserver = record.get('svm', {}).get('name')
+
+            client = copy.deepcopy(self)
+            client.set_vserver(vserver)
+
+            clones = self.get_clones_of_parent_volume(
+                vserver, vol_name)
+            if clones:
+                if vol_state == 'offline':
+                    try:
+                        client.online_volume(vol_name)
+                    except Exception:
+                        LOG.error("Volume online failed for "
+                                  "volume %s", vol_name)
+
+                    for clone in clones:
+                        try:
+                            client.online_volume(clone)
+                        except Exception:
+                            LOG.error("Volume online failed for "
+                                      "volume %s", clone)
+                elif vol_state == 'online':
+                    for clone in clones:
+                        try:
+                            if client.volume_clone_split_status(
+                                    clone) == 'unknown':
+                                client.volume_clone_split_start(clone)
+                                LOG.debug('Starting clone split for '
+                                          'volume %s ', vol_name)
+                        except Exception:
+                            LOG.error("Volume clone split failed for "
+                                      "volume %s", clone)
+            else:
+                ret = client.delete_volume(vol_name, in_prune=True)
+                if ret in ('del_not_allow_by_clone', 'error'):
+                    LOG.error('Pruning soft-deleted '
+                              'volume %s failed', vol_name)
 
     @na_utils.trace
     def qos_policy_group_get(self, qos_policy_group_name):
@@ -2129,16 +2250,21 @@ class NetAppRestClient(object):
             'fields': 'clone.split_complete_percent'
         }
 
+        response = self.send_request('/storage/volumes/', 'get', query=query)
+        if not self._has_records(response):
+            return 'finished'
+
+        vol = response.get('records')[0]
+        percent = vol.get('clone.split_complete_percent')
         try:
-            res = self.send_request('/storage/volumes/', 'get', query=query)
-            percent = res.get('clone.split_complete_percent')
-            if not percent:
-                return 100
-            return percent
-        except netapp_api.NaApiError:
-            msg = ("Failed to get clone split status for volume %s ")
-            LOG.warning(msg, volume_name)
-            return 100
+            if int(percent) < 100:
+                return 'ongoing'
+            if int(percent) == 100:
+                return 'finished'
+        except (ValueError, TypeError) as e:
+            LOG.exception(f"unexpected error converting clone-split "
+                          f"percentage '{percent}' to integer: {e}")
+            return 'unknown'
 
     @na_utils.trace
     def volume_clone_split_stop(self, volume_name):
