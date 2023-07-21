@@ -3855,16 +3855,16 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             return
 
         for volume_info in attributes_list.get_children():
-            volume_name = (
-                volume_info
+            volume_name = \
+                (volume_info
                     .get_child_by_name('volume-id-attributes')
                     .get_child_content('name'))
-            volume_state = (
-                volume_info
+            volume_state = \
+                (volume_info
                     .get_child_by_name('volume-state-attributes')
                     .get_child_content('state'))
-            vserver = (
-                volume_info
+            vserver = \
+                (volume_info
                     .get_child_by_name('volume-id-attributes')
                     .get_child_content('owning-vserver-name'))
 
