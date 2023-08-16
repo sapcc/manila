@@ -22,6 +22,8 @@ Provides quotas management support.
     - ``share_replicas`` (since API version 2.53)
     - ``replica_gigabytes`` (since API version 2.53)
     - ``per_share_gigabytes`` (since API version 2.62)
+    - ``backups`` (since API version 2.80)
+    - ``backup_gigabytes`` (since API version 2.80)
 
     Share groups and share group snapshots were added to quota management
     APIs in API version 2.40.
@@ -31,6 +33,9 @@ Provides quotas management support.
 
     Per share gigabytes was added to quota management APIs in API
     version 2.62.
+
+    Share backups and backup gigabytes were added to quota management
+    APIs in API version 2.80.
 
 
 Show default quota set
@@ -79,6 +84,8 @@ Response parameters
    - share_replicas: quota_share_replicas
    - replica_gigabytes: quota_replica_gigabytes
    - per_share_gigabytes: quota_per_share_gigabytes
+   - backups: quota_backups
+   - backup_gigabytes: quota_backup_gigabytes
 
 Response example
 ----------------
@@ -138,6 +145,8 @@ Response parameters
    - share_replicas: quota_share_replicas
    - replica_gigabytes: quota_replica_gigabytes
    - per_share_gigabytes: quota_per_share_gigabytes
+   - backups: quota_backups
+   - backup_gigabytes: quota_backup_gigabytes
 
 Response example
 ----------------
@@ -199,6 +208,8 @@ Response parameters
    - share_replicas: quota_share_replicas_detail
    - replica_gigabytes: quota_replica_gigabytes_detail
    - per_share_gigabytes: quota_per_share_gigabytes_detail
+   - backups: quota_backups_detail
+   - backup_gigabytes: quota_backup_gigabytes_detail
 
 Response example
 ----------------
@@ -252,6 +263,8 @@ Request
    - share_replicas: quota_share_replicas_request
    - replica_gigabytes: quota_replica_gigabytes_request
    - per_share_gigabytes: quota_per_share_gigabytes_request
+   - backups: quota_backups_request
+   - backup_gigabytes: quota_backup_gigabytes_request
 
 Request example
 ---------------
@@ -276,6 +289,8 @@ Response parameters
    - share_replicas: quota_share_replicas
    - replica_gigabytes: quota_replica_gigabytes
    - per_share_gigabytes: quota_per_share_gigabytes
+   - backups: quota_backups
+   - backup_gigabytes: quota_backup_gigabytes
 
 Response example
 ----------------

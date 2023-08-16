@@ -5330,7 +5330,9 @@ class ShareManager(manager.SchedulerDependentManager):
         for backup in backups:
             backup_id = backup['id']
             try:
-                filters = {'source_backup_id': backup_id}
+                filters = {
+                    'source_backup_id': backup_id,
+                }
                 shares = self.db.share_get_all(context, filters)
             except Exception:
                 LOG.warning('Failed to get shares for backup %s', backup_id)
@@ -5360,9 +5362,9 @@ class ShareManager(manager.SchedulerDependentManager):
                         LOG.info("Share backup %s restored successfully.",
                                  backup_id)
                 except Exception:
-                    LOG.warning("Failed to get progress of share_backup "
-                                "%(backup)s restoring in share %(share).",
-                                {'share': share_id, 'backup': backup_id})
+                    LOG.exception("Failed to get progress of share_backup "
+                                  "%(backup)s restoring in share %(share).",
+                                  {'share': share_id, 'backup': backup_id})
                     self.db.share_update(
                         context, share_id,
                         {'status': constants.STATUS_BACKUP_RESTORING_ERROR})
