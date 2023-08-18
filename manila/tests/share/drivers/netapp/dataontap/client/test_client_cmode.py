@@ -4463,6 +4463,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
                         'type': None,
                         'style': None,
                         'style-extended': None,
+                        'instance-uuid': None,
                     },
                     'volume-space-attributes': {
                         'size': None,
@@ -4491,6 +4492,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'style-extended': (fake.FLEXGROUP_STYLE_EXTENDED
                                if is_flexgroup
                                else fake.FLEXVOL_STYLE_EXTENDED),
+            'instance-uuid': None,
             'is-space-enforcement-logical': None,
             'is-space-reporting-logical': None,
         }
@@ -4528,6 +4530,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
                         'type': None,
                         'style': None,
                         'style-extended': None,
+                        'instance-uuid': None,
                     },
                     'volume-space-attributes': {
                         'size': None,
@@ -4554,6 +4557,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'owning-vserver-name': fake.VSERVER_NAME,
             'qos-policy-group-name': None,
             'style-extended': fake.FLEXVOL_STYLE_EXTENDED,
+            'instance-uuid': None,
             'is-space-reporting-logical': None,
             'is-space-enforcement-logical': None,
         }
