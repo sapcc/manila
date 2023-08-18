@@ -89,6 +89,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         super(NetAppCmodeClient, self)._init_features()
 
         ontapi_version = self.get_ontapi_version(cached=True)
+        system_version = self.get_system_version(cached=True)
         ontapi_1_20 = ontapi_version >= (1, 20)
         ontapi_1_2x = (1, 20) <= ontapi_version < (1, 30)
         ontapi_1_30 = ontapi_version >= (1, 30)
@@ -98,7 +99,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         ontapi_1_150 = ontapi_version >= (1, 150)
         ontapi_1_180 = ontapi_version >= (1, 180)
         ontapi_1_191 = ontapi_version >= (1, 191)
-        ontap_9_10 = self.get_system_version()['version-tuple'] >= (9, 10, 0)
+        ontap_9_10 = system_version['version-tuple'] >= (9, 10, 0)
+        ontap_9_12 = system_version['version-tuple'] >= (9, 12, 0)
 
         self.features.add_feature('SNAPMIRROR_V2', supported=ontapi_1_20)
         self.features.add_feature('SYSTEM_METRICS', supported=ontapi_1_2x)
@@ -122,6 +124,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                                   supported=ontapi_1_120)
         self.features.add_feature('FLEXGROUP', supported=ontapi_1_180)
         self.features.add_feature('FLEXGROUP_FAN_OUT', supported=ontapi_1_191)
+        self.features.add_feature('FORCE_DELETE', supported=ontap_9_12)
         self.features.add_feature('SVM_MIGRATE', supported=ontap_9_10)
 
     def _invoke_vserver_api(self, na_element, vserver):
@@ -3376,6 +3379,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                         'type': None,
                         'style': None,
                         'style-extended': None,
+                        'instance-uuid': None,
                     },
                     'volume-qos-attributes': {
                         'policy-group-name': None,
@@ -3437,7 +3441,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'qos-policy-group-name': volume_qos_attributes.get_child_content(
                 'policy-group-name'),
             'style-extended': volume_id_attributes.get_child_content(
-                'style-extended')
+                'style-extended'),
+            'instance-uuid': volume_id_attributes.get_child_content(
+                'instance-uuid'),
         }
         volume.update({
             'is-space-reporting-logical':
@@ -3826,21 +3832,48 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
     def delete_volume(self, volume_name):
         """Deletes a volume."""
         if force_delete:
-            res = self.send_request(
-                'system-cli', [{'priv': 'advanced'}, {'args': [
-                    {'arg': 'volume'}, {'arg': 'destroy'},
-                    {'arg': '-vserver'}, {'arg': self.vserver},
-                    {'arg': '-volume'}, {'arg': volume_name},
-                    {'arg': '-force'}, {'arg': 'True'}
-                    ]}], enable_tunneling=False)
-            if res.get_child_content('cli-result-value') == '1':
-                return
-            # result value of 0x0 means failure, log warning
-            err_msg = res.get_child_content('cli-output')
-            msg = _('Failed to force delete volume %(volume)s '
-                    'Cli-output: %(error)s.')
-            msg_args = {'volume': volume_name, 'error': err_msg}
-            LOG.warning(msg, msg_args)
+            if self.features.FORCE_DELETE:
+                # Get volume UUID.
+                volume = self.get_volume(volume_name)
+                volume_uuid = volume['instance-uuid']
+                request = {}
+                # FIXME: use proper wait for job to finish after antelope upgrd
+                query = {
+                    "return_timeout": 120,
+                    "force": "true",
+                }
+                url_params = {
+                    "volume_uuid": volume_uuid
+                }
+                api_args = self._format_request(request, query=query,
+                                                url_params=url_params)
+                msg = _('Force-deleting volume REST %(volume)s. with %(args)s')
+                msg_args = {'volume': volume_name, 'args': api_args}
+                LOG.info(msg, msg_args)
+                try:
+                    return self.send_request(
+                        'volume-destroy', api_args=api_args, use_zapi=False)
+                except netapp_api.NaApiError as e:
+                    LOG.warning(e)
+            else:
+                msg = _('Force-deleting volume ZAPI %(volume)s.')
+                msg_args = {'volume': volume_name}
+                LOG.info(msg, msg_args)
+                res = self.send_request(
+                    'system-cli', [{'priv': 'advanced'}, {'args': [
+                        {'arg': 'volume'}, {'arg': 'destroy'},
+                        {'arg': '-vserver'}, {'arg': self.vserver},
+                        {'arg': '-volume'}, {'arg': volume_name},
+                        {'arg': '-force'}, {'arg': 'True'}
+                        ]}], enable_tunneling=False)
+                if res.get_child_content('cli-result-value') == '1':
+                    return
+                # result value of 0x0 means failure, log warning
+                err_msg = res.get_child_content('cli-output')
+                msg = _('Failed to force delete volume %(volume)s '
+                        'Cli-output: %(error)s.')
+                msg_args = {'volume': volume_name, 'error': err_msg}
+                LOG.warning(msg, msg_args)
         # Fallback in-case force-delete fails or delete without force_delete
         self.soft_delete_volume(volume_name)
 
