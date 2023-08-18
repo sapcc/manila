@@ -4879,6 +4879,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
                         'type': None,
                         'style': None,
                         'style-extended': None,
+                        'instance-uuid': None,
                     },
                     'volume-space-attributes': {
                         'size': None,
@@ -4911,6 +4912,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
                                if is_flexgroup
                                else fake.FLEXVOL_STYLE_EXTENDED),
             'snaplock-type': 'compliance',
+            'instance-uuid': None,
             'is-space-enforcement-logical': None,
             'is-space-reporting-logical': None,
         }
@@ -4948,6 +4950,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
                         'type': None,
                         'style': None,
                         'style-extended': None,
+                        'instance-uuid': None,
                     },
                     'volume-space-attributes': {
                         'size': None,
@@ -4978,6 +4981,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'qos-policy-group-name': None,
             'style-extended': fake.FLEXVOL_STYLE_EXTENDED,
             'snaplock-type': "compliance",
+            'instance-uuid': None,
             'is-space-reporting-logical': None,
             'is-space-enforcement-logical': None,
         }
