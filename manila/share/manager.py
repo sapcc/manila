@@ -2135,7 +2135,7 @@ class ShareManager(manager.SchedulerDependentManager):
                 with excutils.save_and_reraise_exception():
                     error = ("Creation of share instance %s failed: "
                              "failed to allocate network")
-                    LOG.warning(error, share_instance_id)
+                    LOG.error(error, share_instance_id)
                     self.db.share_instance_update(
                         context, share_instance_id,
                         {'status': constants.STATUS_ERROR}
@@ -2170,7 +2170,7 @@ class ShareManager(manager.SchedulerDependentManager):
                 with excutils.save_and_reraise_exception():
                     error = ("Creation of share instance %s failed: "
                              "failed to get share server.")
-                    LOG.warning(error, share_instance_id)
+                    LOG.error(error, share_instance_id)
                     self.db.share_instance_update(
                         context, share_instance_id,
                         {'status': constants.STATUS_ERROR}
@@ -2278,7 +2278,7 @@ class ShareManager(manager.SchedulerDependentManager):
                     self.db.share_export_locations_update(
                         context, share_instance['id'], export_locations)
                 else:
-                    LOG.warning('Share instance information in exception '
+                    LOG.error('Share instance information in exception '
                                 'can not be written to db because it '
                                 'contains %s and it is not a dictionary.',
                                 detail_data)
