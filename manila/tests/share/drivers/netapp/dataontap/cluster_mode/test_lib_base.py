@@ -4828,6 +4828,12 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                          mock.Mock(return_value=mock_backend_config))
         self.mock_object(self.library, '_get_api_client_for_backend',
                          mock.Mock(return_value=mock_client))
+        self.mock_object(
+            self.library, '_get_logical_space_options',
+            mock.Mock(return_value={'logical_space_reporting': False}))
+        self.mock_object(
+            self.library, '_get_efficiency_options',
+            mock.Mock(return_value={'cross_dedup_disabled': False}))
         self.mock_object(self.client, 'cleanup_demoted_replica')
         self.mock_object(self.library,
                          '_is_readable_replica',
@@ -4862,7 +4868,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                              actual_replica_1['export_locations'])
         else:
             self.library._unmount_orig_active_replica.assert_called_once_with(
-                self.fake_replica, fake.VSERVER1)
+                mock_client, self.fake_replica['id'], fake.SHARE['name'])
             protocol_helper.cleanup_demoted_replica.assert_called_once_with(
                 self.fake_replica, fake.SHARE['name'])
             self.assertEqual([], actual_replica_1['export_locations'])
@@ -4893,6 +4899,15 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                          mock.Mock(return_value=mock_dm_session))
         self.mock_object(mock_dm_session, 'get_vserver_from_share',
                          mock.Mock(return_value=fake.VSERVER1))
+        mock_client = mock.Mock()
+        self.mock_object(data_motion, "get_client_for_backend",
+                         mock.Mock(return_value=mock_client))
+        self.mock_object(
+            self.library, '_get_logical_space_options',
+            mock.Mock(return_value={'logical_space_reporting': False}))
+        self.mock_object(
+            self.library, '_get_efficiency_options',
+            mock.Mock(return_value={'cross_dedup_disabled': False}))
         self.mock_object(
             protocol_helper, 'cleanup_demoted_replica',
             mock.Mock(side_effect=exception.StorageCommunicationException))
@@ -4976,6 +4991,15 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                          mock.Mock(return_value=mock_dm_session))
         self.mock_object(mock_dm_session, 'get_vserver_from_share',
                          mock.Mock(return_value=fake.VSERVER1))
+        mock_client = mock.Mock()
+        self.mock_object(data_motion, "get_client_for_backend",
+                         mock.Mock(return_value=mock_client))
+        self.mock_object(
+            self.library, '_get_logical_space_options',
+            mock.Mock(return_value={'logical_space_reporting': False}))
+        self.mock_object(
+            self.library, '_get_efficiency_options',
+            mock.Mock(return_value={'cross_dedup_disabled': False}))
         self.mock_object(self.library,
                          '_is_readable_replica',
                          mock.Mock(return_value=False))
@@ -5012,7 +5036,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.assertEqual(constants.REPLICA_STATE_OUT_OF_SYNC,
                          actual_replica_3['replica_state'])
         self.library._unmount_orig_active_replica.assert_called_once_with(
-            self.fake_replica, fake.VSERVER1)
+            mock_client, self.fake_replica['id'], fake.SHARE['name'])
         self.library._handle_qos_on_replication_change.assert_called_once()
 
     def test_promote_replica_with_access_rules(self):
@@ -5037,6 +5061,15 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                          mock.Mock(return_value=mock_dm_session))
         self.mock_object(mock_dm_session, 'get_vserver_from_share',
                          mock.Mock(return_value=fake.VSERVER1))
+        mock_client = mock.Mock()
+        self.mock_object(data_motion, "get_client_for_backend",
+                         mock.Mock(return_value=mock_client))
+        self.mock_object(
+            self.library, '_get_logical_space_options',
+            mock.Mock(return_value={'logical_space_reporting': False}))
+        self.mock_object(
+            self.library, '_get_efficiency_options',
+            mock.Mock(return_value={'cross_dedup_disabled': False}))
         self.mock_object(self.library,
                          '_is_readable_replica',
                          mock.Mock(return_value=False))
@@ -5062,17 +5095,17 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                                                           [fake.SHARE_ACCESS],
                                                           replica=False)
         self.library._unmount_orig_active_replica.assert_called_once_with(
-            self.fake_replica, fake.VSERVER1)
+            mock_client, self.fake_replica['id'], fake.SHARE['name'])
         self.library._handle_qos_on_replication_change.assert_called_once()
 
     def test_unmount_orig_active_replica(self):
-        self.mock_object(share_utils, 'extract_host', mock.Mock(
-            return_value=fake.MANILA_HOST_NAME))
-        self.mock_object(data_motion, 'get_client_for_backend')
-        self.mock_object(self.library, '_get_backend_share_name', mock.Mock(
-            return_value=fake.SHARE_NAME))
+        mock_client = mock.Mock()
 
-        result = self.library._unmount_orig_active_replica(fake.SHARE)
+        result = self.library._unmount_orig_active_replica(
+            mock_client, fake.SHARE_ID, fake.SHARE_NAME)
+
+        mock_client.unmount_volume.assert_called_once_with(
+            fake.SHARE_NAME, force=True)
         self.assertIsNone(result)
 
     @ddt.data({'extra_specs': {'netapp:snapshot_policy': 'none'},
