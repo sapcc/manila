@@ -40,9 +40,6 @@ from manila import version
 
 CONF = cfg.CONF
 
-CONF.register_cli_opt(
-    cfg.BoolOpt('reexport', default=False, help='Ensure share resources.'))
-
 
 def main():
     log.register_options(CONF)
