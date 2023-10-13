@@ -199,7 +199,7 @@ class Service(service.Service):
     def create(cls, host=None, binary=None, topic=None, manager=None,
                report_interval=None, periodic_interval=None,
                periodic_fuzzy_delay=None, service_name=None,
-               coordination=False, reexport=None):
+               coordination=False, reexport=False):
         """Instantiates class and passes back application object.
 
         :param host: defaults to CONF.host
@@ -226,8 +226,6 @@ class Service(service.Service):
             periodic_interval = CONF.periodic_interval
         if periodic_fuzzy_delay is None:
             periodic_fuzzy_delay = CONF.periodic_fuzzy_delay
-        if reexport is None:
-            reexport = CONF.reexport
         service_obj = cls(host, binary, topic, manager,
                           report_interval=report_interval,
                           periodic_interval=periodic_interval,
