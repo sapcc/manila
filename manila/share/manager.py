@@ -315,7 +315,6 @@ class ShareManager(manager.SchedulerDependentManager):
         self.hooks = []
         self._init_hook_drivers()
         self.service_id = None
-        self.ensure = False
 
     def _init_hook_drivers(self):
         # Try to initialize hook driver(s).
