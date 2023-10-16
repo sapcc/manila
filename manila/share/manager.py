@@ -31,6 +31,7 @@ import os
 from oslo_config import cfg
 from oslo_log import log
 from oslo_serialization import jsonutils
+from oslo_service import loopingcall
 from oslo_service import periodic_task
 from oslo_utils import excutils
 from oslo_utils import importutils
@@ -73,6 +74,11 @@ share_manager_opts = [
                 help='Driver(s) to perform some additional actions before and '
                      'after share driver actions and on a periodic basis. '
                      'Default is [].'),
+    cfg.IntOpt('ensure_driver_resources_interval',
+               default=-1,
+               help='This value, specified in seconds, determines how often '
+                    'the share manager will run periodic tasks that ensure '
+                    'driver resources.'),
     cfg.BoolOpt('delete_share_server_with_last_share',
                 default=False,
                 help='Whether share servers will '
@@ -413,7 +419,18 @@ class ShareManager(manager.SchedulerDependentManager):
              setup_connectivity_with_service_instances())
 
         if reexport:
-            self.ensure_driver_resources(ctxt)
+            # NOTE(chuan137) To be compatible with the old behavior, we run
+            # ensure_driver_resources only once when its interval is set to
+            # ngeative.
+            if CONF.ensure_driver_resources_interval < 0:
+                self.ensure_driver_resources(ctxt)
+            else:
+                reexport_task = loopingcall.FixedIntervalLoopingCall(
+                    self.ensure_driver_resources, ctxt)
+                reexport_task.start(
+                    interval=CONF.ensure_driver_resources_interval,
+                    initial_delay=30,
+                    stop_on_exception=False)
         else:
             self.publish_service_capabilities(ctxt)
 
