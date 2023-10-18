@@ -2168,8 +2168,8 @@ class API(base.Base):
         
         except exception.NotFound:
             msg = (
-                "Share ID '%(share_id)s' not found in metadata. Proceeding with deletion anyway."
-            ) % {'share_id': share['id']}
+                "Share ID '%(share_id)s' not found in metadata. "
+                "Proceeding with deletion anyway.") % {'share_id': share['id']}
             LOG.warning(msg)
             return
 
@@ -2186,8 +2186,8 @@ class API(base.Base):
 
             except exception.NotFound:
                 msg = (
-                    "UUID '%(uuid)s' not found in metadata for key '%(key)s'. Proceeding with deletion anyway."
-                ) % {'uuid': uuid, 'key': key}
+                    "UUID '%(uuid)s' not found in metadata for key '%(key)s'. "
+                    "Proceeding with deletion anyway.") % {'uuid': uuid, 'key': key}
                 LOG.warning(msg)
                 continue
 
