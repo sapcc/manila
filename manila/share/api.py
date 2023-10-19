@@ -2572,12 +2572,26 @@ class API(base.Base):
                                                      key)
         except exception.MetadataItemNotFound:
             return
+        except exception.NotFound:
+            msg = (
+                "Share ID '%(share_id)s' not found in metadata. "
+                "Proceeding with deletion anyway."
+            ) % {'share_id': share['id']}
+            LOG.warning(msg)
+            return
 
         share_uuids = result.get(key, "").split(",")
         for uuid in share_uuids:
             try:
                 result = self.db.share_metadata_get_item(context, uuid, key)
             except exception.MetadataItemNotFound:
+                continue
+            except exception.NotFound:
+                msg = (
+                    "UUID '%(uuid)s' not found in metadata for key '%(key)s'. "
+                    "Proceeding with deletion anyway."
+                ) % {'uuid': uuid, 'key': key}
+                LOG.warning(msg)
                 continue
 
             new_val_uuids = [val_uuid for val_uuid
