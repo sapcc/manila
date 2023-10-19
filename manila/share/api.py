@@ -2165,7 +2165,6 @@ class API(base.Base):
                                                      key)
         except exception.ShareMetadataNotFound:
             return
-        
         except exception.NotFound:
             msg = (
                 "Share ID '%(share_id)s' not found in metadata. "
@@ -2184,7 +2183,6 @@ class API(base.Base):
                 result = self.db.share_metadata_get_item(context, uuid, key)
             except exception.ShareMetadataNotFound:
                 continue
-
             except exception.NotFound:
                 msg = (
                     "UUID '%(uuid)s' not found in metadata for key '%(key)s'. "
