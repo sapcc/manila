@@ -5297,7 +5297,7 @@ class ShareManager(manager.SchedulerDependentManager):
                 availability_zone_id=service['availability_zone_id'],
                 share_network_id=new_share_network_id))
 
-        extended_allocations = None
+        extended_allocs = None
         dest_share_server = None
         try:
             # NOTE(sapcc): Extend network allocations to destination host, i.e.
@@ -5306,10 +5306,10 @@ class ShareManager(manager.SchedulerDependentManager):
             # bindings, so that correct segmentation id is used during
             # compatibility check and migration.
             if CONF.server_migration_extend_neutron_network:
-                extended_allocations = (
+                extended_allocs = (
                     self.driver.network_api.extend_network_allocations(
                         context, source_share_server))
-                source_share_server['network_allocations'] = extended_allocations
+                source_share_server['network_allocations'] = extended_allocs
 
             compatibility = (
                 self.driver.share_server_migration_check_compatibility(
@@ -5327,11 +5327,11 @@ class ShareManager(manager.SchedulerDependentManager):
                 service['availability_zone_id'], dest_host,
                 create_on_backend=create_server_on_backend)
 
-            if extended_allocations:
+            if extended_allocs:
                 # NOTE(sapcc) The destination share server is created, so
                 # update extended network allocations with destination share
                 # server id.
-                for alloc in extended_allocations:
+                for alloc in extended_allocs:
                     alloc['share_server_id'] = dest_share_server['id']
                     self.db.network_allocation_update(context, alloc['id'],
                                                       alloc)
@@ -5412,7 +5412,7 @@ class ShareManager(manager.SchedulerDependentManager):
                 share_instance_ids=share_instance_ids,
                 snapshot_instance_ids=snapshot_instance_ids)
             # Rollback port bindings on destination host
-            if extended_allocations:
+            if extended_allocs:
                 self.driver.network_api.delete_extended_allocations(
                     context, source_share_server, dest_share_server)
             # Rollback read only access rules
