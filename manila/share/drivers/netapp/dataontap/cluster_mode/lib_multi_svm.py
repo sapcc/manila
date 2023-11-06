@@ -1160,10 +1160,9 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                     'neutron_subnet_id')
         }
 
-        # 2. Create new ipspace, port and broadcast domain.
-        node_name = self._client.list_cluster_nodes()[0]
-        port = self._get_node_data_port(node_name)
         vlan = network_info['network_allocations'][0]['segmentation_id']
+
+        # 2. Create new ipspace, port and broadcast domain.
         destination_ipspace = self._create_ipspace(network_info,
                                                    client=dest_client)
         self._create_port_and_broadcast_domain(destination_ipspace,
@@ -1179,7 +1178,9 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                     'there are other entities consuming it.')
             else:
                 if vlan:
+                    port = None
                     for node in dest_client.list_cluster_nodes():
+                        port = port or self._get_node_data_port(node)
                         dest_client.delete_vlan(node, port, vlan)
 
         # 1. Sends the request to the backend.
