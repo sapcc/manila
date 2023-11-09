@@ -4404,6 +4404,8 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
         self.mock_object(self.client,
                          '_configure_nfs')
         self.mock_object(self.client,
+                         '_disable_xattrs')
+        self.mock_object(self.client,
                          '_create_default_nfs_export_rules')
 
         self.mock_object(self.client, '_enable_nfs_protocols')
@@ -4424,6 +4426,7 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
                                                                fake.FAKE_UUID)
         else:
             self.client._configure_nfs.assert_not_called()
+        self.client._disable_xattrs.assert_called_once_with(fake.FAKE_UUID)
         self.client._create_default_nfs_export_rules.assert_called_once_with()
 
     @ddt.data((True, True, True), (True, False, False), (False, True, True))
@@ -4465,6 +4468,21 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
 
         body = {
             'transport.tcp_max_transfer_size': 10000
+        }
+        self.client.send_request.assert_called_once_with(
+            f'/protocols/nfs/services/{fake.FAKE_UUID}',
+            'patch', body=body)
+
+    def test_disable_xattrs(self):
+        self.mock_object(self.client, 'send_request')
+        self.client._disable_xattrs(fake.FAKE_UUID)
+
+        body = {
+            "protocol": {
+                "v42_features": {
+                    "xattrs_enabled": 'false',
+                },
+            },
         }
         self.client.send_request.assert_called_once_with(
             f'/protocols/nfs/services/{fake.FAKE_UUID}',
