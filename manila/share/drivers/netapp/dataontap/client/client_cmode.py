@@ -3954,9 +3954,14 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 try:
                     client.send_request(
                         'volume-destroy', {'name': volume_name})
-                except netapp_api.NaApiError:
+                except netapp_api.NaApiError as e:
                     LOG.error(
                         'Pruning soft-deleted volume %s failed', volume_name)
+                    if e.code == netapp_api.EVOLDEL_NOT_ALLOW_BY_CLONE:
+                        if self.volume_clone_split_status(volume_name) != 100:
+                            self.volume_clone_split_start(volume_name)
+                            LOG.debug('Starting clone split for '
+                                      'volume %s ', volume_name)
 
     @na_utils.trace
     def create_snapshot(self, volume_name, snapshot_name,
