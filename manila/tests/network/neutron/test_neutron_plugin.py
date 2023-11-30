@@ -28,8 +28,8 @@ from manila import exception
 from manila.network.neutron import api as neutron_api
 from manila.network.neutron import constants as neutron_constants
 from manila.network.neutron import neutron_network_plugin as plugin
-from manila import test
 from manila.share import utils as share_utils
+from manila import test
 from manila.tests import utils as test_utils
 
 CONF = cfg.CONF
