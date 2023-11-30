@@ -740,7 +740,7 @@ class NeutronBindNetworkPlugin(NeutronNetworkPlugin):
         if len(inactive_allocations) == 0:
             msg = _(
                 'No target network allocations for cutover from '
-                '%{src_ss}s to %{dest_ss}s')
+                '%(src_ss)s to %(dest_ss)s')
             raise exception.NetworkException(
                 msg % {
                     'src_ss': src_share_server['id'],
