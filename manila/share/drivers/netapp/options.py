@@ -240,6 +240,12 @@ netapp_data_motion_opts = [
                help='The maximum time in seconds to wait for existing '
                     'snapmirror transfers to complete before aborting when '
                     'promoting a replica.'),
+    cfg.IntOpt('netapp_snapmirror_abort_timeout',
+               min=0,
+               default=120,  # Two Minutes
+               help='The maximum time in seconds to wait for existing '
+                    'snapmirror abort to complete on snapmirror break when '
+                    'promoting a replica.'),
     cfg.IntOpt('netapp_snapmirror_release_timeout',
                min=0,
                default=3600,  # One Hour

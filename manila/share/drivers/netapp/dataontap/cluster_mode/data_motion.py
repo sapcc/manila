@@ -389,10 +389,41 @@ class DataMotionSession(object):
         self.quiesce_then_abort(source_share_obj, dest_share_obj)
 
         # 2. Break SnapMirror
-        dest_client.break_snapmirror_vol(src_vserver,
-                                         src_volume_name,
-                                         dest_vserver,
-                                         dest_volume_name)
+        config = get_backend_configuration(dest_backend)
+        abort_retries = config.netapp_snapmirror_abort_timeout / 5
+
+        @utils.retry(retry_param=exception.ReplicationException,
+                    interval=5,
+                    retries=int(abort_retries),
+                    backoff_rate=1)
+        def wait_for_aborted():
+            try:
+                dest_client.break_snapmirror_vol(src_vserver,
+                                                 src_volume_name,
+                                                 dest_vserver,
+                                                 dest_volume_name)
+            except netapp_api.NaApiError as e:
+                undergoing_abort = 'Abort in progress'
+                if (e.code == netapp_api.EAPIERROR and
+                        undergoing_abort in e.message):
+                    raise exception.ReplicationException(
+                        reason="Snapmirror relationship is aborting.")
+                else:
+                    raise
+
+        try:
+            wait_for_aborted()
+        except exception.ReplicationException:
+            msg_args = {
+                'timeout': config.netapp_snapmirror_abort_timeout,
+                'src_volume': src_volume_name,
+                'dest_volume': dest_volume_name,
+            }
+            msg = (
+                'failed waiting for abort snapmirror in %(timeout)s seconds: '
+                'break snapmirror from %(src_volume)s to %(dest_volume)s'
+            ) % msg_args
+            raise exception.ReplicationException(reason=msg)
 
         # 3. Mount the destination volume and create a junction path
         if mount:
