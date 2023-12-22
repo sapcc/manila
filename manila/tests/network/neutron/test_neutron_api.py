@@ -299,8 +299,10 @@ class NeutronApiTest(test.TestCase):
                           self.neutron_api.delete_port,
                           port_id)
 
-        # Verify results
-        self.neutron_api.client.delete_port.assert_called_once_with(port_id)
+        # Verify results - delete_port has @utils.retry(retries=5), so the
+        # client call is attempted 5 times before the exception propagates.
+        self.assertEqual(5, self.neutron_api.client.delete_port.call_count)
+        self.neutron_api.client.delete_port.assert_called_with(port_id)
         self.assertTrue(clientv20.Client.called)
 
     def test_delete_port_PortNotFoundClient(self):
