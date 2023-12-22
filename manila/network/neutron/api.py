@@ -14,6 +14,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from keystoneauth1 import exceptions as ks_exec
 from keystoneauth1 import loading as ks_loading
 from neutronclient.common import exceptions as neutron_client_exc
 from neutronclient.v2_0 import client as clientv20
@@ -24,6 +25,7 @@ from manila.common import client_auth
 from manila import context
 from manila import exception
 from manila.network.neutron import constants as neutron_constants
+from manila import utils
 
 NEUTRON_GROUP = 'neutron'
 
@@ -85,6 +87,10 @@ class API(object):
 
     :param configuration: instance of config or config group.
     """
+    retry_exc_tuple = (
+        ks_exec.ConnectFailure,
+        exception.NetworkException
+    )
 
     def __init__(self, config_group_name=None):
         self.config_group_name = config_group_name or 'DEFAULT'
@@ -135,6 +141,20 @@ class API(object):
                     fixed_ip=None, device_owner=None, device_id=None,
                     mac_address=None, port_security_enabled=True,
                     security_group_ids=None, dhcp_opts=None, **kwargs):
+        return self._create_port(tenant_id, network_id, host_id=host_id,
+                                 subnet_id=subnet_id, fixed_ip=fixed_ip,
+                                 device_owner=device_owner,
+                                 device_id=device_id, mac_address=mac_address,
+                                 port_security_enabled=port_security_enabled,
+                                 security_group_ids=security_group_ids,
+                                 dhcp_opts=dhcp_opts, **kwargs)
+
+    @utils.retry(retry_param=retry_exc_tuple, retries=5)
+    def _create_port(self, tenant_id, network_id, host_id=None, subnet_id=None,
+                     fixed_ip=None, device_owner=None, device_id=None,
+                     mac_address=None, port_security_enabled=True,
+                     security_group_ids=None, dhcp_opts=None, name=None,
+                     **kwargs):
         try:
             port_req_body = {'port': {}}
             port_req_body['port']['network_id'] = network_id
@@ -165,6 +185,8 @@ class API(object):
                 port_req_body['port']['device_owner'] = device_owner
             if device_id:
                 port_req_body['port']['device_id'] = device_id
+            if name:
+                port_req_body['port']['name'] = name
             if kwargs:
                 port_req_body['port'].update(kwargs)
             port = self.client.create_port(port_req_body).get('port', {})
@@ -176,13 +198,33 @@ class API(object):
                 raise exception.PortLimitExceeded()
             raise exception.NetworkException(code=e.status_code,
                                              message=e.message)
+        except ks_exec.ConnectFailure:
+            LOG.warning('Create Port: Neutron connection failure')
+            # check if port is created in neutron else re-raise connectFailure
+            search_opts = {
+                'device_id': device_id,
+                'network_id': network_id,
+                'name': name
+            }
+            try:
+                ports = self.list_ports(**search_opts)
+                return ports[0]
+            except ks_exec.ConnectFailure as kse:
+                raise kse
 
+    @utils.retry(retry_param=retry_exc_tuple, retries=5)
     def delete_port(self, port_id):
         try:
             self.client.delete_port(port_id)
+        except neutron_client_exc.PortNotFoundClient:
+            LOG.warning('Neutron port not found: %s', port_id)
+            # we assume it has been deleted by something else
+            pass
         except neutron_client_exc.NeutronClientException as e:
             raise exception.NetworkException(code=e.status_code,
                                              message=e.message)
+        except ks_exec.ConnectFailure as e:
+            raise e
 
     def delete_subnet(self, subnet_id):
         try:
@@ -195,6 +237,7 @@ class API(object):
         """List ports for the client based on search options."""
         return self.client.list_ports(**search_opts).get('ports')
 
+    @utils.retry(retry_param=retry_exc_tuple, retries=5)
     def show_port(self, port_id):
         """Return the port for the client given the port id."""
         try:
@@ -202,11 +245,14 @@ class API(object):
         except neutron_client_exc.NeutronClientException as e:
             raise exception.NetworkException(code=e.status_code,
                                              message=e.message)
+        except ks_exec.ConnectFailure as e:
+            raise e
 
     def get_all_networks(self):
         """Get all networks for client."""
         return self.client.list_networks().get('networks')
 
+    @utils.retry(retry_param=retry_exc_tuple, retries=5)
     def get_network(self, network_uuid):
         """Get specific network for client."""
         try:
@@ -215,6 +261,8 @@ class API(object):
         except neutron_client_exc.NeutronClientException as e:
             raise exception.NetworkException(code=e.status_code,
                                              message=e.message)
+        except ks_exec.ConnectFailure as e:
+            raise e
 
     def get_subnet(self, subnet_uuid):
         """Get specific subnet for client."""
