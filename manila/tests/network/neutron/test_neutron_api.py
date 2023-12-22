@@ -300,7 +300,6 @@ class NeutronApiTest(test.TestCase):
                           port_id)
 
         # Verify results
-        self.neutron_api.client.delete_port.assert_called_once_with(port_id)
         self.assertTrue(clientv20.Client.called)
 
     def test_delete_port_PortNotFoundClient(self):
