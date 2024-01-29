@@ -87,6 +87,7 @@ class ShareAPI(object):
         1.25 - Add transfer_accept()
         1.26 - Add create_backup() and delete_backup()
             restore_backup() methods
+        1.27 - Update delete_share_instance() and delete_snapshot() methods
         1.28 - Add update_share_from_metadata() method
         1.29 - Add update_share_network_subnet_from_metadata() method
     """
@@ -165,13 +166,15 @@ class ShareAPI(object):
                           snapshot_id=snapshot['id'],
                           reservations=reservations)
 
-    def delete_share_instance(self, context, share_instance, force=False):
+    def delete_share_instance(self, context, share_instance, force=False,
+                              deferred_delete=False):
         host = utils.extract_host(share_instance['host'])
-        call_context = self.client.prepare(server=host, version='1.4')
+        call_context = self.client.prepare(server=host, version='1.27')
         call_context.cast(context,
                           'delete_share_instance',
                           share_instance_id=share_instance['id'],
-                          force=force)
+                          force=force,
+                          deferred_delete=deferred_delete)
 
     def migration_start(self, context, share, dest_host,
                         force_host_assisted_migration, preserve_metadata,
@@ -272,13 +275,15 @@ class ShareAPI(object):
                           share_id=share['id'],
                           snapshot_id=snapshot['id'])
 
-    def delete_snapshot(self, context, snapshot, host, force=False):
+    def delete_snapshot(self, context, snapshot, host, force=False,
+                        deferred_delete=False):
         new_host = utils.extract_host(host)
-        call_context = self.client.prepare(server=new_host)
+        call_context = self.client.prepare(server=new_host, version='1.27')
         call_context.cast(context,
                           'delete_snapshot',
                           snapshot_id=snapshot['id'],
-                          force=force)
+                          force=force,
+                          deferred_delete=deferred_delete)
 
     def create_replicated_snapshot(self, context, share, replicated_snapshot):
         host = utils.extract_host(share['instance']['host'])
