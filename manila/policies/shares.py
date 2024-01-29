@@ -213,6 +213,13 @@ deprecated_share_snapshot_update = policy.DeprecatedRule(
 )
 
 
+deprecated_list_shares_in_deferred_deletion_states = policy.DeprecatedRule(
+    name=BASE_POLICY_NAME % 'list_shares_in_deferred_deletion_states',
+    check_str=base.RULE_ADMIN_API,
+    deprecated_reason=DEPRECATED_REASON,
+    deprecated_since=versionutils.deprecated.WALLABY
+)
+
 shares_policies = [
     policy.DocumentedRuleDefault(
         name=BASE_POLICY_NAME % 'create',
@@ -603,6 +610,20 @@ shares_policies = [
         ],
         deprecated_rule=deprecated_share_get_metadata
     ),
+    policy.DocumentedRuleDefault(
+        name=BASE_POLICY_NAME % 'list_shares_in_deferred_deletion_states',
+        check_str=base.SYSTEM_ADMIN,
+        scope_types=['project'],
+        description="List shares whose deletion has been deferred",
+        operations=[
+            {
+                'method': 'GET',
+                'path': '/v2/shares',
+            },
+        ],
+        deprecated_rule=deprecated_list_shares_in_deferred_deletion_states
+    ),
+
 ]
 
 # NOTE(gouthamr) For historic reasons, some snapshot policies used
