@@ -194,9 +194,10 @@ class ShareRpcAPITestCase(test.TestCase):
     def test_delete_share_instance(self):
         self._test_share_api('delete_share_instance',
                              rpc_method='cast',
-                             version='1.4',
+                             version='1.23',
                              share_instance=self.fake_share,
-                             force=False)
+                             force=False,
+                             deferred_delete=False)
 
     def test_update_access(self):
         self._test_share_api('update_access',
@@ -213,9 +214,11 @@ class ShareRpcAPITestCase(test.TestCase):
     def test_delete_snapshot(self):
         self._test_share_api('delete_snapshot',
                              rpc_method='cast',
+                             version='1.23',
                              snapshot=self.fake_snapshot,
                              host='fake_host',
-                             force=False)
+                             force=False,
+                             deferred_delete=False)
 
     def test_delete_share_server(self):
         self._test_share_api('delete_share_server',
