@@ -33,6 +33,7 @@ from manila.i18n import _
 from manila.message import message_field
 from manila.share.drivers.netapp.dataontap.client import api as netapp_api
 from manila.share.drivers.netapp.dataontap.client import client_cmode
+from manila.share.drivers.netapp.dataontap.client import client_cmode_rest
 from manila.share.drivers.netapp.dataontap.cluster_mode import data_motion
 from manila.share.drivers.netapp.dataontap.cluster_mode import lib_base
 from manila.share.drivers.netapp import utils as na_utils
@@ -49,6 +50,7 @@ lib_multi_svm_opts = [
 
 CONF = cfg.CONF
 CONF.register_opts(lib_multi_svm_opts)
+
 LOG = log.getLogger(__name__)
 SUPPORTED_NETWORK_TYPES = (None, 'flat', 'vlan')
 SEGMENTED_NETWORK_TYPES = ('vlan',)
@@ -2470,3 +2472,52 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                             "data LIF limit {%(lif_limit)s}") % msg_args
                     LOG.error(msg)
                     raise exception.NetAppException(msg)
+
+    def _get_backup_vserver(self, backup, share_server=None):
+        backend_name = self._get_backend(backup)
+        backend_config = data_motion.get_backend_configuration(backend_name)
+        des_cluster_api_client = self._get_api_client_for_backend(
+            backend_name)
+
+        aggr_list = des_cluster_api_client.list_non_root_aggregates()
+        aggr_pattern = (backend_config.
+                        netapp_aggregate_name_search_pattern)
+        if aggr_pattern:
+            aggr_matching_list = [
+                element for element in aggr_list if re.search(aggr_pattern,
+                                                              element)
+            ]
+            aggr_list = aggr_matching_list
+        share_server_id = share_server['id']
+        des_vserver = f"backup_{share_server_id}"
+        LOG.debug("Creating vserver %s:", des_vserver)
+        try:
+            des_cluster_api_client.create_vserver(
+                des_vserver,
+                None,
+                None,
+                aggr_list,
+                'Default',
+                client_cmode_rest.DEFAULT_SECURITY_CERT_EXPIRE_DAYS,
+            )
+        except netapp_api.NaApiError as e:
+            with excutils.save_and_reraise_exception() as exc_context:
+                if 'already used' in e.message:
+                    exc_context.reraise = False
+        return des_vserver
+
+    def _delete_backup_vserver(self, backup, des_vserver):
+        """Delete the vserver """
+
+        backend_name = self._get_backend(backup)
+        des_vserver_client = self._get_api_client_for_backend(
+            backend_name, vserver=des_vserver)
+        try:
+            des_cluster_api_client = self._get_api_client_for_backend(
+                backend_name)
+            des_cluster_api_client.delete_vserver(des_vserver,
+                                                  des_vserver_client)
+        except exception.NetAppException as e:
+            with excutils.save_and_reraise_exception() as exc_context:
+                if 'has shares' in e.msg:
+                    exc_context.reraise = False
