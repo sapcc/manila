@@ -63,6 +63,7 @@ SHARE_AGGREGATE_DISK_TYPES = ['SATA', 'SSD']
 EFFECTIVE_TYPE = 'fake_effective_type1'
 SHARE_NAME = 'fake_share'
 SHARE_SIZE = '1000000000'
+SHARE_USED_SIZE = '3456796'
 SHARE_NAME_2 = 'fake_share_2'
 FLEXGROUP_STYLE_EXTENDED = 'flexgroup'
 FLEXVOL_STYLE_EXTENDED = 'flexvol'
@@ -2315,6 +2316,7 @@ VOLUME_GET_ITER_VOLUME_TO_MANAGE_RESPONSE = etree.XML("""
         </volume-id-attributes>
         <volume-space-attributes>
           <size>%(size)s</size>
+          <size-used>%(size-used)s</size-used>
         </volume-space-attributes>
         <volume-qos-attributes>
           <policy-group-name>%(qos-policy-group-name)s</policy-group-name>
@@ -2328,6 +2330,7 @@ VOLUME_GET_ITER_VOLUME_TO_MANAGE_RESPONSE = etree.XML("""
     'vserver': VSERVER_NAME,
     'volume': SHARE_NAME,
     'size': SHARE_SIZE,
+    'size-used': SHARE_USED_SIZE,
     'qos-policy-group-name': QOS_POLICY_GROUP_NAME,
     'style-extended': FLEXVOL_STYLE_EXTENDED,
 })
@@ -2349,6 +2352,7 @@ VOLUME_GET_ITER_FLEXGROUP_VOLUME_TO_MANAGE_RESPONSE = etree.XML("""
         </volume-id-attributes>
         <volume-space-attributes>
           <size>%(size)s</size>
+          <size-used>%(size-used)s</size-used>
         </volume-space-attributes>
         <volume-qos-attributes>
           <policy-group-name>%(qos-policy-group-name)s</policy-group-name>
@@ -2362,6 +2366,7 @@ VOLUME_GET_ITER_FLEXGROUP_VOLUME_TO_MANAGE_RESPONSE = etree.XML("""
     'vserver': VSERVER_NAME,
     'volume': SHARE_NAME,
     'size': SHARE_SIZE,
+    'size-used': SHARE_USED_SIZE,
     'qos-policy-group-name': QOS_POLICY_GROUP_NAME,
     'style-extended': FLEXGROUP_STYLE_EXTENDED,
 })
@@ -2381,6 +2386,7 @@ VOLUME_GET_ITER_NO_QOS_RESPONSE = etree.XML("""
         </volume-id-attributes>
         <volume-space-attributes>
           <size>%(size)s</size>
+          <size-used>%(size-used)s</size-used>
         </volume-space-attributes>
       </volume-attributes>
     </attributes-list>
@@ -2391,6 +2397,7 @@ VOLUME_GET_ITER_NO_QOS_RESPONSE = etree.XML("""
     'vserver': VSERVER_NAME,
     'volume': SHARE_NAME,
     'size': SHARE_SIZE,
+    'size-used': SHARE_USED_SIZE,
     'style-extended': FLEXVOL_STYLE_EXTENDED,
 })
 
@@ -3720,7 +3727,8 @@ GENERIC_EXPORT_POLICY_RESPONSE_AND_VOLUMES = {
                 "path": VOLUME_JUNCTION_PATH
             },
             "space": {
-                "size": 21474836480
+                "size": 21474836480,
+                'used': SHARE_USED_SIZE,
             },
         }
     ],
@@ -4672,4 +4680,77 @@ REST_MGMT_INTERFACES = {
         }
     ],
     "num_records": 2,
+}
+
+FAKE_CIFS_LOCAL_USER = {
+    'records': [
+        {
+            'sid': 'S-1-5-21-256008430-3394229847-3930036330-1001'
+        }
+    ]
+}
+
+FAKE_SERVER_SWITCH_NAME = 'fake_ss_name'
+FAKE_SUBTYPE = 'fake_subtype'
+FAKE_DNS_CONFIG = {
+    'dns-state': 'true',
+    'domains': ['fake_domain'],
+    'dns-ips': ['fake_ip']
+}
+
+FAKE_VOLUME_MANAGE = {
+    'records': [
+        {
+            'name': VOLUME_NAMES[0],
+            'aggregates': [
+                {
+                    'name': SHARE_AGGREGATE_NAME
+                }
+            ],
+            'nas': {
+                'path': VOLUME_JUNCTION_PATH
+            },
+            'style': 'flex',
+            'type': 'fake_type',
+            'svm': {
+                'name': VSERVER_NAME
+            },
+            'qos': {
+                'policy': {
+                    'name': QOS_POLICY_GROUP_NAME
+                }
+            },
+            'space': {
+                'size': SHARE_SIZE,
+                'used': SHARE_USED_SIZE,
+            }
+        }
+    ],
+    'num_records': 1
+}
+
+FAKE_PORTS = [
+    {'speed': ''},
+    {'speed': '4'},
+    {'speed': 'auto'},
+    {'speed': 'undef'},
+    {'speed': 'fake_speed'}
+    ]
+
+FAKE_ROOT_AGGREGATES_RESPONSE = {
+    "records": [
+        {
+            "aggregate": SHARE_AGGREGATE_NAME
+        }
+    ]
+}
+
+FAKE_GET_VOLUME = {
+    "records": [
+        {
+            "uuid": FAKE_UUID,
+            "name": "share_6cb5b3f4_35d0_40b8_a106_d35262ac17c7",
+            "size": 1024**3,
+        }
+    ],
 }
