@@ -67,7 +67,27 @@ def get_backend_configuration(backend_name):
     config.append_config_values(na_opts.netapp_support_opts)
     config.append_config_values(na_opts.netapp_provisioning_opts)
     config.append_config_values(na_opts.netapp_data_motion_opts)
+    config.append_config_values(na_opts.netapp_proxy_opts)
+    config.append_config_values(na_opts.netapp_backup_opts)
 
+    return config
+
+
+def get_backup_configuration(backup_name):
+    config_stanzas = CONF.list_all_sections()
+    if backup_name not in config_stanzas:
+        msg = _("Could not find backend stanza %(backup_name)s in "
+                "configuration which is required for backup workflows "
+                "with the source share. Available stanzas are "
+                "%(stanzas)s")
+        params = {
+            "stanzas": config_stanzas,
+            "backend_name": backup_name,
+        }
+        raise exception.BadConfigurationException(reason=msg % params)
+    config = configuration.Configuration(driver.share_opts,
+                                         config_group=backup_name)
+    config.append_config_values(na_opts.netapp_backup_opts)
     return config
 
 
@@ -860,4 +880,89 @@ class DataMotionSession(object):
         except exception.NetAppException:
             msg = _("Unable to release the snapmirror from source volume %s. "
                     "Retries exhausted. Aborting") % src_volume_name
+            raise exception.NetAppException(message=msg)
+
+    def cleanup_previous_snapmirror_relationships(self, replica, replica_list):
+        """Cleanup previous snapmirrors relationships for replica."""
+        LOG.debug("Cleaning up old snapmirror relationships for replica %s.",
+                  replica['id'])
+        src_vol_name, src_vserver, src_backend = (
+            self.get_backend_info_for_share(replica))
+        src_client = get_client_for_backend(src_backend,
+                                            vserver_name=src_vserver)
+
+        # replica_list may contain the replica we are trying to clean up
+        destinations = (r for r in replica_list if r['id'] != replica['id'])
+
+        for destination in destinations:
+            dest_vol_name, dest_vserver, _ = (
+                self.get_backend_info_for_share(destination))
+            try:
+                src_client.release_snapmirror_vol(
+                    src_vserver, src_vol_name, dest_vserver, dest_vol_name)
+            except netapp_api.NaApiError as e:
+                if (e.code == netapp_api.EOBJECTNOTFOUND or
+                        e.code == netapp_api.ESOURCE_IS_DIFFERENT or
+                        "(entry doesn't exist)" in e.message):
+                    LOG.debug(
+                        'Snapmirror destination %s no longer exists for '
+                        'replica %s.', destination['id'], replica['id'])
+                else:
+                    LOG.exception(
+                        'Error releasing snapmirror destination %s for '
+                        'replica %s.', destination['id'], replica['id'])
+
+    def get_most_available_aggr_of_vserver(self, vserver_client):
+        """Get most available aggregate"""
+        aggrs_space_attr = vserver_client.get_vserver_aggregate_capacities()
+        if not aggrs_space_attr:
+            return None
+        aggr_list = list(aggrs_space_attr.keys())
+        most_available_aggr = aggr_list[0]
+        for aggr in aggr_list:
+            if (aggrs_space_attr.get(aggr).get('available')
+                    > aggrs_space_attr.get(
+                        most_available_aggr).get('available')):
+                most_available_aggr = aggr
+        return most_available_aggr
+
+    def initialize_and_wait_snapmirror_vol(self, vserver_client,
+                                           source_vserver, source_volume,
+                                           dest_vserver, dest_volume,
+                                           source_snapshot=None,
+                                           transfer_priority=None,
+                                           timeout=300):
+        """Initialize and wait for SnapMirror relationship"""
+        interval = 10
+        retries = (timeout / interval or 1)
+        vserver_client.initialize_snapmirror_vol(
+            source_vserver,
+            source_volume,
+            dest_vserver,
+            dest_volume,
+            source_snapshot=source_snapshot,
+            transfer_priority=transfer_priority,
+        )
+
+        @utils.retry(exception.NetAppException, interval=interval,
+                     retries=retries, backoff_rate=1)
+        def wait_for_initialization():
+            source_path = f"{source_vserver}:{source_volume}"
+            des_path = f"{dest_vserver}:{dest_volume}"
+            snapmirror_info = vserver_client.get_snapmirrors(
+                source_path=source_path, dest_path=des_path)
+            relationship_status = snapmirror_info[0].get("relationship-status")
+            if relationship_status == "idle":
+                return
+            else:
+                msg = (_('Snapmirror relationship status is: %s. Waiting '
+                         'until it has been initialized.') %
+                       relationship_status)
+                raise exception.NetAppException(message=msg)
+
+        try:
+            wait_for_initialization()
+        except exception.NetAppException:
+            msg = _("Timed out while wait for SnapMirror relationship to "
+                    "be initialized")
             raise exception.NetAppException(message=msg)
