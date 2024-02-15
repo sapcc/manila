@@ -3335,6 +3335,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                     },
                     'volume-space-attributes': {
                         'size': None,
+                        'size-used': None,
                         'is-space-enforcement-logical': None,
                         'is-space-reporting-logical': None,
                     },
@@ -3384,6 +3385,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'type': volume_id_attributes.get_child_content('type'),
             'style': volume_id_attributes.get_child_content('style'),
             'size': volume_space_attributes.get_child_content('size'),
+            'size-used': volume_space_attributes.get_child_content(
+                'size-used'),
             'qos-policy-group-name': volume_qos_attributes.get_child_content(
                 'policy-group-name'),
             'style-extended': volume_id_attributes.get_child_content(
@@ -3763,9 +3766,12 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         self.send_request('volume-destroy', {'name': volume_name})
 
     @na_utils.trace
-    def create_snapshot(self, volume_name, snapshot_name):
+    def create_snapshot(self, volume_name, snapshot_name,
+                        snapmirror_label=None):
         """Creates a volume snapshot."""
         api_args = {'volume': volume_name, 'snapshot': snapshot_name}
+        if snapmirror_label is not None:
+            api_args['snapmirror-label'] = snapmirror_label
         self.send_request('snapshot-create', api_args)
 
     @na_utils.trace
@@ -3775,7 +3781,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                   'volume %(volume)s',
                   {'snapshot': snapshot_name, 'volume': volume_name})
 
-        """Gets a single snapshot."""
+        # Gets a single snapshot.
         api_args = {
             'query': {
                 'snapshot-info': {
@@ -5447,15 +5453,20 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 for snapshot_info in attributes_list.get_children()]
 
     @na_utils.trace
-    def create_snapmirror_policy(self, policy_name, type='async_mirror',
+    def create_snapmirror_policy(self, policy_name,
+                                 policy_type='async_mirror',
                                  discard_network_info=True,
-                                 preserve_snapshots=True):
+                                 preserve_snapshots=True,
+                                 snapmirror_label='all_source_snapshots',
+                                 keep=1
+                                 ):
         """Creates a SnapMirror policy for a vServer."""
+
         self._ensure_snapmirror_v2()
 
         api_args = {
             'policy-name': policy_name,
-            'type': type,
+            'type': policy_type,
         }
 
         if discard_network_info:
@@ -5468,8 +5479,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         if preserve_snapshots:
             api_args = {
                 'policy-name': policy_name,
-                'snapmirror-label': 'all_source_snapshots',
-                'keep': '1',
+                'snapmirror-label': snapmirror_label,
+                'keep': keep,
                 'preserve': 'false'
             }
 
@@ -6695,3 +6706,72 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             }
             data_lif_info.append(lif_info_node)
         return data_lif_info
+
+    @na_utils.trace
+    def get_svm_volumes_total_size(self, svm_name):
+        """Gets volumes sizes sum (GB) from all volumes in SVM by svm_name"""
+
+        request = {}
+
+        query = {
+            'svm.name': svm_name,
+            'fields': 'size'
+        }
+
+        api_args = self._format_request(request, query=query)
+
+        response = self.send_request(
+            'svm-migration-get-progress', api_args=api_args, use_zapi=False)
+
+        svm_volumes = response.get('records', [])
+
+        if len(svm_volumes) > 0:
+            total_volumes_size = 0
+            for volume in svm_volumes:
+                # Root volumes are not taking account because they are part of
+                # SVM creation.
+                if volume['name'] != 'root':
+                    total_volumes_size = total_volumes_size + volume['size']
+        else:
+            return 0
+
+        # Convert Bytes to GBs.
+        return (total_volumes_size / 1024**3)
+
+    @na_utils.trace
+    def snapmirror_restore_vol(self, source_path=None, dest_path=None,
+                               source_vserver=None, dest_vserver=None,
+                               source_volume=None, dest_volume=None,
+                               source_snapshot=None):
+        """Restore snapshot copy from destination volume to source volume"""
+        self._ensure_snapmirror_v2()
+
+        api_args = self._build_snapmirror_request(
+            source_path, dest_path, source_vserver,
+            dest_vserver, source_volume, dest_volume)
+        if source_snapshot:
+            api_args["source-snapshot"] = source_snapshot
+        self.send_request('snapmirror-restore', api_args)
+
+    @na_utils.trace
+    def list_volume_snapshots(self, volume_name, snapmirror_label=None,
+                              newer_than=None):
+        """Gets SnapMirror snapshots on a volume."""
+        api_args = {
+            'query': {
+                'snapshot-info': {
+                    'volume': volume_name,
+                },
+            },
+        }
+        if newer_than:
+            api_args['query']['snapshot-info'][
+                'access-time'] = '>' + newer_than
+        if snapmirror_label:
+            api_args['query']['snapshot-info'][
+                'snapmirror-label'] = snapmirror_label
+        result = self.send_iter_request('snapshot-get-iter', api_args)
+        attributes_list = result.get_child_by_name(
+            'attributes-list') or netapp_api.NaElement('none')
+        return [snapshot_info.get_child_content('name')
+                for snapshot_info in attributes_list.get_children()]
