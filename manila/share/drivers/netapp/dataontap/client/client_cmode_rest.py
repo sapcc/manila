@@ -857,7 +857,7 @@ class NetAppRestClient(object):
         query = {
             'name': volume_name,
             'fields': 'aggregates.name,nas.path,name,svm.name,type,style,'
-                      'qos.policy.name,space.size'
+                      'qos.policy.name,space.size,space.used'
         }
 
         result = self.send_request('/storage/volumes', 'get', query=query)
@@ -888,6 +888,7 @@ class NetAppRestClient(object):
             'type': volume_infos.get('type'),
             'style': volume_infos.get('style'),
             'size': volume_infos.get('space', {}).get('size'),
+            'size-used': volume_infos.get('space', {}).get('used'),
             'qos-policy-group-name': (
                 volume_infos.get('qos', {}).get('policy', {}).get('name')),
             'style-extended': volume_infos.get('style')
@@ -1845,7 +1846,8 @@ class NetAppRestClient(object):
                           'patch', body=body)
 
     @na_utils.trace
-    def create_snapshot(self, volume_name, snapshot_name):
+    def create_snapshot(self, volume_name, snapshot_name,
+                        snapmirror_label=None):
         """Creates a volume snapshot."""
 
         volume = self._get_volume_by_args(vol_name=volume_name)
@@ -1853,6 +1855,8 @@ class NetAppRestClient(object):
         body = {
             'name': snapshot_name,
         }
+        if snapmirror_label is not None:
+            body['snapmirror_label'] = snapmirror_label
         self.send_request(f'/storage/volumes/{uuid}/snapshots', 'post',
                           body=body)
 
@@ -2296,7 +2300,10 @@ class NetAppRestClient(object):
                     else record.get('state')),
                 'transferring-state': record.get('transfer', {}).get('state'),
                 'mirror-state': record.get('state'),
-                'schedule': record['transfer_schedule']['name'],
+                'schedule': (
+                    record['transfer_schedule']['name']
+                    if record.get('transfer_schedule')
+                    else None),
                 'source-vserver': record['source']['svm']['name'],
                 'source-volume': (record['source']['path'].split(':')[1] if
                                   record.get('source') else None),
@@ -4871,6 +4878,31 @@ class NetAppRestClient(object):
         return policy_name
 
     @na_utils.trace
+    def create_snapmirror_policy(self, policy_name,
+                                 policy_type='async',
+                                 discard_network_info=True,
+                                 preserve_snapshots=True,
+                                 snapmirror_label='all_source_snapshots',
+                                 keep=1):
+        """Create SnapMirror Policy"""
+
+        if policy_type == "vault":
+            body = {"name": policy_name, "type": "async",
+                    "create_snapshot_on_source": False}
+        else:
+            body = {"name": policy_name, "type": policy_type}
+        if discard_network_info:
+            body["exclude_network_config"] = {'svmdr-config-obj': 'network'}
+        if preserve_snapshots:
+            body["retention"] = [{"label": snapmirror_label, "count": keep}]
+        try:
+            self.send_request('/snapmirror/policies/', 'post', body=body)
+        except netapp_api.api.NaApiError as e:
+            LOG.debug('Failed to create SnapMirror policy. '
+                      'Error: %s. Code: %s', e.message, e.code)
+            raise
+
+    @na_utils.trace
     def delete_snapmirror_policy(self, policy_name):
         """Deletes a SnapMirror policy."""
 
@@ -5315,3 +5347,82 @@ class NetAppRestClient(object):
                 if failover_policy in ('default', 'sfo_partners_only'):
                     migratable_lif.append(lif["name"])
         return migratable_lif
+
+    @na_utils.trace
+    def get_svm_volumes_total_size(self, svm_name):
+        """Gets volumes sizes sum (GB) from all volumes in SVM by svm_name"""
+
+        query = {
+            'svm.name': svm_name,
+            'fields': 'size'
+        }
+
+        response = self.send_request('/storage/volumes/', 'get', query=query)
+
+        svm_volumes = response.get('records', [])
+
+        if len(svm_volumes) > 0:
+            total_volumes_size = 0
+            for volume in svm_volumes:
+                # Root volumes are not taking account because they are part of
+                # SVM creation.
+                if volume['name'] != 'root':
+                    total_volumes_size = total_volumes_size + volume['size']
+        else:
+            return 0
+
+        # Convert Bytes to GBs.
+        return (total_volumes_size / 1024**3)
+
+    def snapmirror_restore_vol(self, source_path=None, dest_path=None,
+                               source_vserver=None, dest_vserver=None,
+                               source_volume=None, dest_volume=None,
+                               source_snapshot=None):
+        """Restore snapshot copy from destination volume to source volume"""
+        snapmirror_info = self.get_snapmirror_destinations(dest_path,
+                                                           source_path,
+                                                           dest_vserver,
+                                                           source_vserver,
+                                                           dest_volume,
+                                                           source_volume,
+                                                           )
+        if not snapmirror_info:
+            msg = _("There is no relationship between source "
+                    "'%(source_path)s' and destination cluster"
+                    " '%(des_path)s'")
+            msg_args = {'source_path': source_path,
+                        'des_path': dest_path,
+                        }
+            raise exception.NetAppException(msg % msg_args)
+        uuid = snapmirror_info[0].get('uuid')
+        body = {"destination": {"path": dest_path},
+                "source_snapshot": source_snapshot}
+        try:
+            self.send_request(f"/snapmirror/relationships/{uuid}/restore",
+                              'post', body=body)
+        except netapp_api.api.NaApiError as e:
+            LOG.debug('Snapmirror restore has failed. Error: %s. Code: %s',
+                      e.message, e.code)
+            raise
+
+    @na_utils.trace
+    def list_volume_snapshots(self, volume_name, snapmirror_label=None,
+                              newer_than=None):
+        """Gets list of snapshots of volume."""
+        volume = self._get_volume_by_args(vol_name=volume_name)
+        uuid = volume['uuid']
+        query = {}
+        if snapmirror_label:
+            query = {
+                'snapmirror_label': snapmirror_label,
+            }
+
+        if newer_than:
+            query['create_time'] = '>' + newer_than
+
+        response = self.send_request(
+            f'/storage/volumes/{uuid}/snapshots/',
+            'get', query=query)
+
+        return [snapshot_info['name']
+                for snapshot_info in response['records']]
