@@ -199,8 +199,12 @@ REST_API_VERSION_HISTORY = """
              count info.
     * 2.80 - Added share backup APIs.
     * 2.81 - Added API methods, endpoint /resource-locks.
-    * 2.81 - Added support for update Share access rule.
-    * 2.81 - Added support for passing Share network subnet metadata updates
+    * 2.82 - Added lock and restriction to share access rules.
+    * 2.83 - Added 'disabled_reason' field to services.
+    * 2.84 - Added mount_point_name to shares.
+    * 2.85 - Added backup_type field to share backups.
+    * 2.86 - Added support for update Share access rule.
+    * 2.87 - Added support for passing Share network subnet metadata updates
              to driver.
 """
 
@@ -208,7 +212,7 @@ REST_API_VERSION_HISTORY = """
 # The default api version request is defined to be the
 # minimum version of the API supported.
 _MIN_API_VERSION = "2.0"
-_MAX_API_VERSION = "2.81"
+_MAX_API_VERSION = "2.86"
 DEFAULT_API_VERSION = _MIN_API_VERSION
 
 
@@ -238,8 +242,7 @@ class APIVersionRequest(utils.ComparableMixin):
         self._experimental = experimental
 
         if version_string is not None:
-            match = re.match(r"^([1-9]\d*)\.([1-9]\d*|0)$",
-                             version_string)
+            match = re.match(r"^([1-9]\d*)\.([1-9]\d*|0)$", version_string)
             if match:
                 self._ver_major = int(match.group(1))
                 self._ver_minor = int(match.group(2))
@@ -249,12 +252,14 @@ class APIVersionRequest(utils.ComparableMixin):
     def __str__(self):
         """Debug/Logging representation of object."""
         params = {
-            'major': self._ver_major,
-            'minor': self._ver_minor,
-            'experimental': self._experimental,
+            "major": self._ver_major,
+            "minor": self._ver_minor,
+            "experimental": self._experimental,
         }
-        return ("API Version Request Major: %(major)s, Minor: %(minor)s, "
-                "Experimental: %(experimental)s" % params)
+        return (
+            "API Version Request Major: %(major)s, Minor: %(minor)s, "
+            "Experimental: %(experimental)s" % params
+        )
 
     def is_null(self):
         return self._ver_major is None and self._ver_minor is None
@@ -270,7 +275,7 @@ class APIVersionRequest(utils.ComparableMixin):
     @experimental.setter
     def experimental(self, value):
         if type(value) != bool:
-            msg = _('The experimental property must be a bool value.')
+            msg = _("The experimental property must be a bool value.")
             raise exception.InvalidParameterValue(err=msg)
         self._experimental = value
 
@@ -278,13 +283,14 @@ class APIVersionRequest(utils.ComparableMixin):
         """Compares this version to that of a versioned method."""
 
         if type(method) != versioned_method.VersionedMethod:
-            msg = _('An API version request must be compared '
-                    'to a VersionedMethod object.')
+            msg = _(
+                "An API version request must be compared to a VersionedMethod object."
+            )
             raise exception.InvalidParameterValue(err=msg)
 
-        return self.matches(method.start_version,
-                            method.end_version,
-                            method.experimental)
+        return self.matches(
+            method.start_version, method.end_version, method.experimental
+        )
 
     def matches(self, min_version, max_version, experimental=False):
         """Compares this version to the specified min/max range.
@@ -318,8 +324,12 @@ class APIVersionRequest(utils.ComparableMixin):
 
         if not (min_version or max_version):
             return True
-        elif (min_version and max_version and
-              max_version.is_null() and min_version.is_null()):
+        elif (
+            min_version
+            and max_version
+            and max_version.is_null()
+            and min_version.is_null()
+        ):
             return True
 
         elif not max_version or max_version.is_null():
@@ -337,5 +347,7 @@ class APIVersionRequest(utils.ComparableMixin):
         """
         if self.is_null():
             raise ValueError
-        return ("%(major)s.%(minor)s" %
-                {'major': self._ver_major, 'minor': self._ver_minor})
+        return "%(major)s.%(minor)s" % {
+            "major": self._ver_major,
+            "minor": self._ver_minor,
+        }

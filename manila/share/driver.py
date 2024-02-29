@@ -3646,8 +3646,74 @@ class ShareDriver(object):
         """
         raise NotImplementedError()
 
-    def update_share_from_metadata(self, context, share, metadata,
-                                   share_server=None):
+    def create_backup(self, context, share_instance, backup,
+                      share_server=None):
+        """Starts backup of a given share_instance into backup.
+
+        Driver should implement this method if willing to perform backup of
+        share_instance. This method should start the backup procedure in the
+        backend and end. Following steps should be done in
+        'create_backup_continue'.
+
+        :param context: The 'context.RequestContext' object for the request.
+        :param share_instance: Reference to the original share instance.
+        :param backup: Share backup model.
+        :param share_server: share server in case of dhss_true
+        """
+        raise NotImplementedError()
+
+    def create_backup_continue(self, context, share_instance, backup,
+                               share_server=None):
+        """Continue backup of a given share_instance into backup.
+
+        Driver must implement this method if it supports 'create_backup'
+        method. This method should continue the remaining backup procedure
+        in the backend and report the progress of backup.
+
+        :param context: The 'context.RequestContext' object for the request.
+        :param share_instance: Reference to the original share instance.
+        :param backup: Share backup model.
+        :param share_server: share server in case of dhss_true
+        """
+        raise NotImplementedError()
+
+    def delete_backup(self, context, backup, share_instance,
+                      share_server=None):
+        """Is called to remove backup."""
+        raise NotImplementedError()
+
+    def restore_backup(self, context, backup, share_instance,
+                       share_server=None):
+        """Starts restoring backup into a given share_instance.
+
+        Driver should implement this method if willing to perform restore of
+        backup into a share_instance. This method should start the backup
+        restore procedure in the backend and end. Following steps should be
+        done in 'restore_backup_continue'.
+
+        :param context: The 'context.RequestContext' object for the request.
+        :param share_instance: Reference to the original share instance.
+        :param backup: Share backup model.
+        :param share_server: share server in case of dhss_true
+        """
+        raise NotImplementedError()
+
+    def restore_backup_continue(self, context, backup, share_instance,
+                                share_server=None):
+        """Continue restore of a given backup into share_instance.
+
+        Driver must implement this method if it supports 'restore_backup'
+        method. This method should continue the remaining restore procedure
+        in the backend and report the progress of backup restore.
+
+        :param context: The 'context.RequestContext' object for the request.
+        :param share_instance: Reference to the original share instance.
+        :param backup: Share backup model.
+        :param share_server: share server in case of dhss_true
+        """
+        raise NotImplementedError()
+
+    def update_share_from_metadata(self, context, share, metadata, share_server=None):
         """Update the share from metadata.
 
         Driver must implement this method if needs to perform some action

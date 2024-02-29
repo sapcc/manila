@@ -5223,9 +5223,10 @@ class ShareManager(manager.SchedulerDependentManager):
 
         LOG.info('Create backup started, backup: %(backup)s share: '
                  '%(share)s.', {'backup': backup_id, 'share': share_id})
-
         try:
-            self.driver.create_backup(context, share_instance, backup)
+            share_server = self._get_share_server(context, share)
+            self.driver.create_backup(context, share_instance, backup,
+                                      share_server=share_server)
         except Exception as err:
             with excutils.save_and_reraise_exception():
                 LOG.error("Failed to create share backup %s by driver.",
@@ -5253,8 +5254,9 @@ class ShareManager(manager.SchedulerDependentManager):
             share_instance = self._get_share_instance(context, share)
             result = {}
             try:
+                share_server = self._get_share_server(context, share_instance)
                 result = self.driver.create_backup_continue(
-                    context, share_instance, backup)
+                    context, share_instance, backup, share_server=share_server)
                 progress = result.get('total_progress', '0')
                 self.db.share_backup_update(context, backup_id,
                                             {'progress': progress})
@@ -5283,8 +5285,13 @@ class ShareManager(manager.SchedulerDependentManager):
 
         backup_id = backup['id']
         project_id = backup['project_id']
+        share_id = backup['share_id']
+        share = self.db.share_get(context, share_id)
+        share_instance = self._get_share_instance(context, share)
         try:
-            self.driver.delete_backup(context, backup)
+            share_server = self._get_share_server(context, share_instance)
+            self.driver.delete_backup(context, backup, share_instance,
+                                      share_server=share_server)
         except Exception:
             with excutils.save_and_reraise_exception():
                 LOG.error("Failed to delete share backup %s.", backup_id)
@@ -5320,7 +5327,9 @@ class ShareManager(manager.SchedulerDependentManager):
         share_instance = self._get_share_instance(context, share)
 
         try:
-            self.driver.restore_backup(context, backup, share_instance)
+            share_server = self._get_share_server(context, share_instance)
+            self.driver.restore_backup(context, backup, share_instance,
+                                       share_server=share_server)
         except Exception:
             with excutils.save_and_reraise_exception():
                 LOG.error("Failed to restore backup %(backup)s to share "
@@ -5358,10 +5367,12 @@ class ShareManager(manager.SchedulerDependentManager):
 
                 share_id = share['id']
                 share_instance = self._get_share_instance(context, share)
-                result = {}
                 try:
+                    share_server = self._get_share_server(
+                        context, share_instance)
                     result = self.driver.restore_backup_continue(
-                        context, backup, share_instance)
+                        context, backup, share_instance,
+                        share_server=share_server)
                     progress = result.get('total_progress', '0')
                     self.db.share_backup_update(
                         context, backup_id, {'restore_progress': progress})
