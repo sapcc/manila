@@ -7209,7 +7209,11 @@ class ShareAPITestCase(test.TestCase):
         self.mock_object(data_rpc.DataAPI, 'create_backup', mock.Mock())
         self.mock_object(self.share_rpcapi, 'create_backup', mock.Mock())
 
-        backup = {'display_name': 'tmp_backup', 'backup_options': backup_opts}
+        backup = {
+            'display_name': 'tmp_backup',
+            'backup_options': backup_opts,
+            'id': 'dbe28dff-ce7d-4c3d-a795-c31f6fee31ab',
+        }
         self.api.create_share_backup(self.context, share, backup)
 
         quota.QUOTAS.reserve.assert_called_once()
@@ -7225,8 +7229,10 @@ class ShareAPITestCase(test.TestCase):
 
     def test_create_share_backup_share_error_state(self):
         share = db_utils.create_share(is_public=True, status='error')
-        backup = {'display_name': 'tmp_backup'}
-
+        backup = {
+            'display_name': 'tmp_backup',
+            'id': 'dbe28dff-ce7d-4c3d-a795-c31f6fee31ab',
+        }
         self.assertRaises(exception.InvalidShare,
                           self.api.create_share_backup,
                           self.context, share, backup)
@@ -7234,7 +7240,10 @@ class ShareAPITestCase(test.TestCase):
     def test_create_share_backup_share_busy_task_state(self):
         share = db_utils.create_share(
             is_public=True, task_state='data_copying_in_progress')
-        backup = {'display_name': 'tmp_backup'}
+        backup = {
+            'display_name': 'tmp_backup',
+            'id': 'dbe28dff-ce7d-4c3d-a795-c31f6fee31ab',
+        }
 
         self.assertRaises(exception.ShareBusyException,
                           self.api.create_share_backup,
@@ -7246,7 +7255,10 @@ class ShareAPITestCase(test.TestCase):
         snapshot = db_utils.create_snapshot(
             share_id=share['id'], status='available', size=1)
 
-        backup = {'display_name': 'tmp_backup'}
+        backup = {
+            'display_name': 'tmp_backup',
+            'id': 'dbe28dff-ce7d-4c3d-a795-c31f6fee31ab',
+        }
 
         self.mock_object(db_api, 'share_snapshot_get_all_for_share',
                          mock.Mock(return_value=[snapshot]))
@@ -7260,7 +7272,10 @@ class ShareAPITestCase(test.TestCase):
                                  has_replicas=True,
                                  status=constants.STATUS_AVAILABLE,
                                  is_soft_deleted=False)
-        backup = {'display_name': 'tmp_backup'}
+        backup = {
+            'display_name': 'tmp_backup',
+            'id': 'dbe28dff-ce7d-4c3d-a795-c31f6fee31ab',
+        }
 
         self.assertRaises(exception.InvalidShare,
                           self.api.create_share_backup,
@@ -7276,7 +7291,10 @@ class ShareAPITestCase(test.TestCase):
         share = fakes.fake_share(id='fake_id',
                                  status=constants.STATUS_AVAILABLE,
                                  is_soft_deleted=False, size=5)
-        backup = {'display_name': 'tmp_backup'}
+        backup = {
+            'display_name': 'tmp_backup',
+            'id': 'dbe28dff-ce7d-4c3d-a795-c31f6fee31ab',
+        }
 
         usages = {'backup_gigabytes': {'reserved': 5, 'in_use': 5},
                   'backups': {'reserved': 5, 'in_use': 5}}
@@ -7304,7 +7322,10 @@ class ShareAPITestCase(test.TestCase):
         self.mock_object(data_rpc.DataAPI, 'create_backup', mock.Mock())
         self.mock_object(self.share_rpcapi, 'create_backup', mock.Mock())
 
-        backup = {'display_name': 'tmp_backup'}
+        backup = {
+            'display_name': 'tmp_backup',
+            'id': 'dbe28dff-ce7d-4c3d-a795-c31f6fee31ab',
+        }
         self.assertRaises(exception.ManilaException,
                           self.api.create_share_backup,
                           self.context, share, backup)
