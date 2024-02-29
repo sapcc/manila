@@ -439,6 +439,31 @@ ____
 ----
   Introduce resource locks as a way users can restrict certain actions on
   resources. Only share deletion can be prevented at this version.
+
+2.82 (Maximum in 2023.2/Bobcat)
+-------------------------------
+  Introduce the ability to lock access rules and restrict the visibility of
+  sensitive fields.
+
+2.83
+----
+  The ``disabled_reason`` field was added to the service to mark the reason why
+  the user disabled the service. ``disabled`` field will be replaced by
+  ``status`` field.
+
+2.84
+----
+   Added optional ``mount_point_name`` field to share.
+
+2.85
+----
+   Added ``backup_type`` field to share backup object.
+
+2.86
+----
   Allows updating the access rule's access type.
+
+2.87
+----
   Added support for passing share network subnet metadata updates to share
   backend driver.
