@@ -9,7 +9,7 @@ features:
     identifies that the new metadata keys match the metadata keys from the
     provided list, the share back end will be notified and it will apply
     the necessary changes. The result will be communicated through user
-    messages. This feature is supported from microversion '2.89'. Since,
+    messages. This feature is supported from microversion '2.81'. Since,
     with share network migration, metadata belonging to the old share network
     subnet is ignored when moving to a new share network, updates will not
     be passed to new share servers.

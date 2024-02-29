@@ -439,6 +439,16 @@ ____
 ----
   Introduce resource locks as a way users can restrict certain actions on
   resources. Only share deletion can be prevented at this version.
+
+2.81
+----
+   Added ``backup_type`` field to share backup object.
+
+2.81
+----
   Allows updating the access rule's access type.
+
+2.81
+----
   Added support for passing share network subnet metadata updates to share
   backend driver.
