@@ -376,16 +376,13 @@ class ShareManager(manager.SchedulerDependentManager):
             self.driver.initialized = False
             LOG.debug("Start initialization of driver: '%s'", driver_host_pair)
             try:
+                self._check_service_status(ctxt)
                 self.driver.do_setup(ctxt)
                 self.driver.check_for_setup_error()
             except Exception:
                 LOG.exception("Error encountered during initialization of "
                               "driver %s", driver_host_pair)
-                # init failed, mark service dead by removing the probe
-                try:
-                    os.remove('/etc/manila/probe')
-                except Exception as e:
-                    LOG.error("Not removed: %(e)s", {'e': six.text_type(e)})
+                self._mark_service_dead()
                 # we don't want to continue since we failed
                 # to initialize the driver correctly.
                 raise
@@ -434,6 +431,22 @@ class ShareManager(manager.SchedulerDependentManager):
 
         """
         return self.driver.initialized
+
+    def _check_service_status(self, ctxt, mark_dead=False):
+        service = self.db.service_get(ctxt, self.service_id)
+        if service.disabled:
+            if mark_dead:
+                self._mark_service_dead()
+            msg = f"Service {service.binary} {service.host} is disabled"
+            raise exception.ManilaException(msg)
+
+    def _mark_service_dead(self):
+        # mark service dead by removing the probe
+        try:
+            if os.path.exists('/etc/manila/probe'):
+                os.remove('/etc/manila/probe')
+        except Exception as e:
+            LOG.error(f"Not removed: {e}")
 
     def ensure_driver_resources(self, ctxt):
         old_backend_info = self.db.backend_info_get(ctxt, self.host)
@@ -4205,6 +4218,7 @@ class ShareManager(manager.SchedulerDependentManager):
     @periodic_task.periodic_task(spacing=CONF.periodic_interval)
     @utils.require_driver_initialized
     def _report_driver_status(self, context):
+        self._check_service_status(context, mark_dead=True)
         LOG.info('Updating share status')
         share_stats = self.driver.get_share_stats(refresh=True)
 

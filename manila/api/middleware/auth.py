@@ -108,6 +108,7 @@ class ManilaKeystoneContext(base_wsgi.Middleware):
         if req.environ.get('X_USER_DOMAIN_NAME'):
             ctx.user_domain_name = req.environ['X_USER_DOMAIN_NAME']
 
+        LOG.debug(f"request environ: {req.environ.items()}")
         req.environ['manila.context'] = ctx
         return self.application
 

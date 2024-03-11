@@ -44,8 +44,12 @@ class CapacityFilter(base_host.BaseHostFilter):
         total_space = host_state.total_capacity_gb
         if filter_properties.get('snapshot_id'):
             reserved = float(host_state.reserved_snapshot_percentage) / 100
+            LOG.debug(f"Filtering for share snapshot with {reserved}% "
+                      f"reserved on host {host_state.host}")
         elif filter_properties.get('is_share_extend'):
             reserved = float(host_state.reserved_share_extend_percentage) / 100
+            LOG.debug(f"Filtering for share extension with {reserved}% "
+                      f"reserved on host {host_state.host}")
         else:
             reserved = float(host_state.reserved_percentage) / 100
 
@@ -114,6 +118,18 @@ class CapacityFilter(base_host.BaseHostFilter):
                 # free and max_over_subscription_ratio.
                 adjusted_free_virtual = (
                     free * host_state.max_over_subscription_ratio)
+                is_there_enough_afv = adjusted_free_virtual >= share_size
+                if is_there_enough_afv:
+                    return True
+                else:
+                    thin_msg_args = {"host": host_state.host,
+                                     "requested": share_size,
+                                     "available": adjusted_free_virtual}
+                    LOG.warning("Insufficient adjusted free space for thin "
+                        "share creation on host %(host)s (requested / avail): "
+                        "%(requested)s/%(available)s", thin_msg_args)
+                    return False
+
                 return adjusted_free_virtual >= share_size
         elif (use_thin_logic and thin_provisioning and
               host_state.max_over_subscription_ratio < 1):
