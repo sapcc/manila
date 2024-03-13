@@ -3948,7 +3948,15 @@ SNAPMIRROR_GET_ITER_RESPONSE_REST = {
                 "type": "async"
             },
             "state": "snapmirrored",
-            "healthy": True
+            "healthy": True,
+            "transfer_schedule": {
+                "name": "hourly",
+            },
+            "transfer": {
+                "state": "success",
+                "bytes_transferred": "3352",
+            },
+            "last_transfer_type": "update",
         }
     ],
     "num_records": 1,
@@ -3963,7 +3971,12 @@ REST_GET_SNAPMIRRORS_RESPONSE = [{
     'source-volume': SM_SOURCE_VOLUME,
     'source-vserver': SM_SOURCE_VSERVER,
     'uuid': FAKE_UUID,
-    'policy-type': 'async'
+    'policy-type': 'async',
+    'schedule': 'hourly',
+    'transferring-state': 'success',
+    'is-healthy': 'true',
+    'last-transfer-size': '3352',
+    'last-transfer-type': 'update',
 }]
 
 FAKE_CIFS_RECORDS = {
