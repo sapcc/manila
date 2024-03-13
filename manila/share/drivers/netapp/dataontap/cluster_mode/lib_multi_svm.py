@@ -36,6 +36,7 @@ from manila.share.drivers.netapp.dataontap.client import client_cmode
 from manila.share.drivers.netapp.dataontap.client import client_cmode_rest
 from manila.share.drivers.netapp.dataontap.cluster_mode import data_motion
 from manila.share.drivers.netapp.dataontap.cluster_mode import lib_base
+from manila.share.drivers.netapp.dataontap.cluster_mode.lib_base import Backup
 from manila.share.drivers.netapp import utils as na_utils
 from manila.share import share_types
 from manila.share import utils as share_utils
@@ -2489,7 +2490,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             ]
             aggr_list = aggr_matching_list
         share_server_id = share_server['id']
-        des_vserver = f"backup_{share_server_id}"
+        des_vserver = f"{Backup.DES_VSERVER_PREFIX.value}_{share_server_id}"
         LOG.debug("Creating vserver %s:", des_vserver)
         try:
             des_cluster_api_client.create_vserver(
