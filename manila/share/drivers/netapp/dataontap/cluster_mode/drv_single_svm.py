@@ -336,3 +336,6 @@ class NetAppCmodeSingleSvmShareDriver(driver.ShareDriver):
             share_instance_rules, new_security_service,
             current_security_service=None):
         raise NotImplementedError
+
+    def update_snap_policy(self, share, snap_policy, **kwargs):
+        self.library.update_snap_policy(share, snap_policy, **kwargs)

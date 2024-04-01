@@ -267,7 +267,7 @@ def add_hooks(f):
 class ShareManager(manager.SchedulerDependentManager):
     """Manages NAS storages."""
 
-    RPC_API_VERSION = '1.22'
+    RPC_API_VERSION = '1.23'
 
     def __init__(self, share_driver=None, service_name=None, *args, **kwargs):
         """Load the driver from args, or from flags."""
@@ -6206,3 +6206,15 @@ class ShareManager(manager.SchedulerDependentManager):
             LOG.debug('A share network security service check was requested '
                       'but no entries were found in database. Ignoring call '
                       'and returning.')
+
+    def share_update_snap_policy(self, context, share_id, snap_policy):
+        context = context.elevated()
+        share = self.db.share_get(context, share_id)
+        share_instance = self._get_share_instance(context, share)
+        share_server = self._get_share_server(context, share_instance)
+
+        try:
+            self.driver.update_snap_policy(
+                share_instance, snap_policy, share_server=share_server)
+        except Exception:
+            LOG.exception("Snapshot policy update failed.", resource=share)
