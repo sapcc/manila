@@ -543,6 +543,10 @@ class ShareManager(manager.SchedulerDependentManager):
                 )
                 continue
 
+            # only busy aka shares undergoing a migration might not have
+            # their pool fixed, but other skip reasons do not apply
+            self._ensure_share_instance_has_pool(ctxt, share_instance)
+
             if (share_instance['status'] != constants.STATUS_AVAILABLE and
                     share_instance['status'] != constants.STATUS_CREATING):
                 LOG.info(
@@ -564,7 +568,6 @@ class ShareManager(manager.SchedulerDependentManager):
                     )
                     continue
 
-            self._ensure_share_instance_has_pool(ctxt, share_instance)
             share_instance = self.db.share_instance_get(
                 ctxt, share_instance['id'], with_share_data=True)
             share_instance_dict = self._get_share_instance_dict(

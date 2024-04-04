@@ -403,7 +403,13 @@ class ShareManagerTestCase(test.TestCase):
                     mock.call(utils.IsAMatcher(context.RequestContext),
                               instances[0]),
                     mock.call(utils.IsAMatcher(context.RequestContext),
+                              instances[1]),
+                    mock.call(utils.IsAMatcher(context.RequestContext),
                               instances[2]),
+                    mock.call(utils.IsAMatcher(context.RequestContext),
+                              instances[4]),
+                    mock.call(utils.IsAMatcher(context.RequestContext),
+                              instances[6]),
                 ]))
             self.share_manager._get_share_server.assert_has_calls([
                 mock.call(utils.IsAMatcher(context.RequestContext),
@@ -515,7 +521,10 @@ class ShareManagerTestCase(test.TestCase):
         self.share_manager.driver.check_for_setup_error.assert_called_with()
         self.share_manager._ensure_share_instance_has_pool.assert_has_calls([
             mock.call(utils.IsAMatcher(context.RequestContext), instances[0]),
+            mock.call(utils.IsAMatcher(context.RequestContext), instances[1]),
             mock.call(utils.IsAMatcher(context.RequestContext), instances[2]),
+            mock.call(utils.IsAMatcher(context.RequestContext), instances[4]),
+            mock.call(utils.IsAMatcher(context.RequestContext), instances[6]),
         ])
         self.share_manager.driver.ensure_shares.assert_called_once_with(
             utils.IsAMatcher(context.RequestContext),
@@ -620,7 +629,10 @@ class ShareManagerTestCase(test.TestCase):
         self.share_manager.driver.check_for_setup_error.assert_called_with()
         self.share_manager._ensure_share_instance_has_pool.assert_has_calls([
             mock.call(utils.IsAMatcher(context.RequestContext), instances[0]),
+            mock.call(utils.IsAMatcher(context.RequestContext), instances[1]),
             mock.call(utils.IsAMatcher(context.RequestContext), instances[2]),
+            mock.call(utils.IsAMatcher(context.RequestContext), instances[4]),
+            mock.call(utils.IsAMatcher(context.RequestContext), instances[6]),
         ])
         self.share_manager.driver.ensure_shares.assert_called_once_with(
             utils.IsAMatcher(context.RequestContext),
@@ -706,7 +718,10 @@ class ShareManagerTestCase(test.TestCase):
         smanager.driver.check_for_setup_error.assert_called_with()
         smanager._ensure_share_instance_has_pool.assert_has_calls([
             mock.call(utils.IsAMatcher(context.RequestContext), instances[0]),
+            mock.call(utils.IsAMatcher(context.RequestContext), instances[1]),
             mock.call(utils.IsAMatcher(context.RequestContext), instances[2]),
+            mock.call(utils.IsAMatcher(context.RequestContext), instances[4]),
+            mock.call(utils.IsAMatcher(context.RequestContext), instances[6]),
         ])
         smanager.driver.ensure_shares.assert_called_once_with(
             utils.IsAMatcher(context.RequestContext),
