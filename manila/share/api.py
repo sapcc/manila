@@ -2265,6 +2265,7 @@ class API(base.Base):
 
         """
         orig_meta = self.get_share_metadata(context, share)
+        orig_snap_policy = orig_meta.get('snap_policy', None)
         if delete:
             _metadata = metadata
         else:
@@ -2274,7 +2275,10 @@ class API(base.Base):
         self._check_metadata_properties(_metadata)
         self.db.share_metadata_update(context, share['id'],
                                       _metadata, delete)
-
+        new_snap_policy = _metadata.get('snap_policy', None)
+        if new_snap_policy and new_snap_policy != orig_snap_policy:
+            self.share_rpcapi.share_update_snap_policy(context, share,
+                                                       new_snap_policy)
         return _metadata
 
     def get_share_network(self, context, share_net_id):

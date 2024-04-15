@@ -485,6 +485,28 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.client.send_request.assert_has_calls([
             mock.call('vserver-create', vserver_create_args),
             mock.call('vserver-modify', vserver_modify_args),
+            mock.call('snapshot-policy-create', {
+                'enabled': 'true', 'policy': 'fake_vserver_snappolicy_hourly',
+                'count1': 10, 'schedule1': 'hourly'}),
+            mock.call('snapshot-policy-create', {
+                'enabled': 'true',
+                'policy': 'fake_vserver_snappolicy_6-hourly',
+                'count1': 10, 'schedule1': '6-hourly'}),
+            mock.call('snapshot-policy-create', {
+                'enabled': 'true',
+                'policy': 'fake_vserver_snappolicy_12-hourly',
+                'count1': 10, 'schedule1': '12-hourly'}),
+            mock.call('snapshot-policy-create', {
+                'enabled': 'true',
+                'policy': 'fake_vserver_snappolicy_daily',
+                'count1': 5, 'schedule1': 'daily'}),
+            mock.call('snapshot-policy-create', {
+                'enabled': 'true', 'policy': 'fake_vserver_snappolicy_weekly',
+                'count1': 5, 'schedule1': 'weekly'}),
+            mock.call('snapshot-policy-create', {
+                'enabled': 'true',
+                'policy': 'fake_vserver_snappolicy_monthly',
+                'count1': 5, 'schedule1': 'monthly'}),
             mock.call(
                 'security-certificate-create', certificate_create_args),
             mock.call(
@@ -562,6 +584,28 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.client.send_request.assert_has_calls([
             mock.call('vserver-create', vserver_create_args),
             mock.call('vserver-modify', vserver_modify_args),
+            mock.call('snapshot-policy-create', {
+                'enabled': 'true', 'policy': 'fake_vserver_snappolicy_hourly',
+                'count1': 10, 'schedule1': 'hourly'}),
+            mock.call('snapshot-policy-create', {
+                'enabled': 'true',
+                'policy': 'fake_vserver_snappolicy_6-hourly',
+                'count1': 10, 'schedule1': '6-hourly'}),
+            mock.call('snapshot-policy-create', {
+                'enabled': 'true',
+                'policy': 'fake_vserver_snappolicy_12-hourly',
+                'count1': 10, 'schedule1': '12-hourly'}),
+            mock.call('snapshot-policy-create', {
+                'enabled': 'true',
+                'policy': 'fake_vserver_snappolicy_daily',
+                'count1': 5, 'schedule1': 'daily'}),
+            mock.call('snapshot-policy-create', {
+                'enabled': 'true', 'policy': 'fake_vserver_snappolicy_weekly',
+                'count1': 5, 'schedule1': 'weekly'}),
+            mock.call('snapshot-policy-create', {
+                'enabled': 'true',
+                'policy': 'fake_vserver_snappolicy_monthly',
+                'count1': 5, 'schedule1': 'monthly'}),
             mock.call(
                 'security-certificate-create', certificate_create_args),
             mock.call(

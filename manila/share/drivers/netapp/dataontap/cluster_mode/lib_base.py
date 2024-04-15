@@ -4618,3 +4618,13 @@ class NetAppCmodeFileStorageLibrary(object):
 
         pool_name = share_utils.extract_host(host, level='pool')
         return pool_name in pools
+
+    @na_utils.trace
+    def update_snap_policy(self, share, snap_policy, share_server=None):
+        """Extends size of existing share."""
+        vserver, vserver_client = self._get_vserver(share_server=share_server)
+        share_name = self._get_backend_share_name(share['id'])
+
+        LOG.debug('Updating snapshot policy for share %(name)s to %(pol)s.',
+                  {'name': share_name, 'pol': snap_policy})
+        vserver_client.set_volume_snap_policy(vserver, share_name, snap_policy)

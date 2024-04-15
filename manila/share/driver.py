@@ -3357,3 +3357,12 @@ class ShareDriver(object):
             otherwise.
         """
         raise NotImplementedError()
+
+    def update_snap_policy(self, share, snap_policy, share_server=None):
+        """Update the snap policy for share.
+
+        :param share: Share model
+        :param snap_policy: New snapshot policy
+        :param share_server: Optional -- Share server model
+        """
+        raise NotImplementedError()

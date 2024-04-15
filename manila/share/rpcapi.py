@@ -81,6 +81,7 @@ class ShareAPI(object):
             and share_server_get_progress()
         1.22 - Add update_share_network_security_service() and
             check_update_share_network_security_service()
+        1.23 - Add update_share_snap_policy()
     """
 
     BASE_RPC_API_VERSION = '1.0'
@@ -89,7 +90,7 @@ class ShareAPI(object):
         super(ShareAPI, self).__init__()
         target = messaging.Target(topic=CONF.share_topic,
                                   version=self.BASE_RPC_API_VERSION)
-        self.client = rpc.get_client(target, version_cap='1.22')
+        self.client = rpc.get_client(target, version_cap='1.23')
 
     def create_share_instance(self, context, share_instance, host,
                               request_spec, filter_properties,
@@ -462,3 +463,11 @@ class ShareAPI(object):
             share_network_id=share_network_id,
             new_security_service_id=new_security_service_id,
             current_security_service_id=current_security_service_id)
+
+    def share_update_snap_policy(self, context, share, snap_policy):
+        host = utils.extract_host(share['instance']['host'])
+        call_context = self.client.prepare(server=host, version='1.23')
+        call_context.cast(context,
+                          'share_update_snap_policy',
+                          share_id=share['id'],
+                          snap_policy=snap_policy)

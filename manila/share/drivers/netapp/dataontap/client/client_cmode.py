@@ -312,6 +312,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             aggregate_names=aggregate_names,
             retention_hours=delete_retention_hours
         )
+        self._create_vserver_snapshot_policies(vserver_name)
 
     @na_utils.trace
     def modify_vserver(self, vserver_name, aggregate_names, retention_hours):
@@ -322,6 +323,62 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'vserver-name': vserver_name,
         }
         self.send_request('vserver-modify', modify_args)
+
+    def _create_vserver_snapshot_policies(self, vserver_name):
+        policies_list = [
+            {'schedule': 'hourly', 'count': 10, },
+            {'schedule': '6-hourly', 'count': 10, },
+            {'schedule': '12-hourly', 'count': 10, },
+            {'schedule': 'daily', 'count': 5, },
+            {'schedule': 'weekly', 'count': 5, },
+            {'schedule': 'monthly', 'count': 5, },
+        ]
+        for policy in policies_list:
+            create_args = {
+                'enabled': 'true',
+                'policy': vserver_name + '_snappolicy_' + policy['schedule'],
+                'count1': policy['count'],
+                'schedule1': policy['schedule'],
+            }
+            try:
+                self.send_request('snapshot-policy-create', create_args)
+            except netapp_api.NaApiError as e:
+                LOG.error("Failed to create snapshot policy: %s - %s",
+                          e.code, e.message)
+
+    def set_volume_snap_policy(self, vserver_name, volume_name, snap_policy):
+        if snap_policy not in ['hourly', '6-hourly', '12-hourly',
+                               'daily', 'weekly', 'monthly']:
+            LOG.error('Invalid snap policy %s ', snap_policy)
+            return
+
+        policy_name = vserver_name + '_snappolicy_' + snap_policy
+        api_args = {
+            'query': {
+                'volume-attributes': {
+                    'volume-id-attributes': {
+                        'name': volume_name,
+                    },
+                },
+            },
+            'attributes': {
+                'volume-attributes': {
+                    'volume-snapshot-attributes': {
+                        'snapshot-policy': policy_name,
+                    },
+                },
+            },
+        }
+        result = self.send_request('volume-modify-iter', api_args)
+        failures = result.get_child_content('num-failed')
+        if failures and int(failures) > 0:
+            failure_list = result.get_child_by_name(
+                'failure-list') or netapp_api.NaElement('none')
+            errors = failure_list.get_children()
+            if errors:
+                raise netapp_api.NaApiError(
+                    errors[0].get_child_content('error-code'),
+                    errors[0].get_child_content('error-message'))
 
     @na_utils.trace
     def _modify_security_cert(self, vserver_name, security_cert_expire_days):

@@ -364,3 +364,6 @@ class NetAppCmodeMultiSvmShareDriver(driver.ShareDriver):
         return self.library.check_update_share_server_security_service(
             context, share_server, network_info, new_security_service,
             current_security_service=current_security_service)
+
+    def update_snap_policy(self, share, snap_policy, **kwargs):
+        self.library.update_snap_policy(share, snap_policy, **kwargs)
