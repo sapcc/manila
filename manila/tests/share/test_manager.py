@@ -4271,21 +4271,29 @@ class ShareManagerTestCase(test.TestCase):
             self.assertFalse(db.share_server_get_all_unused_deletable.called)
             self.assertFalse(share_manager.delete_share_server.called)
 
-    @mock.patch.object(db, 'share_server_get_all_unused_deletable',
-                       mock.Mock(return_value=['server1', ]))
     @mock.patch.object(manager.ShareManager, 'delete_share_server',
                        mock.Mock())
     @mock.patch.object(timeutils, 'utcnow', mock.Mock(
                        return_value=datetime.timedelta(minutes=20)))
     def test_delete_free_share_servers(self):
+        fake_servers = [
+            fakes.fake_share_server_get() for _ in range(2)]
+        fake_servers[0]['source_share_server_id'] = None
+        fake_servers[1]['source_share_server_id'] = 'fake_id'
+
+        self.mock_object(db, 'share_server_get', mock.Mock(
+            return_value=fakes.fake_share_server_get()
+        ))
+        self.mock_object(db, 'share_server_get_all_unused_deletable',
+                         mock.Mock(return_value=fake_servers))
+
         self.share_manager.delete_free_share_servers(self.context)
         db.share_server_get_all_unused_deletable.assert_called_once_with(
             self.context,
             self.share_manager.host,
             datetime.timedelta(minutes=10))
         self.share_manager.delete_share_server.assert_called_once_with(
-            self.context,
-            'server1')
+            self.context, fake_servers[0])
         timeutils.utcnow.assert_called_once_with()
 
     @ddt.data("available", "error_deleting")
