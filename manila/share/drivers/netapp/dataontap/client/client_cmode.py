@@ -2996,6 +2996,10 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                          aggregate_name]
             api_args['query']['volume-attributes']['volume-id-attributes'][
                 'aggr-list'] = aggr_list
+        else:
+            # ccloud: empty aggregate name in short time window after
+            # backend svm migration. Only done for flexvols, not flexgroups.
+            is_flexgroup = False
         if language:
             api_args['attributes']['volume-attributes'][
                 'volume-language-attributes']['language'] = language
