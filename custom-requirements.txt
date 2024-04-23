@@ -1,6 +1,7 @@
 raven
 paste
 pyreloader
+crc<7.0.0 # until https://github.com/schlitzered/pyredis/issues/10 has been fixed
 
 git+https://github.com/sapcc/manila-extensions.git@master#egg=manila-extensions
 git+https://github.com/sapcc/openstack-watcher-middleware.git#egg=watcher-middleware
