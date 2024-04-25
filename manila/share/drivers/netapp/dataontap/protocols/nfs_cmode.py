@@ -22,8 +22,10 @@ import six
 
 from manila.common import constants
 from manila import exception
+from manila.share.drivers.netapp.dataontap.client import api as netapp_api
 from manila.share.drivers.netapp.dataontap.protocols import base
 from manila.share.drivers.netapp import utils as na_utils
+from manila import utils
 
 
 LOG = log.getLogger(__name__)
@@ -60,6 +62,9 @@ class NetAppCmodeNFSHelper(base.NetAppBaseHelper):
         :param replica: it is a replica volume (DP type).
         :param is_flexgroup: whether the share is a FlexGroup or not.
         """
+        @utils.retry(retry_param=netapp_api.NaApiError, retries=5)
+        def _get_volume_junction_path(share_name):
+            return self._client.get_volume_junction_path(share_name)
 
         if clear_current_export_policy:
             self._client.clear_nfs_export_policy_for_volume(share_name)
@@ -69,7 +74,7 @@ class NetAppCmodeNFSHelper(base.NetAppBaseHelper):
             volume_info = self._client.get_volume(share_name)
             export_path = volume_info['junction-path']
         else:
-            export_path = self._client.get_volume_junction_path(share_name)
+            export_path = _get_volume_junction_path(share_name)
 
         # Return a callback that may be used for generating export paths
         # for this share.
