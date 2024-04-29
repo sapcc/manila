@@ -1851,11 +1851,16 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                 share_host = share_host.replace(
                     old_aggregate, dest_aggregate)
 
-            export_locations = self._create_export(
-                instance, dest_share_server, dest_vserver, dest_client,
-                clear_current_export_policy=False,
-                ensure_share_already_exists=True,
-                share_host=share_host)
+            try:
+                export_locations = self._create_export(
+                    instance, dest_share_server, dest_vserver, dest_client,
+                    clear_current_export_policy=False,
+                    ensure_share_already_exists=True,
+                    share_host=share_host)
+            except netapp_api.NaApiError as e:
+                LOG.warning("Could not create export for share %s. Reason: %s",
+                            instance['id'], e)
+                export_locations = None
             new_share_data.update({'export_locations': export_locations})
 
             share_updates.update({instance['id']: new_share_data})
