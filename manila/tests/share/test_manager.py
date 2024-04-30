@@ -105,6 +105,7 @@ class ShareManagerTestCase(test.TestCase):
             lockutils, 'lock', fake_utils.get_fake_lock_context())
         self.synchronized_lock_decorator_call = self.mock_object(
             coordination, 'synchronized', mock.Mock(return_value=lambda f: f))
+        self.host = 'host'
 
     def test_share_manager_instance(self):
         fake_service_name = "fake_service"
@@ -3742,17 +3743,19 @@ class ShareManagerTestCase(test.TestCase):
             'share_id': share['id'],
             'share_server_id': share_server['id'],
             'status': 'deferred_deleting',
-            'updated_at': timeutils.utcnow()
+            'updated_at': timeutils.utcnow(),
+            'host': self.host,
         }
-        db_utils.create_share_instance(**kwargs)
+        si_1 = db_utils.create_share_instance(**kwargs)
         kwargs = {
             'id': 2,
             'share_id': share['id'],
             'share_server_id': share_server['id'],
             'status': 'deferred_deleting',
-            'updated_at': timeutils.utcnow()
+            'updated_at': timeutils.utcnow(),
+            'host': self.host,
         }
-        db_utils.create_share_instance(**kwargs)
+        si_2 = db_utils.create_share_instance(**kwargs)
         mins = 20
         if consider_error_deleting:
             mins = 40
@@ -3761,15 +3764,23 @@ class ShareManagerTestCase(test.TestCase):
             'share_id': share['id'],
             'share_server_id': share_server['id'],
             'status': 'error_deferred_deleting',
-            'updated_at': timeutils.utcnow() - datetime.timedelta(minutes=mins)
+            'updated_at': (
+                timeutils.utcnow() - datetime.timedelta(minutes=mins)),
+            'host': self.host,
         }
-        db_utils.create_share_instance(**kwargs)
+        si_3 = db_utils.create_share_instance(**kwargs)
 
         self.mock_object(self.share_manager.db, 'share_server_get',
                          mock.Mock(return_value=share_server))
         self.mock_object(self.share_manager.db, 'share_get',
                          mock.Mock(return_value=share))
         self.mock_object(self.share_manager.db, 'share_instance_delete')
+        self.mock_object(
+            self.share_manager.db, 'share_instances_get_all',
+            mock.Mock(side_effect=[
+                [si_1, si_2],
+                [si_3] if consider_error_deleting else {}]))
+
         self.mock_object(self.share_manager, '_check_delete_share_server')
         self.mock_object(self.share_manager, '_notify_about_share_usage')
         mock_delete_share = self.mock_object(
@@ -3791,7 +3802,8 @@ class ShareManagerTestCase(test.TestCase):
             'share_id': share['id'],
             'share_server_id': share_server['id'],
             'status': 'deferred_deleting',
-            'updated_at': timeutils.utcnow()
+            'updated_at': timeutils.utcnow(),
+            'host': self.host,
         }
         si = db_utils.create_share_instance(**kwargs)
 
@@ -3802,6 +3814,10 @@ class ShareManagerTestCase(test.TestCase):
         self.mock_object(self.share_manager.db, 'share_instance_update')
         mock_delete = self.mock_object(self.share_manager.db,
                                        'share_instance_delete')
+        self.mock_object(
+            self.share_manager.db, 'share_instances_get_all',
+            mock.Mock(return_value=[si]))
+
         self.mock_object(
             self.share_manager.driver, 'delete_share',
             mock.Mock(side_effect=exception.ManilaException))
