@@ -79,6 +79,10 @@ class API(object):
 
     :param configuration: instance of config or config group.
     """
+    retry_exc_tuple = (
+        ks_exec.ConnectFailure,
+        exception.NetworkException
+    )
 
     def __init__(self, config_group_name=None):
         self.config_group_name = config_group_name or 'DEFAULT'
@@ -136,7 +140,7 @@ class API(object):
                                  security_group_ids=security_group_ids,
                                  dhcp_opts=dhcp_opts, **kwargs)
 
-    @utils.retry(retry_param=ks_exec.ConnectFailure, retries=5)
+    @utils.retry(retry_param=retry_exc_tuple, retries=5)
     def _create_port(self, tenant_id, network_id, host_id=None, subnet_id=None,
                      fixed_ip=None, device_owner=None, device_id=None,
                      mac_address=None, port_security_enabled=True,
@@ -217,7 +221,7 @@ class API(object):
         """List ports for the client based on search options."""
         return self.client.list_ports(**search_opts).get('ports')
 
-    @utils.retry(retry_param=ks_exec.ConnectFailure, retries=5)
+    @utils.retry(retry_param=retry_exc_tuple, retries=5)
     def show_port(self, port_id):
         """Return the port for the client given the port id."""
         try:
@@ -232,7 +236,7 @@ class API(object):
         """Get all networks for client."""
         return self.client.list_networks().get('networks')
 
-    @utils.retry(retry_param=ks_exec.ConnectFailure, retries=5)
+    @utils.retry(retry_param=retry_exc_tuple, retries=5)
     def get_network(self, network_uuid):
         """Get specific network for client."""
         try:
