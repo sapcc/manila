@@ -20,9 +20,12 @@ location of the data's source and destination. This includes cloning,
 SnapMirror, and copy-offload as improvements to brute force data transfer.
 """
 
+import datetime
+
 from oslo_config import cfg
 from oslo_log import log
 from oslo_utils import excutils
+from oslo_utils import timeutils
 
 from manila import exception
 from manila.i18n import _
@@ -369,7 +372,37 @@ class DataMotionSession(object):
                                              dest_volume,
                                              clear_checkpoint=False)
 
-    def break_snapmirror(self, source_share_obj, dest_share_obj, mount=True):
+    def check_snapmirror_health(self, source_share_obj, dest_share_obj):
+        """Check if SnapMirror relationship is in sync."""
+        snapmirror = self.get_snapmirrors(source_share_obj, dest_share_obj)[0]
+        if snapmirror.get('relationship-status') != 'idle':
+            reason = "Snapmirror relationship is not idle."
+            return False, reason
+        if snapmirror.get('mirror-state') != 'snapmirrored':
+            reason = "Snapmirror relationship is not snapmirrored."
+            return False, reason
+        last_transfer_error = snapmirror.get('last-transfer-error')
+        if last_transfer_error:
+            reason = (
+                "Snapmirror relationship has last transfer error %s."
+            ) % last_transfer_error
+            return False, reason
+        last_update_timestamp = float(
+            snapmirror.get("last-transfer-end-timestamp", 0)
+        )
+        last_update_iso_time = datetime.datetime.utcfromtimestamp(
+            last_update_timestamp
+        ).isoformat()
+        if timeutils.is_older_than(last_update_iso_time, 300):
+            reason = (
+                "Snapmirror is not up to date. Last update was more than"
+                " 5 minutes ago at %s."
+            ) % last_update_iso_time
+            return False, reason
+        return True, None
+
+    def break_snapmirror(self, source_share_obj, dest_share_obj,
+                         check_health=False, mount=True):
         """Breaks SnapMirror relationship.
 
         1. Quiesce any ongoing snapmirror transfers
@@ -389,6 +422,12 @@ class DataMotionSession(object):
         self.quiesce_then_abort(source_share_obj, dest_share_obj)
 
         # 2. Break SnapMirror
+        if check_health:
+            ok, reason = self.check_snapmirror_health(source_share_obj,
+                                                      dest_share_obj)
+            if not ok:
+                raise exception.ReplicationException(reason=reason)
+
         dest_client.break_snapmirror_vol(src_vserver,
                                          src_volume_name,
                                          dest_vserver,

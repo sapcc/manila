@@ -3124,6 +3124,8 @@ class NetAppCmodeFileStorageLibrary(object):
                 constants.STATUS_ERROR)
             new_active_replica['status'] = constants.STATUS_ERROR
             return [new_active_replica]
+        except exception.ReplicationException as e:
+            LOG.exception("Could not promote replica %s. %s", replica['id'], e)
 
         new_replica_list.append(new_active_replica)
 
@@ -3322,7 +3324,8 @@ class NetAppCmodeFileStorageLibrary(object):
             LOG.warning(msg)
             pass
         # 2. Break SnapMirror
-        dm_session.break_snapmirror(orig_active_replica, replica)
+        dm_session.break_snapmirror(orig_active_replica, replica,
+                                    check_health=True)
 
         # 3. Setup access rules
         new_active_replica = replica.copy()
