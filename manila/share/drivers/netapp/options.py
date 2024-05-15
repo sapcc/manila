@@ -250,12 +250,6 @@ netapp_data_motion_opts = [
                help='An interval in either minutes or hours used used to '
                     'update the SnapMirror relationship. Few valid values '
                     'are: 5min, 30min, hourly etc.'),
-    cfg.IntOpt('netapp_snapmirror_last_transfer_size_limit',
-               min=512,
-               default=1024,  # One MB
-               help='This option set the last transfer size limit (in KB) '
-                    'of snapmirror to decide whether replica is in sync or '
-                    'out of sync.'),
     cfg.IntOpt('netapp_volume_move_cutover_timeout',
                min=0,
                default=3600,  # One Hour,
