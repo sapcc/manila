@@ -2637,7 +2637,8 @@ class ShareManager(manager.SchedulerDependentManager):
     @add_hooks
     @utils.require_driver_initialized
     @locked_share_replica_operation
-    def promote_share_replica(self, context, share_replica_id, share_id=None):
+    def promote_share_replica(self, context, share_replica_id, share_id=None,
+                              force=False):
         """Promote a share replica to active state."""
         context = context.elevated()
         share_replica = self.db.share_replica_get(
@@ -2692,7 +2693,7 @@ class ShareManager(manager.SchedulerDependentManager):
             updated_replica_list = (
                 self.driver.promote_replica(
                     context, replica_list, share_replica, access_rules,
-                    share_server=share_server)
+                    share_server=share_server, force=force)
             )
         except Exception as excep:
             with excutils.save_and_reraise_exception():

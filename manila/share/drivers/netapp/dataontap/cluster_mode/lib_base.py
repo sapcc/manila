@@ -3067,7 +3067,7 @@ class NetAppCmodeFileStorageLibrary(object):
         return constants.REPLICA_STATE_IN_SYNC
 
     def promote_replica(self, context, replica_list, replica, access_rules,
-                        share_server=None):
+                        share_server=None, force=False):
         """Switch SnapMirror relationships and allow r/w ops on replica.
 
         Creates a DataMotion session and switches the direction of the
@@ -3114,7 +3114,7 @@ class NetAppCmodeFileStorageLibrary(object):
             new_active_replica = (
                 self._convert_destination_replica_to_independent(
                     context, dm_session, orig_active_replica, replica,
-                    access_rules, share_server=share_server))
+                    access_rules, share_server=share_server, force=force))
         except exception.StorageCommunicationException:
             LOG.exception("Could not communicate with the backend "
                           "for replica %s during promotion.",
@@ -3289,7 +3289,7 @@ class NetAppCmodeFileStorageLibrary(object):
 
     def _convert_destination_replica_to_independent(
             self, context, dm_session, orig_active_replica, replica,
-            access_rules, share_server=None):
+            access_rules, share_server=None, force=False):
         """Breaks SnapMirror and allows r/w ops on the destination replica.
 
         For promotion, the existing SnapMirror relationship must be broken
@@ -3324,8 +3324,12 @@ class NetAppCmodeFileStorageLibrary(object):
             LOG.warning(msg)
             pass
         # 2. Break SnapMirror
-        dm_session.break_snapmirror(orig_active_replica, replica,
-                                    check_health=True)
+        if force:
+            dm_session.break_snapmirror(orig_active_replica, replica,
+                                        check_health=False)
+        else:
+            dm_session.break_snapmirror(orig_active_replica, replica,
+                                        check_health=True)
 
         # 3. Setup access rules
         new_active_replica = replica.copy()

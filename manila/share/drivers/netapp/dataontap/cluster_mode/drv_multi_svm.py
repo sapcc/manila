@@ -152,10 +152,11 @@ class NetAppCmodeMultiSvmShareDriver(driver.ShareDriver):
                                     replica_snapshots)
 
     def promote_replica(self, context, replica_list, replica, access_rules,
-                        share_server=None):
+                        share_server=None, force=False):
         return self.library.promote_replica(context, replica_list, replica,
                                             access_rules,
-                                            share_server=share_server)
+                                            share_server=share_server,
+                                            force=force)
 
     def update_replica_state(self, context, replica_list, replica,
                              access_rules, replica_snapshots,

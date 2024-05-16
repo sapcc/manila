@@ -30,6 +30,7 @@ from manila import db
 from manila import exception
 from manila.i18n import _
 from manila import share
+from manila import utils
 
 
 LOG = log.getLogger(__name__)
@@ -277,8 +278,11 @@ class ShareReplicationController(wsgi.Controller, wsgi.AdminActionsMixin):
         if replica_state == constants.REPLICA_STATE_ACTIVE:
             return webob.Response(status_int=http_client.OK)
 
+        force = utils.get_bool_from_api_params('force', body, default=False)
+
         try:
-            replica = self.share_api.promote_share_replica(context, replica)
+            replica = self.share_api.promote_share_replica(context, replica,
+                                                           force)
         except exception.ReplicationException as e:
             raise exc.HTTPBadRequest(explanation=six.text_type(e))
         except exception.AdminRequired as e:
