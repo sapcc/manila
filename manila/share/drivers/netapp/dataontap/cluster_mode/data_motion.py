@@ -375,8 +375,8 @@ class DataMotionSession(object):
     def check_snapmirror_health(self, source_share_obj, dest_share_obj):
         """Check if SnapMirror relationship is in sync."""
         snapmirror = self.get_snapmirrors(source_share_obj, dest_share_obj)[0]
-        if snapmirror.get('relationship-status') != 'idle':
-            reason = "Snapmirror relationship is not idle."
+        if snapmirror.get('relationship-status') not in ('idle', 'quiesced'):
+            reason = "Snapmirror relationship is not idle or quiesced."
             return False, reason
         if snapmirror.get('mirror-state') != 'snapmirrored':
             reason = "Snapmirror relationship is not snapmirrored."
@@ -426,7 +426,7 @@ class DataMotionSession(object):
             ok, reason = self.check_snapmirror_health(source_share_obj,
                                                       dest_share_obj)
             if not ok:
-                raise exception.ReplicationException(reason=reason)
+                raise exception.ReplicationUnhealthy(reason=reason)
 
         dest_client.break_snapmirror_vol(src_vserver,
                                          src_volume_name,

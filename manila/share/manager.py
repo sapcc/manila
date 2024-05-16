@@ -2695,6 +2695,23 @@ class ShareManager(manager.SchedulerDependentManager):
                     context, replica_list, share_replica, access_rules,
                     share_server=share_server, force=force)
             )
+        except exception.ReplicationUnhealthy as e:
+            with excutils.save_and_reraise_exception():
+                self.db.share_replica_update(
+                    context,
+                    share_replica["id"],
+                    {
+                        "status": constants.STATUS_ERROR,
+                        "replica_state": constants.STATUS_ERROR,
+                    },
+                )
+                self.message_api.create(
+                    context,
+                    message_field.Action.PROMOTE,
+                    share_replica['project_id'],
+                    resource_type=message_field.Resource.SHARE_REPLICA,
+                    resource_id=share_replica['id'],
+                    exception=e)
         except Exception as excep:
             with excutils.save_and_reraise_exception():
                 # (NOTE) gouthamr: If the driver throws an exception at
