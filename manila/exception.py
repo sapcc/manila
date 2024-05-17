@@ -986,8 +986,10 @@ class ShareCopyDataException(ManilaException):
 class ReplicationException(ManilaException):
     message = _("Unable to perform a replication action: %(reason)s.")
 
+
 class ReplicationUnhealthy(ManilaException):
     message = _("Replication is unhealthy: %(reason)s.")
+
 
 class ShareReplicaNotFound(NotFound):
     message = _("Share Replica %(replica_id)s could not be found.")

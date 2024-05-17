@@ -789,7 +789,7 @@ class API(base.Base):
                                                    share_replica,
                                                    force=force)
 
-    def promote_share_replica(self, context, share_replica, force):
+    def promote_share_replica(self, context, share_replica, force=False):
 
         if share_replica.get('status') != constants.STATUS_AVAILABLE:
             msg = _("Replica %(replica_id)s must be in %(status)s state to be "

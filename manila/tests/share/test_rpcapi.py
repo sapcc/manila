@@ -321,7 +321,8 @@ class ShareRpcAPITestCase(test.TestCase):
         self._test_share_api('promote_share_replica',
                              rpc_method='cast',
                              version='1.8',
-                             share_replica=self.fake_share_replica)
+                             share_replica=self.fake_share_replica,
+                             force=False)
 
     def test_update_share_replica(self):
         self._test_share_api('update_share_replica',
