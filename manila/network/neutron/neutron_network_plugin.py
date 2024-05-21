@@ -297,7 +297,9 @@ class NeutronNetworkPlugin(network.NetworkBaseAPI):
                                                             ip_version}
         raise exception.NetworkBadConfigurationException(reason=msg)
 
-    def deallocate_network(self, context, share_server_id):
+    def deallocate_network(self, context, share_server_id,
+                           share_network=None,
+                           share_network_subnet=None):
         """Deallocate neutron network resources for the given share server.
 
         Delete previously allocated neutron ports, delete manila db
@@ -305,6 +307,8 @@ class NeutronNetworkPlugin(network.NetworkBaseAPI):
 
         :param context: RequestContext object
         :param share_server_id: id of share server
+        :param share_network: share network data
+        :param share_network_subnet: share network subnet data
         :rtype: None
         """
         ports = self.db.network_allocations_get_for_share_server(
@@ -312,6 +316,23 @@ class NeutronNetworkPlugin(network.NetworkBaseAPI):
 
         for port in ports:
             self._delete_port(context, port)
+
+        # It may be possible that there are ports existing without a
+        # corresponding manila network allocation entry in the manila db,
+        # because port create request may have been successfully sent to
+        # neutron, but the response, the created port could not be stored
+        # in manila due to unreachable db
+        if share_network_subnet:
+            ports = self.neutron_api.list_ports(
+                network_id=share_network_subnet['neutron_net_id'],
+                device_owner='manila:share',
+                device_id=share_server_id)
+
+            for port in ports:
+                LOG.debug(f"Deleting orphaned port {port['id']} belonging to "
+                          f"share server {share_server_id} in neutron "
+                          f"network {share_network_subnet['neutron_net_id']}")
+                self._delete_port(context, port, ignore_db=True)
 
     def _get_port_create_args(self, share_server, share_network_subnet,
                               device_owner, count=0):
@@ -355,15 +376,17 @@ class NeutronNetworkPlugin(network.NetworkBaseAPI):
 
         return self.db.network_allocation_create(context, port_dict)
 
-    def _delete_port(self, context, port):
+    def _delete_port(self, context, port, ignore_db=False):
         try:
             self.neutron_api.delete_port(port['id'])
         except exception.NetworkException:
-            self.db.network_allocation_update(
-                context, port['id'], {'status': constants.STATUS_ERROR})
+            if not ignore_db:
+                self.db.network_allocation_update(
+                    context, port['id'], {'status': constants.STATUS_ERROR})
             raise
         else:
-            self.db.network_allocation_delete(context, port['id'])
+            if not ignore_db:
+                self.db.network_allocation_delete(context, port['id'])
 
     def _has_provider_network_extension(self):
         extensions = self.neutron_api.list_extensions()
