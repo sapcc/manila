@@ -4626,7 +4626,18 @@ class ShareManager(manager.SchedulerDependentManager):
                                         {'status': constants.STATUS_DELETING})
             try:
                 LOG.debug("Deleting network of share server '%s'", server_id)
-                self.driver.deallocate_network(context, share_server['id'])
+                share_network_subnet = None
+                share_network = None
+
+                share_network_subnet = share_server['share_network_subnet']
+                if share_network_subnet:
+                    share_network_id = share_network_subnet['share_network_id']
+                    share_network = self.db.share_network_get(
+                        context, share_network_id)
+
+                self.driver.deallocate_network(context, share_server['id'],
+                                               share_network,
+                                               share_network_subnet)
 
                 LOG.debug("Deleting share server '%s'", server_id)
                 security_services = []
