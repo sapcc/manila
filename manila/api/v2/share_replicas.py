@@ -278,7 +278,8 @@ class ShareReplicationController(wsgi.Controller, wsgi.AdminActionsMixin):
         if replica_state == constants.REPLICA_STATE_ACTIVE:
             return webob.Response(status_int=http_client.OK)
 
-        force = utils.get_bool_from_api_params('force', body, default=False)
+        params = body.get('promote') or {}
+        force = utils.get_bool_from_api_params('force', params, default=False)
 
         try:
             replica = self.share_api.promote_share_replica(context, replica,
