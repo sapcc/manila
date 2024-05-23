@@ -3092,20 +3092,33 @@ class NetAppCmodeFileStorageLibrary(object):
         dm_session = data_motion.DataMotionSession()
 
         # SAPCC Get space logical reporting settings from original replica.
+        logical_opts = {}
+        is_logical_space_rep = None
+        effi_opts = {}
+        orig_active_vserver_client = None
         orig_active_vserver = dm_session.get_vserver_from_share(
             orig_active_replica)
         orig_active_replica_backend = share_utils.extract_host(
             orig_active_replica['host'], level='backend_name')
         orig_active_replica_name = self._get_backend_share_name(
             orig_active_replica['id'])
-        orig_active_vserver_client = data_motion.get_client_for_backend(
-            orig_active_replica_backend, vserver_name=orig_active_vserver)
-        logical_opts = self._get_logical_space_options(
-            orig_active_vserver_client, orig_active_replica_name)
-        is_logical_space_reporting = logical_opts['logical_space_reporting']
-        effi_opts = self._get_efficiency_options(orig_active_vserver_client,
-                                                 orig_active_replica_name,
-                                                 extra_logging=True)
+        try:
+            orig_active_vserver_client = data_motion.get_client_for_backend(
+                orig_active_replica_backend, vserver_name=orig_active_vserver)
+        except Exception as e:
+            LOG.exception(
+                f"Could not create client for vserver '{orig_active_vserver}' "
+                f"on backend '{orig_active_replica_backend}' for original "
+                f"active replica '{orig_active_replica['id']}'. "
+                f"error: {e}")
+        if orig_active_vserver_client is not None:
+            logical_opts = self._get_logical_space_options(
+                orig_active_vserver_client, orig_active_replica_name)
+            is_logical_space_rep = logical_opts['logical_space_reporting']
+            effi_opts = self._get_efficiency_options(
+                orig_active_vserver_client,
+                orig_active_replica_name,
+                extra_logging=True)
 
         new_replica_list = []
 
@@ -3146,27 +3159,21 @@ class NetAppCmodeFileStorageLibrary(object):
             # NOTE(felipe_rodrigues): non active DR replica does not have the
             # export location set, so during replica deletion the driver cannot
             # delete the ONTAP export. Clean up it when becoming non active.
-            orig_active_vserver = dm_session.get_vserver_from_share(
-                orig_active_replica)
-            orig_active_replica_backend = (
-                share_utils.extract_host(orig_active_replica['host'],
-                                         level='backend_name'))
-            orig_active_replica_name = self._get_backend_share_name(
-                orig_active_replica['id'])
-            orig_active_vserver_client = data_motion.get_client_for_backend(
-                orig_active_replica_backend, vserver_name=orig_active_vserver)
             orig_active_replica_helper = self._get_helper(orig_active_replica)
             orig_active_replica_helper.set_client(orig_active_vserver_client)
             try:
                 orig_active_replica_helper.cleanup_demoted_replica(
                     orig_active_replica, orig_active_replica_name)
-            except exception.StorageCommunicationException:
+            except Exception as e:
+                # TODO(carthaca): check if update_replica_state could cleanup
+                # if not: create user message
                 LOG.exception(
-                    "Could not cleanup the original active replica export %s.",
-                    orig_active_replica['id'])
+                    f"Could not cleanup the original active replica export "
+                    f"{orig_active_replica['id']}. error: {e}")
 
-            self._unmount_orig_active_replica(orig_active_replica,
-                                              orig_active_vserver)
+            self._unmount_orig_active_replica(orig_active_vserver_client,
+                                              orig_active_replica['id'],
+                                              orig_active_replica_name)
 
         self._handle_qos_on_replication_change(dm_session,
                                                new_active_replica,
@@ -3197,48 +3204,52 @@ class NetAppCmodeFileStorageLibrary(object):
                     f"replica. {e}")
 
         # SAPCC update new replica
-        _, new_active_vserver_client = self._get_vserver(
+        _, new_active_vserver_cli = self._get_vserver(
             share_server=share_server)
         new_active_replica_name = self._get_backend_share_name(
             new_active_replica['id'])
-        try:
-            new_active_vserver_client.update_volume_space_attributes(
-                new_active_replica_name, is_logical_space_reporting)
-        except Exception as e:
-            LOG.exception(
-                f"Could not apply is_logical_space_reporting "
-                f"'{is_logical_space_reporting}' to the promoted replica. {e}")
-        if effi_opts['cross_dedup_disabled']:
+        logical_space_error_msg = (
+            f"Could not apply is_logical_space_rep "
+            f"'{is_logical_space_rep}' to the promoted replica."
+        )
+        if is_logical_space_rep is not None:
             try:
-                new_active_vserver_client.update_volume_efficiency_attributes(
-                    new_active_replica_name, True, True,
-                    cross_dedup_disabled=True)
+                new_active_vserver_cli.update_volume_space_attributes(
+                    new_active_replica_name, is_logical_space_rep)
             except Exception as e:
-                LOG.exception(
-                    f"With efficiency options '{effi_opts}'"
-                    f"could not apply cross_dedup_disabled to the promoted "
-                    f"replica. {e}")
+                LOG.exception(f"{logical_space_error_msg} {e}")
+        else:
+            LOG.exception(logical_space_error_msg)
+
+        effi_opts_error_msg = (
+            f"With efficiency options '{effi_opts}'"
+            f"could not apply cross_dedup_disabled to the promoted "
+            f"replica."
+        )
+        if effi_opts:
+            if effi_opts['cross_dedup_disabled']:
+                try:
+                    new_active_vserver_cli.update_volume_efficiency_attributes(
+                        new_active_replica_name, True, True,
+                        cross_dedup_disabled=True)
+                except Exception as e:
+                    LOG.exception(f"{effi_opts_error_msg} {e}")
+        else:
+            LOG.exception(effi_opts_error_msg)
 
         return new_replica_list
 
-    def _unmount_orig_active_replica(self, orig_active_replica,
-                                     orig_active_vserver=None):
-        orig_active_replica_backend = (
-            share_utils.extract_host(orig_active_replica['host'],
-                                     level='backend_name'))
-        orig_active_vserver_client = data_motion.get_client_for_backend(
-            orig_active_replica_backend,
-            vserver_name=orig_active_vserver)
-        share_name = self._get_backend_share_name(
-            orig_active_replica['id'])
+    def _unmount_orig_active_replica(self, orig_active_vserver_client,
+                                     replica_id, share_name):
         try:
             orig_active_vserver_client.unmount_volume(share_name,
                                                       force=True)
             LOG.info("Unmount of the original active replica %s successful.",
-                     orig_active_replica['id'])
-        except exception.StorageCommunicationException:
-            LOG.exception("Could not unmount the original active replica %s.",
-                          orig_active_replica['id'])
+                     replica_id)
+        except Exception as e:
+            LOG.exception(
+                f"Could not unmount the original active replica "
+                f"{replica_id}. error: {e}")
 
     def _handle_qos_on_replication_change(self, dm_session, new_active_replica,
                                           orig_active_replica, is_dr,
@@ -3254,7 +3265,13 @@ class NetAppCmodeFileStorageLibrary(object):
         qos_specs = self._get_normalized_qos_specs(extra_specs)
 
         if is_dr and qos_specs:
-            dm_session.remove_qos_on_old_active_replica(orig_active_replica)
+            try:
+                dm_session.remove_qos_on_old_active_replica(
+                    orig_active_replica)
+            except Exception as e:
+                LOG.exception(
+                    f"Could not remove qos on the original active replica "
+                    f"{orig_active_replica['id']}. error: {e}")
 
         if qos_specs:
             # Check if a QoS policy already exists for the promoted replica,
@@ -3373,24 +3390,17 @@ class NetAppCmodeFileStorageLibrary(object):
                                                 new_source_replica,
                                                 replica_list,
                                                 is_flexgroup=is_flexgroup)
-        except exception.StorageCommunicationException:
+        # Catch everything! The original source may be down,
+        # but in this disaster scenario we still want to continue
+        except Exception as e:
             replica['status'] = constants.STATUS_ERROR
             replica['replica_state'] = constants.STATUS_ERROR
             if is_dr:
                 replica['export_locations'] = []
-            msg = ("Failed to change replica (%s) to a SnapMirror "
-                   "destination. Replica backend is unreachable.")
-
-            LOG.exception(msg, replica['id'])
-            return replica
-        except netapp_api.NaApiError:
-            replica['status'] = constants.STATUS_ERROR
-            replica['replica_state'] = constants.STATUS_ERROR
-            if is_dr:
-                replica['export_locations'] = []
-            msg = ("Failed to change replica (%s) to a SnapMirror "
-                   "destination.")
-            LOG.exception(msg, replica['id'])
+            msg = (f"Failed to change replica {replica['id']} to a SnapMirror "
+                   f"destination. {e}")
+            LOG.exception(msg)
+            # TODO(carthaca): maybe create user message ??
             return replica
 
         replica['replica_state'] = constants.REPLICA_STATE_OUT_OF_SYNC
