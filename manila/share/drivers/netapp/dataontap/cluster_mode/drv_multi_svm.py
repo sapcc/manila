@@ -38,6 +38,7 @@ class NetAppCmodeMultiSvmShareDriver(driver.ShareDriver):
         # NetApp driver supports updating security service for in use share
         # networks.
         self.security_service_update_support = True
+        self.revert_to_snapshot_use_max_size = True
         self.dhss_mandatory_security_service_association = {
             'nfs': None,
             'cifs': ['active_directory', ],
