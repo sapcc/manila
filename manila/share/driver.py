@@ -2069,7 +2069,7 @@ class ShareDriver(object):
         raise NotImplementedError()
 
     def promote_replica(self, context, replica_list, replica, access_rules,
-                        share_server=None):
+                        share_server=None, force=False):
         """Promote a replica to 'active' replica state.
 
         .. note::

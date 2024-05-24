@@ -597,9 +597,20 @@ class ShareReplicasApiTest(test.TestCase):
         self.mock_policy_check.assert_called_once_with(
             self.member_context, self.resource_name, 'promote')
 
-    @ddt.data(PRE_GRADUATION_VERSION, GRADUATION_VERSION)
-    def test_promote(self, microversion):
-        body = {'promote': None}
+    @ddt.data(
+        (PRE_GRADUATION_VERSION, None),
+        (GRADUATION_VERSION, False),
+        (GRADUATION_VERSION, True),
+    )
+    @ddt.unpack
+    def test_promote(self, microversion, force):
+        if force is None:
+            force = False
+            body = {"promote": None}
+        elif force is False:
+            body = {"promote": {"force": False}}
+        else:
+            body = {"promote": {"force": True}}
         replica, expected_replica = self._get_fake_replica(
             replica_state=constants.REPLICA_STATE_IN_SYNC,
             microversion=microversion)
@@ -615,9 +626,10 @@ class ShareReplicasApiTest(test.TestCase):
         resp = self.controller.promote(req, replica['id'], body)
 
         self.assertEqual(expected_replica, resp['share_replica'])
-        self.assertTrue(mock_api_promote_replica_call.called)
         self.mock_policy_check.assert_called_once_with(
             context, self.resource_name, 'promote')
+        mock_api_promote_replica_call.assert_called_once_with(
+            context, replica, force)
 
     @ddt.data('index', 'detail', '_show', '_create', '_delete_share_replica',
               '_promote', 'reset_replica_state', 'reset_status', '_resync')

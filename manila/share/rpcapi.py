@@ -377,13 +377,14 @@ class ShareAPI(object):
                           share_id=share_replica['share_id'],
                           force=force)
 
-    def promote_share_replica(self, context, share_replica):
+    def promote_share_replica(self, context, share_replica, force=False):
         host = utils.extract_host(share_replica['host'])
         call_context = self.client.prepare(server=host, version='1.8')
         call_context.cast(context,
                           'promote_share_replica',
                           share_replica_id=share_replica['id'],
-                          share_id=share_replica['share_id'])
+                          share_id=share_replica['share_id'],
+                          force=force)
 
     def update_share_replica(self, context, share_replica):
         host = utils.extract_host(share_replica['host'])
