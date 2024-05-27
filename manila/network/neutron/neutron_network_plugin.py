@@ -298,8 +298,7 @@ class NeutronNetworkPlugin(network.NetworkBaseAPI):
         raise exception.NetworkBadConfigurationException(reason=msg)
 
     def deallocate_network(self, context, share_server_id,
-                           share_network=None,
-                           share_network_subnet=None):
+                           share_network=None, share_network_subnet=None):
         """Deallocate neutron network resources for the given share server.
 
         Delete previously allocated neutron ports, delete manila db
@@ -323,11 +322,15 @@ class NeutronNetworkPlugin(network.NetworkBaseAPI):
         # neutron, but the response, the created port could not be stored
         # in manila due to unreachable db
         if share_network_subnet:
-            ports = self.neutron_api.list_ports(
-                network_id=share_network_subnet['neutron_net_id'],
-                device_owner='manila:share',
-                device_id=share_server_id)
-
+            ports = []
+            try:
+                ports = self.neutron_api.list_ports(
+                    network_id=share_network_subnet['neutron_net_id'],
+                    device_owner='manila:share',
+                    device_id=share_server_id)
+            except exception.NetworkException:
+                LOG.warning("Failed to list ports using neutron API during "
+                            "deallocate_network.")
             for port in ports:
                 LOG.debug(f"Deleting orphaned port {port['id']} belonging to "
                           f"share server {share_server_id} in neutron "
