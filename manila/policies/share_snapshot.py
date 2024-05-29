@@ -283,6 +283,10 @@ share_snapshot_policies = [
             {
                 'method': 'GET',
                 'path': '/v2/snapshots',
+            },
+            {
+                'method': 'GET',
+                'path': '/snapshots/{snapshot_id}'
             }
         ],
         deprecated_rule=deprecated_list_snapshots_in_deferred_deletion_states
