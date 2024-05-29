@@ -663,6 +663,11 @@ shares_policies = [
                 'method': 'GET',
                 'path': '/v2/shares',
             },
+            {
+                'method': 'GET',
+                'path': '/shares/{share_id}',
+            }
+
         ],
         deprecated_rule=deprecated_list_shares_in_deferred_deletion_states
     ),
