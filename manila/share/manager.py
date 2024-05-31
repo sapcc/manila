@@ -3606,6 +3606,21 @@ class ShareManager(manager.SchedulerDependentManager):
         self._notify_about_share_usage(context, share,
                                        share_instance, "delete.start")
 
+        if deferred_delete:
+            try:
+                LOG.info(
+                    "Share instance %s has been added to a deferred deletion "
+                    "queue and will be deleted during the next iteration of "
+                    "the periodic deletion task", share_instance_id
+                )
+                self.db.update_share_instance_quota_usages(
+                    context, share_instance_id)
+            except Exception:
+                LOG.warning(
+                    "Error occured during quota usage update. Administrator "
+                    "must rectify quotas.")
+            return
+
         try:
             self.access_helper.update_access_rules(
                 context,
@@ -3636,22 +3651,6 @@ class ShareManager(manager.SchedulerDependentManager):
                     resource_type=message_field.Resource.SHARE,
                     resource_id=share_instance_id,
                     exception=excep)
-
-        if deferred_delete:
-            try:
-                LOG.info(
-                    "Share instance %s has been added to a deferred deletion "
-                    "queue and will be deleted during the next iteration of "
-                    "the periodic deletion task", share_instance_id
-                )
-                self.db.update_share_instance_quota_usages(
-                    context, share_instance_id)
-                return
-            except Exception:
-                LOG.warning(
-                    "Error occured during quota usage update. Administrator "
-                    "must rectify quotas.")
-                return
 
         try:
             scheduled_at = share_instance.get('scheduled_at')
@@ -3777,7 +3776,39 @@ class ShareManager(manager.SchedulerDependentManager):
                     share_instance_id
                 )
             )
+
+            snap_instances = (
+                self.db.share_snapshot_instance_get_all_with_filters(
+                    ctxt, {'share_instance_ids': share_instance_id}))
+            if snap_instances:
+                LOG.warning("Snapshot instances are present for the "
+                            "share instance: %s.", share_instance_id)
+                continue
+
             try:
+                self.access_helper.update_access_rules(
+                    ctxt,
+                    share_instance_id,
+                    delete_all_rules=True,
+                    share_server=share_server
+                )
+            except Exception:
+                msg = ("The driver was unable to delete access rules "
+                       "for the instance: %s.")
+                LOG.error(msg, share_instance_id)
+                self.db.share_instance_update(
+                    ctxt,
+                    share_instance_id,
+                    {'status': constants.STATUS_ERROR_DEFERRED_DELETING})
+                continue
+
+            try:
+                scheduled_at = share_instance.get('scheduled_at')
+                terminated_at = share_instance.get('terminated_at')
+                if scheduled_at and terminated_at:
+                    duration = terminated_at - scheduled_at
+                    share_instance.update(
+                        {'duration_seconds': duration.total_seconds()})
                 self.driver.delete_share(ctxt, share_instance,
                                          share_server=share_server)
             except exception.ShareResourceNotFound:
