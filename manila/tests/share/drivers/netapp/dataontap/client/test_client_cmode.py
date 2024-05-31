@@ -2479,7 +2479,6 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         self.mock_object(self.client, 'send_request')
         self.mock_object(self.vserver_client, 'configure_active_directory')
-        self.mock_object(self.vserver_client, 'configure_cifs_options')
 
         self.client.setup_security_services([fake.CIFS_SECURITY_SERVICE],
                                             self.vserver_client,
@@ -2501,8 +2500,6 @@ class NetAppClientCmodeTestCase(test.TestCase):
             mock.call('vserver-modify', vserver_modify_args)])
         self.vserver_client.configure_active_directory.assert_has_calls([
             mock.call(fake.CIFS_SECURITY_SERVICE, fake.VSERVER_NAME, False)])
-        self.vserver_client.configure_cifs_options.assert_has_calls([
-            mock.call(fake.CIFS_SECURITY_SERVICE)])
 
     def test_setup_security_services_kerberos(self):
 
