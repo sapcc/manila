@@ -316,7 +316,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                     else:
                         lifs = vserver_client.get_network_interfaces()
                         for lif in lifs:
-                            self._client.delete_network_interface(
+                            self._client.disable_network_interface(
                                 vserver_name, lif['interface-name'])
 
     def _setup_network_for_vserver(self, vserver_name, vserver_client,
