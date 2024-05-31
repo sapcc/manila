@@ -5574,6 +5574,10 @@ def count_share_group_snapshot_members_in_share(context, share_id,
             models.ShareSnapshotInstance.share_instance_id),
     ).filter(
         models.ShareInstance.share_id == share_id,
+        and_(models.ShareSnapshotInstance.status != (
+            constants.STATUS_DEFERRED_DELETING),
+            models.ShareSnapshotInstance.status != (
+                constants.STATUS_ERROR_DEFERRED_DELETING))
     ).count()
 
 

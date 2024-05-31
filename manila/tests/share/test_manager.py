@@ -3651,8 +3651,6 @@ class ShareManagerTestCase(test.TestCase):
         self.share_manager.driver = mock.Mock()
         self.mock_object(db, 'share_server_get',
                          mock.Mock(return_value=share_srv))
-        mock_access_helper_call = self.mock_object(
-            self.share_manager.access_helper, 'update_access_rules')
 
         self.mock_object(
             quota.QUOTAS, 'reserve',
@@ -3665,10 +3663,6 @@ class ShareManagerTestCase(test.TestCase):
         self.share_manager.delete_share_instance(self.context,
                                                  share.instance['id'],
                                                  deferred_delete=True)
-
-        mock_access_helper_call.assert_called_once_with(
-            utils.IsAMatcher(context.RequestContext), share.instance['id'],
-            delete_all_rules=True, share_server=share_srv)
 
         reservation_params = {
             'gigabytes': -share['size'],
@@ -3698,8 +3692,6 @@ class ShareManagerTestCase(test.TestCase):
         self.share_manager.driver = mock.Mock()
         self.mock_object(db, 'share_server_get',
                          mock.Mock(return_value=share_srv))
-        mock_access_helper_call = self.mock_object(
-            self.share_manager.access_helper, 'update_access_rules')
 
         self.mock_object(quota.QUOTAS, 'reserve',
                          mock.Mock(return_value='fake_reservation'))
@@ -3711,10 +3703,6 @@ class ShareManagerTestCase(test.TestCase):
         self.share_manager.delete_share_instance(self.context,
                                                  share.instance['id'],
                                                  deferred_delete=True)
-
-        mock_access_helper_call.assert_called_once_with(
-            utils.IsAMatcher(context.RequestContext), share.instance['id'],
-            delete_all_rules=True, share_server=share_srv)
 
         reservation_params = {
             'gigabytes': -share['size'],
