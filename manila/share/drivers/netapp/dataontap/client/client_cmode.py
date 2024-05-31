@@ -1695,10 +1695,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                                               timeout=timeout)
 
             elif security_service['type'].lower() == 'active_directory':
-                vserver_client.configure_cifs_encryption()
                 vserver_client.configure_active_directory(security_service,
                                                           vserver_name)
-                vserver_client.configure_cifs_options(security_service)
 
             elif security_service['type'].lower() == 'kerberos':
                 vserver_client.create_kerberos_realm(security_service)
@@ -1953,7 +1951,11 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         """Configures AD on Vserver."""
         self.configure_certificates()
         self.configure_cifs_encryption()
+        # below order is important:
+        # having a preferred dc is a prerequisite for setting the options
+        # to disable server-discovery-mode
         self.set_preferred_dc(security_service)
+        self.configure_cifs_options(security_service)
 
         cifs_server = self._get_cifs_server_name(vserver_name)
 
@@ -1970,10 +1972,16 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         if security_service.get('defaultadsite', None):
             api_args['default-site'] = security_service['defaultadsite']
 
-        for attempt in range(6):
+        # we try 3 times for each set of configurations with wait time of 3
+        # seconds inbetween
+        # config set 1 (attempt 0-2):  secure, with pref dc/site (if set)
+        # config set 2 (attempt 3-5):  insecure, with pref dc/site (if set)
+        # config set 3 (attempt 6-8):  insecure, with dc discovery mode 'all'
+        # config set 4 (attempt 9-11): secure, with dc discovery mode 'all'
+        for attempt in range(12):
             try:
-                LOG.debug("Trying to setup CIFS server with args: %s",
-                          api_args)
+                LOG.debug(f"Attempt ({attempt}): Trying to setup CIFS server "
+                          f"with args: {api_args}")
                 self.send_request('cifs-server-create', api_args)
                 return
             except netapp_api.NaApiError as e:
@@ -1981,8 +1989,14 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 time.sleep(3)
                 if attempt == 2:
                     self.configure_cifs_encryption(secure=False)
+                if attempt == 5:
+                    # cifs-domain-server-discovery-mode 'all'
+                    self.configure_cifs_options()
+                    self.remove_preferred_dcs(security_service)
+                if attempt == 8:
+                    self.configure_cifs_encryption(secure=True)
                 continue
-        msg = _('Cannot setup CIFS server after 6 attempts.')
+        msg = _('Cannot setup CIFS server after 12 attempts.')
         raise exception.NetAppException(msg)
 
     @na_utils.trace
@@ -2348,7 +2362,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             raise exception.NetAppException(msg % e.message)
 
     @na_utils.trace
-    def configure_cifs_options(self, security_service):
+    def configure_cifs_options(self, security_service={}):
         if not self.features.CIFS_LARGE_MTU:
             api_args = {
                 'is-large-mtu-enabled': 'true'
@@ -2394,11 +2408,21 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         if self.features.CIFS_DC_ADD_SKIP_CHECK:
             api_args['skip-config-validation'] = 'false'
 
-        try:
-            self.send_request('cifs-domain-preferred-dc-add', api_args)
-        except netapp_api.NaApiError as e:
-            msg = _("Failed to set preferred DC. %s")
-            raise exception.NetAppException(msg % e.message)
+        for attempt in range(3):
+            try:
+                self.send_request('cifs-domain-preferred-dc-add', api_args)
+                return
+            except netapp_api.NaApiError as e:
+                LOG.debug("Failed to set preferred DC. %s", e.message)
+                time.sleep(3)
+                if attempt == 1:
+                    # configuration is being used later
+                    # i.e. validation happens implicitly anyhow
+                    api_args['skip-config-validation'] = 'true'
+                continue
+
+        msg = _('Failed to set preferred DC after 3 attempts.')
+        raise exception.NetAppException(msg)
 
     @na_utils.trace
     def remove_preferred_dcs(self, security_service):
