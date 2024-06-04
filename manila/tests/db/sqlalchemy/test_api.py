@@ -469,7 +469,7 @@ class ShareDatabaseAPITestCase(test.TestCase):
     @ddt.data({'with_share_data': True, 'status': constants.STATUS_AVAILABLE},
               {'with_share_data': False, 'status': None})
     @ddt.unpack
-    def test_share_instance_get_all_by_host(self, with_share_data, status):
+    def test_share_instances_get_all_by_host(self, with_share_data, status):
         kwargs = {'status': status} if status else {}
         db_utils.create_share(**kwargs)
         instances = db_api.share_instances_get_all_by_host(
@@ -487,7 +487,7 @@ class ShareDatabaseAPITestCase(test.TestCase):
         else:
             self.assertNotIn('share_proto', instance)
 
-    def test_share_instance_get_all_by_host_not_found_exception(self):
+    def test_share_instances_get_all_by_host_not_found_exception(self):
         self.skipTest('ccloud: invalid test due to pull request '
                       'https://github.com/sapcc/manila/pull/6')
         db_utils.create_share()
@@ -498,7 +498,7 @@ class ShareDatabaseAPITestCase(test.TestCase):
 
         self.assertEqual(0, len(instances))
 
-    def test_share_instance_get_all_by_share_group(self):
+    def test_share_instances_get_all_by_share_group(self):
         group = db_utils.create_share_group()
         db_utils.create_share(share_group_id=group['id'])
         db_utils.create_share()
@@ -512,7 +512,7 @@ class ShareDatabaseAPITestCase(test.TestCase):
         self.assertEqual('share-%s' % instance['id'], instance['name'])
 
     @ddt.data('id', 'path')
-    def test_share_instance_get_all_by_export_location(self, type):
+    def test_share_instances_get_all_by_export_location(self, type):
         share = db_utils.create_share()
         initial_location = ['fake_export_location']
         db_api.share_export_locations_update(self.ctxt, share.instance['id'],
@@ -534,7 +534,7 @@ class ShareDatabaseAPITestCase(test.TestCase):
 
         self.assertEqual('share-%s' % instance['id'], instance['name'])
 
-    def test_share_instance_get_all_by_is_soft_deleted(self):
+    def test_share_instances_get_all_by_is_soft_deleted(self):
         db_utils.create_share()
         db_utils.create_share(is_soft_deleted=True)
 
@@ -546,7 +546,7 @@ class ShareDatabaseAPITestCase(test.TestCase):
 
         self.assertEqual('share-%s' % instance['id'], instance['name'])
 
-    def test_share_instance_get_all_by_status(self):
+    def test_share_instances_get_all_by_status(self):
         share = db_utils.create_share()
         db_utils.create_share_instance(
             share_id=share['id'], status='creating')
@@ -558,7 +558,7 @@ class ShareDatabaseAPITestCase(test.TestCase):
             self.ctxt, filters={'status': 'error_deferred_deleting'})
         self.assertEqual(1, len(instances))
 
-    def test_share_instance_get_all_by_ids(self):
+    def test_share_instances_get_all_by_ids(self):
         fake_share = db_utils.create_share()
         expected_share_instance = db_utils.create_share_instance(
             share_id=fake_share['id'])
