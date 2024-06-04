@@ -1989,7 +1989,7 @@ class ShareAPITestCase(test.TestCase):
 
         fake_share_instance = db_utils.create_share_instance(
             share_id=fake_share['id'])
-        share_instance_get_all_mock = self.mock_object(
+        share_instances_get_all_mock = self.mock_object(
             db_api, 'share_instances_get_all_by_share_server',
             mock.Mock(return_value=fake_share_instance)
         )
@@ -1998,7 +1998,7 @@ class ShareAPITestCase(test.TestCase):
                           self.api.unmanage_share_server,
                           self.context,
                           fake_share_server, True)
-        share_instance_get_all_mock.assert_called_once_with(
+        share_instances_get_all_mock.assert_called_once_with(
             self.context, fake_share_server['id']
         )
 
@@ -2006,7 +2006,7 @@ class ShareAPITestCase(test.TestCase):
         fake_share_server = db_utils.create_share_server()
         fake_share_groups = db_utils.create_share_group()
 
-        share_instance_get_all_mock = self.mock_object(
+        share_instances_get_all_mock = self.mock_object(
             db_api, 'share_instances_get_all_by_share_server',
             mock.Mock(return_value={})
         )
@@ -2019,7 +2019,7 @@ class ShareAPITestCase(test.TestCase):
                           self.api.unmanage_share_server,
                           self.context,
                           fake_share_server, True)
-        share_instance_get_all_mock.assert_called_once_with(
+        share_instances_get_all_mock.assert_called_once_with(
             self.context, fake_share_server['id']
         )
         group_get_all_mock.assert_called_once_with(
