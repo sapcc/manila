@@ -2239,14 +2239,24 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         for dns_ip in dns_ips:
             api_args['name-servers'].append({'ip-address': dns_ip})
 
-        try:
-            if current_dns_config:
-                self.send_request('net-dns-modify', api_args)
-            else:
-                self.send_request('net-dns-create', api_args)
-        except netapp_api.NaApiError as e:
-            msg = _("Failed to configure DNS. %s")
-            raise exception.NetAppException(msg % e.message)
+        for attempt in range(3):
+            try:
+                if current_dns_config:
+                    self.send_request('net-dns-modify', api_args)
+                else:
+                    self.send_request('net-dns-create', api_args)
+                return
+            except netapp_api.NaApiError as e:
+                LOG.debug("Failed to configure DNS. %s", e.message)
+                time.sleep(3)
+                if attempt == 1:
+                    # configuration is being used later
+                    # i.e. validation happens implicitly anyhow
+                    api_args['skip-config-validation'] = 'true'
+                continue
+
+        msg = _('Failed to configure DNS after 3 attempts.')
+        raise exception.NetAppException(msg)
 
     @na_utils.trace
     def get_dns_config(self):
@@ -2301,11 +2311,21 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         else:
             api_name, api_args = 'net-dns-create', api_args
 
-        try:
-            self.send_request(api_name, api_args)
-        except netapp_api.NaApiError as e:
-            msg = _("Failed to update DNS configuration. %s")
-            raise exception.NetAppException(msg % e.message)
+        for attempt in range(3):
+            try:
+                self.send_request(api_name, api_args)
+                return
+            except netapp_api.NaApiError as e:
+                LOG.debug("Failed to update DNS configuration. %s", e.message)
+                time.sleep(3)
+                if attempt == 1:
+                    # configuration is being used later
+                    # i.e. validation happens implicitly anyhow
+                    api_args['skip-config-validation'] = 'true'
+                continue
+
+        msg = _('Failed to update DNS configuration after 3 attempts.')
+        raise exception.NetAppException(msg)
 
     @na_utils.trace
     def configure_certificates(self):
