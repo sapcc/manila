@@ -1952,7 +1952,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                 self._setup_networking_for_destination_vserver(
                     dest_client, src_vserver, new_network_alloc)
 
-                server_backend_details.pop('ports')
+                server_backend_details.pop('ports', None)
                 ports = {}
                 for allocation in dest_share_server['network_allocations']:
                     ports[allocation['id']] = allocation['ip_address']
