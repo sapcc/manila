@@ -750,8 +750,10 @@ class NeutronBindNetworkPlugin(NeutronNetworkPlugin):
     def cutover_network_allocations(self, context, src_share_server,
                                     dest_share_server):
         physnet = self.config.neutron_physical_net_name
-        src_host = share_utils.extract_host(src_share_server['host'], 'host')
-        dest_host = share_utils.extract_host(dest_share_server['host'], 'host')
+        src_host = self.db.share_network_subnet_get(
+            context, src_share_server['share_network_subnet_id']
+        )['neutron_net_id']
+        dest_host = self.config.neutron_host_id
 
         active_allocations = (
             self.db.network_allocations_get_for_share_server(
