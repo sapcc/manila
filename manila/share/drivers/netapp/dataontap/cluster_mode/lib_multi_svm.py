@@ -589,6 +589,12 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             vlan_id = None
 
         def _delete_vserver_without_lock():
+            # we already deleted the neutron network allocations,
+            # make sure those are no longer used
+            for interface in network_interfaces:
+                vserver_client.disable_network_interface(
+                    vserver, interface['interface-name'])
+
             # NOTE(dviroel): always delete all policies before deleting the
             # vserver
             for policy in snapmirror_policies:

@@ -135,7 +135,7 @@ CDOT_CLONE_CHILDREN = [
 ]
 
 NETWORK_INTERFACES = [{
-    'interface_name': 'fake_interface',
+    'interface-name': 'fake_interface',
     'address': IP_ADDRESS,
     'vserver': VSERVER_NAME,
     'netmask': NETMASK,
@@ -146,7 +146,7 @@ NETWORK_INTERFACES = [{
 
 NETWORK_INTERFACES_MULTIPLE = [
     {
-        'interface_name': 'fake_interface',
+        'interface-name': 'fake_interface',
         'address': IP_ADDRESS,
         'vserver': VSERVER_NAME,
         'netmask': NETMASK,
@@ -155,7 +155,7 @@ NETWORK_INTERFACES_MULTIPLE = [
         'home-port': VLAN_PORT,
     },
     {
-        'interface_name': 'fake_interface_2',
+        'interface-name': 'fake_interface_2',
         'address': '10.10.12.10',
         'vserver': VSERVER_NAME,
         'netmask': NETMASK,
