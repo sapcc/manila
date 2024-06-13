@@ -317,6 +317,9 @@ class NeutronNetworkPlugin(network.NetworkBaseAPI):
                 device_id=share_server_id)
 
             for port in ports:
+                LOG.debug(f"Deleting orphaned port {port['id']} belonging to "
+                          f"share server {share_server_id} in neutron "
+                          f"network {share_network_subnet['neutron_net_id']}")
                 self._delete_port(context, port, ignore_db=True)
 
     def _get_port_create_args(self, share_server, share_network_subnet,
