@@ -592,8 +592,9 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             # we already deleted the neutron network allocations,
             # make sure those are no longer used
             for interface in network_interfaces:
-                vserver_client.disable_network_interface(
-                    vserver, interface['interface-name'])
+                if interface['administrative-status'] != 'down':
+                    vserver_client.disable_network_interface(
+                        vserver, interface['interface-name'])
 
             # NOTE(dviroel): always delete all policies before deleting the
             # vserver
