@@ -3847,11 +3847,14 @@ class ShareManager(manager.SchedulerDependentManager):
         for server in servers:
             src_server_id = server['source_share_server_id']
             if src_server_id:
-                src_server = self.db.share_server_get(ctxt, src_server_id)
-                if src_server:
+                try:
+                    self.db.share_server_get(ctxt, src_server_id)
+                except exception.ShareServerNotFound:
+                    pass
+                else:
                     msg = ("Share server %s has source share server %s."
                            "Skipping deletion.")
-                    LOG.warning(msg, server['id'], src_server_id)
+                    LOG.error(msg, server['id'], src_server_id)
                     continue
 
             dest_servers = self.db.share_server_get_all_with_filters(ctxt, {
@@ -3861,7 +3864,7 @@ class ShareManager(manager.SchedulerDependentManager):
                 dest_server_id = dest_servers[0]['id']
                 msg = ("Share server %s has existing destination share "
                        "servers %s. Skipping deletion.")
-                LOG.warning(msg, server['id'], dest_server_id)
+                LOG.error(msg, server['id'], dest_server_id)
                 continue
 
             self.delete_share_server(ctxt, server)
