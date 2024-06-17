@@ -4633,9 +4633,10 @@ class ShareManager(manager.SchedulerDependentManager):
     @add_hooks
     @utils.require_driver_initialized
     def delete_share_server(self, context, share_server):
+        subnet_id = share_server['share_network_subnet_id']
 
         @utils.synchronized(
-            "share_manager_%s" % share_server['share_network_subnet_id'])
+            "share_manager_%s" % subnet_id)
         def _wrapped_delete_share_server():
             # NOTE(vponomaryov): Verify that there are no dependent shares.
             # Without this verification we can get here exception in next case:
@@ -4657,18 +4658,20 @@ class ShareManager(manager.SchedulerDependentManager):
                                         {'status': constants.STATUS_DELETING})
             try:
                 LOG.debug("Deleting network of share server '%s'", server_id)
-                share_network_subnet = None
-                share_network = None
-
-                share_network_subnet = share_server['share_network_subnet']
-                if share_network_subnet:
-                    share_network_id = share_network_subnet['share_network_id']
-                    share_network = self.db.share_network_get(
-                        context, share_network_id)
-
+                share_net = None
+                share_net_subnet = None
+                if subnet_id:
+                    try:
+                        share_net_subnet = self.db.share_network_subnet_get(
+                            context, subnet_id)
+                        share_net = self.db.share_network_get(
+                            context, share_net_subnet['share_network_id'])
+                    except Exception:
+                        LOG.warning('Share network subnet not found during '
+                                    'deletion of share server.')
                 self.driver.deallocate_network(context, share_server['id'],
-                                               share_network,
-                                               share_network_subnet)
+                                               share_net,
+                                               share_net_subnet)
 
                 LOG.debug("Deleting share server '%s'", server_id)
                 security_services = []
