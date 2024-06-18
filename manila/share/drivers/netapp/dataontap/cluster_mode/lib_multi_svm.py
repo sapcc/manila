@@ -593,7 +593,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             # make sure those are no longer used
             for interface in network_interfaces:
                 if interface['administrative-status'] != 'down':
-                    vserver_client.disable_network_interface(
+                    self._client.disable_network_interface(
                         vserver, interface['interface-name'])
 
             # NOTE(dviroel): always delete all policies before deleting the
