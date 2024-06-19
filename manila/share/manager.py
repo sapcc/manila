@@ -5706,18 +5706,6 @@ class ShareManager(manager.SchedulerDependentManager):
                 service['availability_zone_id'], dest_host,
                 create_on_backend=create_server_on_backend)
 
-            if extended_allocs:
-                # NOTE(sapcc) The destination share server is created, so
-                # update extended network allocations with destination share
-                # server id.
-                for alloc in extended_allocs:
-                    alloc['share_server_id'] = dest_share_server['id']
-                    self.db.network_allocation_update(context, alloc['id'],
-                                                      alloc)
-                source_share_server['network_allocations'] = (
-                    self.db.network_allocations_get_for_share_server(
-                        context, source_share_server['id']))
-
             net_changes_identified = False
             if not create_server_on_backend:
                 dest_share_server = self.db.share_server_get(
@@ -5781,6 +5769,10 @@ class ShareManager(manager.SchedulerDependentManager):
 
             backend_details = (
                 server_info.get('backend_details') if server_info else None)
+            if extended_allocs:
+                backend_details = backend_details or {}
+                backend_details['segmentation_id'] = (
+                    extended_allocs[0]['segmentation_id'])
             if backend_details:
                 self.db.share_server_backend_details_set(
                     context, dest_share_server['id'], backend_details)
@@ -5874,10 +5866,9 @@ class ShareManager(manager.SchedulerDependentManager):
         # compatibility check.
         if CONF.server_migration_extend_neutron_network:
             try:
-                new_allocations = (
-                    self.driver.network_api.extend_network_allocations(
-                        context, share_server))
-                share_server['network_allocations'] = new_allocations
+                allocs = self.driver.network_api.extend_network_allocations(
+                    context, share_server)
+                share_server['network_allocations'] = allocs
             except Exception:
                 LOG.warning(
                     'Failed to extend network allocations for '
@@ -5914,8 +5905,9 @@ class ShareManager(manager.SchedulerDependentManager):
         # NOTE(sapcc): Delete port bindings on destination host after
         # compatibility check
         if CONF.server_migration_extend_neutron_network:
-            self.driver.network_api.delete_extended_allocations(context,
-                                                                share_server)
+            self.driver.network_api.delete_extended_allocations(
+                context, share_server)
+
         result.update(driver_result)
 
         return result
@@ -6158,20 +6150,28 @@ class ShareManager(manager.SchedulerDependentManager):
         dest_snss = self.db.share_network_subnet_get_all_by_share_server_id(
             context, dest_share_server['id'])
 
+        migration_extended_network_allocations = (
+            CONF.server_migration_extend_neutron_network)
+
         # NOTE(sapcc): Network allocations are extended to the destination host
         # on previous (migration_start) step, i.e. port bindings are created on
         # destination host with existing ports. The network allocations will be
         # cut over on this (migration_complete) step, i.e. port bindings on
         # destination host will be activated and bindings on source host will
-        # be deleted. Since manager takes care of the cutover of network
-        # allocations, driver should not touch them. Therefore the cached
-        # source_share_server and dest_share_server are not updated with the
-        # new network allocations after the cutover_network_allocations call.
-        # Only dest_sns is updated to have the correct segmentation id.
-        if CONF.server_migration_extend_neutron_network:
-            self.driver.network_api.cutover_network_allocations(
-                context, source_share_server, dest_share_server)
-            dest_sns = self.db.share_network_subnet_get(context, dest_sns_id)
+        # be deleted.
+        if migration_extended_network_allocations:
+            updated_allocations = (
+                self.driver.network_api.cutover_network_allocations(
+                    context, source_share_server))
+            segmentaion_id = self.db.share_server_backend_details_get(
+                context, dest_share_server['id'], 'segmentation_id')
+            alloc_update = {
+                'segmentation_id': segmentaion_id,
+                'share_server_id': dest_share_server['id']
+            }
+            subnet_update = {
+                'segmentation_id': segmentaion_id,
+            }
 
         migration_reused_network_allocations = (len(
             self.db.network_allocations_get_for_share_server(
@@ -6189,7 +6189,13 @@ class ShareManager(manager.SchedulerDependentManager):
             context, source_share_server, dest_share_server, share_instances,
             snapshot_instances, new_network_allocations)
 
-        if not migration_reused_network_allocations:
+        if migration_extended_network_allocations:
+            for alloc in updated_allocations:
+                self.db.network_allocation_update(context, alloc['id'],
+                                                  alloc_update)
+            self.db.share_network_subnet_update(context, dest_sns_id,
+                                                subnet_update)
+        elif not migration_reused_network_allocations:
             network_allocations = []
             for net_allocation in new_network_allocations:
                 network_allocations += net_allocation['network_allocations']
@@ -6337,7 +6343,7 @@ class ShareManager(manager.SchedulerDependentManager):
 
         if CONF.server_migration_extend_neutron_network:
             self.driver.network_api.delete_extended_allocations(
-                context, share_server, dest_share_server)
+                context, share_server)
 
         # NOTE(dviroel): After cancelling the migration we should set the new
         # share server to INVALID since it may contain an invalid configuration
