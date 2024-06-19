@@ -755,16 +755,16 @@ class NeutronBindNetworkPlugin(NeutronNetworkPlugin):
                                     dest_share_server):
         physnet = self.config.neutron_physical_net_name
         src_host = share_utils.extract_host(src_share_server['host'], 'host')
-        dest_host = share_utils.extract_host(dest_share_server['host'], 'host')
+        dest_host = self.config.neutron_host_id
 
-        active_allocations = (
+        src_allocations = (
             self.db.network_allocations_get_for_share_server(
                 context, src_share_server['id'], label='user'))
-        inactive_allocations = (
+        dest_allocations = (
             self.db.network_allocations_get_for_share_server(
                 context, dest_share_server['id'], label=physnet))
 
-        if len(inactive_allocations) == 0:
+        if len(dest_allocations) == 0:
             msg = _(
                 'No target network allocations for cutover from '
                 '%(src_ss)s to %(dest_ss)s')
@@ -773,23 +773,10 @@ class NeutronBindNetworkPlugin(NeutronNetworkPlugin):
                     'src_ss': src_share_server['id'],
                     'dest_ss': dest_share_server['id']
                 })
-        vlan_to_activate = inactive_allocations[0]['segmentation_id']
-
-        # Cutting over network allocations
-        alloc_data = {
-            'share_server_id': dest_share_server['id'],
-            'segmentation_id': vlan_to_activate
-        }
-        for alloc in active_allocations:
+        for alloc in src_allocations:
             self.neutron_api.activate_port_binding(alloc['id'], dest_host)
             self.neutron_api.delete_port_binding(alloc['id'], src_host)
-            self.db.network_allocation_update(context, alloc['id'], alloc_data)
-        for alloc in inactive_allocations:
-            self.db.network_allocation_delete(context, alloc['id'])
-        # Update segmentation id of the share network subnet after cutting over
-        subnet_data = {'segmentation_id': vlan_to_activate}
-        sns_id = src_share_server['share_network_subnet']['id']
-        self.db.share_network_subnet_update(context, sns_id, subnet_data)
+        return src_allocations, dest_allocations
 
 
 class NeutronBindSingleNetworkPlugin(NeutronSingleNetworkPlugin,

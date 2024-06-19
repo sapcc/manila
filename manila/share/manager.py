@@ -6010,24 +6010,35 @@ class ShareManager(manager.SchedulerDependentManager):
         dest_sn = self.db.share_network_get(context, dest_sn_id)
         dest_sns = self.db.share_network_subnet_get(context, dest_sns_id)
 
+        migration_extended_network_allocations = (
+            CONF.server_migration_extend_neutron_network)
+
         # NOTE(sapcc): Network allocations are extended to the destination host
         # on previous (migration_start) step, i.e. port bindings are created on
         # destination host with existing ports. The network allocations will be
         # cut over on this (migration_complete) step, i.e. port bindings on
         # destination host will be activated and bindings on source host will
-        # be deleted. Since manager takes care of the cutover of network
-        # allocations, driver should not touch them. Therefore the cached
-        # source_share_server and dest_share_server are not updated with the
-        # new network allocations after the cutover_network_allocations call.
-        # Only dest_sns is updated to have the correct segmentation id.
-        if CONF.server_migration_extend_neutron_network:
-            self.driver.network_api.cutover_network_allocations(
-                context, source_share_server, dest_share_server)
-            dest_sns = self.db.share_network_subnet_get(context, dest_sns_id)
+        # be deleted.
+        if migration_extended_network_allocations:
+            src_allocs, dest_allocs = (
+                self.driver.network_api.cutover_network_allocations(
+                    context, source_share_server, dest_share_server))
+            alloc_update = {
+                'segmentation_id': dest_allocs[0]['segmentation_id'],
+                'share_server_id': dest_share_server['id']
+            }
+            subnet_update = {
+                'segmentation_id': dest_allocs[0]['segmentation_id'],
+            }
 
-        migration_reused_network_allocations = (len(
-            self.db.network_allocations_get_for_share_server(
-                context, dest_share_server['id'])) == 0)
+            # Since manager takes care of the cutover of network allocations,
+            # we don't want driver to modify them.
+            dest_share_server['network_allocations'] = []
+
+        migration_reused_network_allocations = (
+            migration_extended_network_allocations or len(
+                self.db.network_allocations_get_for_share_server(
+                    context, dest_share_server['id'])) == 0)
 
         server_to_get_allocations = (
             dest_share_server
@@ -6041,7 +6052,15 @@ class ShareManager(manager.SchedulerDependentManager):
             context, source_share_server, dest_share_server, share_instances,
             snapshot_instances, new_network_allocations)
 
-        if not migration_reused_network_allocations:
+        if migration_extended_network_allocations:
+            for alloc in src_allocs:
+                self.db.network_allocation_update(context, alloc['id'],
+                                                  alloc_update)
+            for alloc in dest_allocs:
+                self.db.network_allocation_delete(context, alloc['id'])
+            self.db.share_network_subnet_update(context, dest_sns_id,
+                                                subnet_update)
+        elif not migration_reused_network_allocations:
             all_allocations = [
                 new_network_allocations['network_allocations'],
                 new_network_allocations['admin_network_allocations']

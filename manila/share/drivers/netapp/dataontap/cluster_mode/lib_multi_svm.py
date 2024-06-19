@@ -1792,7 +1792,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
 
             # If there are new network allocations to be added, do so, and add
             # them to the share server's backend details.
-            if dest_share_server['network_allocations']:
+            if len(dest_share_server['network_allocations']) > 0:
                 # Teardown the current network allocations
                 current_network_interfaces = (
                     dest_client.list_network_interfaces())
