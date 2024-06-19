@@ -4605,6 +4605,15 @@ def share_server_backend_details_set(context, share_server_id, server_details):
 
 
 @require_context
+def share_server_backend_details_get(context, share_server_id, meta_key):
+    session = get_session()
+    with session.begin():
+        meta_ref = _share_server_backend_details_get_item(
+            context, share_server_id, meta_key, session=session)
+        return meta_ref['value']
+
+
+@require_context
 def share_server_backend_details_delete(context, share_server_id,
                                         session=None):
     if not session:
