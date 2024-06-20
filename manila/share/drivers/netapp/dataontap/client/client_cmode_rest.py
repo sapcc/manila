@@ -4419,6 +4419,7 @@ class NetAppRestClient(object):
         if nfs_config:
             self._configure_nfs(nfs_config, svm_id)
 
+        self._disable_xattrs(svm_id)
         self._create_default_nfs_export_rules()
 
     @na_utils.trace
@@ -4467,6 +4468,19 @@ class NetAppRestClient(object):
         """Sets the nfs configuraton"""
         body = {
             'transport.tcp_max_transfer_size': nfs_config['tcp-max-xfer-size']
+        }
+        self.send_request(f'/protocols/nfs/services/{svm_id}', 'patch',
+                          body=body)
+
+    @na_utils.trace
+    def _disable_xattrs(self, svm_id):
+        """Disable xattrs for NFS v4.2"""
+        body = {
+            'protocol': {
+                'v42_features': {
+                    'xattrs_enabled': 'false',
+                },
+            },
         }
         self.send_request(f'/protocols/nfs/services/{svm_id}', 'patch',
                           body=body)
