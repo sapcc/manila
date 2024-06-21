@@ -149,6 +149,8 @@ class Detail(object):
           "configuration exist in the backend that has to be removed first in "
           "order to delete the share. Please contact Storage Team via SNOW "
           "ticket."))
+    FILTER_AFFINITY = ('998', FILTER_MSG % 'AffinityFilter')
+    FILTER_ANTI_AFFINITY = ('999', FILTER_MSG % 'AntiAffinityFilter')
     # ////////////////////////// SCI custom message //////////////////////////
 
     ALL = (
@@ -158,6 +160,8 @@ class Detail(object):
         NO_SHARE_SERVER,
         NO_ACTIVE_AVAILABLE_REPLICA,
         NO_ACTIVE_REPLICA,
+        FILTER_AFFINITY,
+        FILTER_ANTI_AFFINITY,
         FILTER_AVAILABILITY,
         FILTER_CAPABILITIES,
         FILTER_CAPACITY,
@@ -189,6 +193,8 @@ class Detail(object):
     # Use special code for each filter rather then categorize all as
     # NO_VALID_HOST
     FILTER_DETAIL_MAPPINGS = {
+        'AffinityFilter': FILTER_AFFINITY,
+        'AntiAffinityFilter': FILTER_ANTI_AFFINITY,
         'AvailabilityZoneFilter': FILTER_AVAILABILITY,
         'CapabilitiesFilter': FILTER_CAPABILITIES,
         'CapacityFilter': FILTER_CAPACITY,
