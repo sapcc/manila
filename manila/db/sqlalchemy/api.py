@@ -2155,10 +2155,15 @@ def _process_share_filters(query, filters, project_id=None, is_public=False):
 
     if 'metadata' in filters:
         for k, v in filters['metadata'].items():
-            # pylint: disable=no-member
-            query = query.filter(
-                or_(models.Share.share_metadata.any(
-                    key=k, value=v)))
+            if v == "*":
+                # pylint: disable=no-member
+                query = query.filter(
+                    or_(models.Share.share_metadata.any(key=k)))
+            else:
+                # pylint: disable=no-member
+                query = query.filter(
+                    or_(models.Share.share_metadata.any(
+                        key=k, value=v)))
     if 'extra_specs' in filters:
         query = query.join(
             models.ShareTypeExtraSpecs,
