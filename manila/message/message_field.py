@@ -77,6 +77,8 @@ class Detail(object):
 
     FILTER_MSG = _("No storage could be allocated for this share request, "
                    "%s filter didn't succeed.")
+    FILTER_AFFINITY = ('998', FILTER_MSG % 'AffinityFilter')
+    FILTER_ANTI_AFFINITY = ('999', FILTER_MSG % 'AntiAffinityFilter')
     FILTER_AVAILABILITY = ('007', FILTER_MSG % 'AvailabilityZone')
     FILTER_CAPABILITIES = ('008', FILTER_MSG % 'Capabilities')
     FILTER_CAPACITY = ('009', FILTER_MSG % 'Capacity')
@@ -155,6 +157,8 @@ class Detail(object):
         NO_SHARE_SERVER,
         NO_ACTIVE_AVAILABLE_REPLICA,
         NO_ACTIVE_REPLICA,
+        FILTER_AFFINITY,
+        FILTER_ANTI_AFFINITY,
         FILTER_AVAILABILITY,
         FILTER_CAPABILITIES,
         FILTER_CAPACITY,
@@ -186,6 +190,8 @@ class Detail(object):
     # Use special code for each filter rather then categorize all as
     # NO_VALID_HOST
     FILTER_DETAIL_MAPPINGS = {
+        'AffinityFilter': FILTER_AFFINITY,
+        'AntiAffinityFilter': FILTER_ANTI_AFFINITY,
         'AvailabilityZoneFilter': FILTER_AVAILABILITY,
         'CapabilitiesFilter': FILTER_CAPABILITIES,
         'CapacityFilter': FILTER_CAPACITY,
