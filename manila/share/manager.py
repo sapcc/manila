@@ -552,14 +552,7 @@ class ShareManager(manager.SchedulerDependentManager):
             # their pool fixed, but other skip reasons do not apply
             self._ensure_share_instance_has_pool(ctxt, share_instance)
 
-            if (share_instance['status'] != constants.STATUS_AVAILABLE and
-                    share_instance['status'] != constants.STATUS_CREATING):
-                LOG.info(
-                    "Share instance %(id)s: skipping export, "
-                    "because it has '%(status)s' status.",
-                    {'id': share_instance['id'],
-                     'status': share_instance['status']},
-                )
+            if self._skip_ensure_by_status(share_instance):
                 continue
 
             metadata = share_ref.get('share_metadata')
@@ -602,6 +595,12 @@ class ShareManager(manager.SchedulerDependentManager):
         for share_instance in share_instances:
             if share_instance['id'] not in update_share_instances:
                 continue
+            # reload to get latest data
+            share_instance = self.db.share_instance_get(
+                ctxt, share_instance['id'], with_share_data=False)
+            if self._skip_ensure_by_status(share_instance):
+                continue
+
             if update_share_instances[share_instance['id']].get('status'):
                 self.db.share_instance_update(
                     ctxt, share_instance['id'],
@@ -699,6 +698,19 @@ class ShareManager(manager.SchedulerDependentManager):
         if export_locations:
             self.db.share_export_locations_update(
                 ctxt, share_instance['id'], export_locations)
+
+    def _skip_ensure_by_status(self, share_instance):
+        skip_by_status = (
+            share_instance['status'] != constants.STATUS_AVAILABLE and
+            share_instance['status'] != constants.STATUS_CREATING)
+        if skip_by_status:
+            LOG.info(
+                "Share instance %(id)s: skipping export, "
+                "because it has '%(status)s' status.",
+                {'id': share_instance['id'],
+                    'status': share_instance['status']},
+            )
+        return skip_by_status
 
     def _check_share_server_backend_limits(
             self, context, available_share_servers, share_instance=None):
