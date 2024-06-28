@@ -7358,8 +7358,13 @@ class ShareManagerTestCase(test.TestCase):
                 mock.ANY, share, snapshot, reservations, share_access_rules,
                 snapshot_access_rules, share_id=share_id)
 
-    @ddt.data(None, 'fake_reservations')
-    def test__revert_to_snapshot(self, reservations):
+    @ddt.data(
+        {'reservations': None, 'max_size_check': True},
+        {'reservations': None, 'max_size_check': False},
+        {'reservations': 'fake_reservations', 'max_size_check': True},
+        {'reservations': 'fake_reservations', 'max_size_check': False})
+    @ddt.unpack
+    def test__revert_to_snapshot(self, reservations, max_size_check):
 
         mock_quotas_rollback = self.mock_object(quota.QUOTAS, 'rollback')
         mock_quotas_commit = self.mock_object(quota.QUOTAS, 'commit')
@@ -7379,7 +7384,8 @@ class ShareManagerTestCase(test.TestCase):
         snapshot = fakes.fake_snapshot(
             id='fake_snapshot_id', share_id=share_id, share=share,
             instance=snapshot_instance, project_id='fake_project',
-            user_id='fake_user', size=1)
+            user_id='fake_user',
+            size=1)
         share_access_rules = []
         snapshot_access_rules = []
 
@@ -7393,6 +7399,10 @@ class ShareManagerTestCase(test.TestCase):
             self.share_manager.db, 'share_update')
         mock_share_snapshot_update = self.mock_object(
             self.share_manager.db, 'share_snapshot_update')
+        self.mock_object(
+            self.share_manager,
+            'revert_to_snapshot_max_size_check',
+            mock.Mock(return_value=True if max_size_check else False))
 
         self.share_manager._revert_to_snapshot(self.context, share, snapshot,
                                                reservations,
@@ -7416,9 +7426,12 @@ class ShareManagerTestCase(test.TestCase):
         else:
             self.assertFalse(mock_quotas_commit.called)
 
+        values = {'status': constants.STATUS_AVAILABLE}
+        if not max_size_check:
+            # share_size=2, snapshot_size=1
+            values.update({'size': snapshot['size']})
         mock_share_update.assert_called_once_with(
-            mock.ANY, share_id,
-            {'status': constants.STATUS_AVAILABLE, 'size': snapshot['size']})
+            mock.ANY, share_id, values)
         mock_share_snapshot_update.assert_called_once_with(
             mock.ANY, 'fake_snapshot_id',
             {'status': constants.STATUS_AVAILABLE})

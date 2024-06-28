@@ -286,6 +286,7 @@ class ShareDriver(object):
         # server.
         self.security_service_update_support = False
         self.dhss_mandatory_security_service_association = {}
+        self.revert_to_snapshot_use_max_size = False
 
         self.pools = []
         if self.configuration:

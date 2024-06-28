@@ -82,6 +82,7 @@ class ShareAPI(object):
         1.22 - Add update_share_network_security_service() and
             check_update_share_network_security_service()
         1.23 - Update delete_share_instance() and delete_snapshot() methods
+        1.24 - Add revert_to_snapshot_max_size_check()
     """
 
     BASE_RPC_API_VERSION = '1.0'
@@ -90,7 +91,7 @@ class ShareAPI(object):
         super(ShareAPI, self).__init__()
         target = messaging.Target(topic=CONF.share_topic,
                                   version=self.BASE_RPC_API_VERSION)
-        self.client = rpc.get_client(target, version_cap='1.23')
+        self.client = rpc.get_client(target, version_cap='1.24')
 
     def create_share_instance(self, context, share_instance, host,
                               request_spec, filter_properties,
@@ -468,3 +469,9 @@ class ShareAPI(object):
             share_network_id=share_network_id,
             new_security_service_id=new_security_service_id,
             current_security_service_id=current_security_service_id)
+
+    def revert_to_snapshot_max_size_check(self, context, share):
+        host = utils.extract_host(share['instance']['host'])
+        call_context = self.client.prepare(server=host, version='1.24')
+        return call_context.call(context,
+                                 'revert_to_snapshot_max_size_check')
