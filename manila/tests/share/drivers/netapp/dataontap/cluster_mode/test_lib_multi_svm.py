@@ -3095,8 +3095,10 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             mock_complete_svm_migrate.assert_called_once_with(
                 migration_id, self.fake_dest_share_server)
             self.mock_dest_client.list_network_interfaces.assert_called_once()
-            data_motion.get_client_for_host.assert_called_once_with(
-                self.fake_dest_share_server['host'])
+            data_motion.get_client_for_host.assert_has_calls([
+                mock.call(self.fake_dest_share_server['host']),
+                mock.call(self.fake_src_share_server['host']),
+            ])
             self.mock_dest_client.delete_network_interface.assert_has_calls(
                 [mock.call(self.fake_src_vserver, interface_name)
                  for interface_name in current_interfaces])
