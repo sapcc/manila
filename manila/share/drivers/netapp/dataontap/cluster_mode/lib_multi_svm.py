@@ -338,7 +338,9 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         # earlier step to make sure all subnets have the same segmentation_id.
         vlan = network_info[0]['segmentation_id']
         ipspace_name = self._client.get_ipspace_name_for_vlan_port(
-            node_name, port, vlan) or self._create_ipspace(network_info[0])
+            node_name, port, vlan)
+        if ipspace_name is None or ipspace_name in CLUSTER_IPSPACES:
+            ipspace_name = self._create_ipspace(network_info[0])
 
         aggregate_names = self._find_matching_aggregates()
         if is_dp_destination:
