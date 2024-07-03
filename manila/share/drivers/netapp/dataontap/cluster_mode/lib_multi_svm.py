@@ -265,7 +265,9 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         port = self._get_node_data_port(node_name)
         vlan = network_info['segmentation_id']
         ipspace_name = self._client.get_ipspace_name_for_vlan_port(
-            node_name, port, vlan) or self._create_ipspace(network_info)
+            node_name, port, vlan)
+        if ipspace_name is None or ipspace_name in CLUSTER_IPSPACES:
+            ipspace_name = self._create_ipspace(network_info)
 
         aggregate_names = self._find_matching_aggregates()
         if is_dp_destination:
