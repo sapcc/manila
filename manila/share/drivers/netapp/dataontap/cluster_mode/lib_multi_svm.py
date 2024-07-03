@@ -1914,6 +1914,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             source_share_server['host'], level='backend_name')
         src_vserver, src_client = self._get_vserver(
             share_server=source_share_server, backend_name=src_backend_name)
+        src_ipspace_name = src_client.get_vserver_ipspace(src_vserver)
         dest_backend_name = share_utils.extract_host(
             dest_share_server['host'], level='backend_name')
 
@@ -1957,6 +1958,31 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                 for allocation in dest_share_server['network_allocations']:
                     ports[allocation['id']] = allocation['ip_address']
                 server_backend_details['ports'] = jsonutils.dumps(ports)
+
+            # Delete ipspace on source cluster when possible
+            src_cluster_client = data_motion.get_client_for_host(
+                source_share_server['host'])
+
+            def _delete_ipspace_and_vlan():
+                src_ipspace = src_cluster_client.get_ipspaces(
+                    src_ipspace_name)[0]
+                ports = src_ipspace['ports']
+
+                src_cluster_client.delete_ipspace(src_ipspace_name)
+                for port_name in ports:
+                    node, port = port_name.split(':')
+                    port, vlan = port.split('-')
+                    src_cluster_client.delete_vlan(node, port, vlan)
+
+            if (src_ipspace_name not in CLUSTER_IPSPACES
+                    and not src_cluster_client.ipspace_has_data_vservers(
+                        src_ipspace_name)):
+                try:
+                    _delete_ipspace_and_vlan()
+                except Exception as e:
+                    msg = _('Could not delete ipspace %s on SVM migration '
+                            'source. Reason: %s') % (src_ipspace_name, e)
+                    LOG.warning(msg)
         else:
             self._share_server_migration_complete_svm_dr(
                 source_share_server, dest_share_server, src_vserver,
