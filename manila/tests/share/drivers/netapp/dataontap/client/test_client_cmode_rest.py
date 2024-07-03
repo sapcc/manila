@@ -4120,6 +4120,8 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
         self.mock_object(self.client, 'configure_dns')
         self.mock_object(self.client, 'set_preferred_dc')
         self.mock_object(self.client, 'configure_cifs_aes_encryption')
+        self.mock_object(self.client, 'configure_cifs_signing')
+        self.mock_object(self.client, 'wait_for_cifs_server')
         self.mock_object(self.client, '_get_cifs_server_name',
                          mock.Mock(return_value='FAKE-VSE-SERVER'))
         self.mock_object(self.client, 'send_request')
@@ -4507,6 +4509,22 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
         self.assertRaises(netapp_api.api.NaApiError,
                           self.client.remove_preferred_dcs,
                           fake_ss, fake.FAKE_UUID)
+
+    def test_configure_cifs_signing(self):
+        self.mock_object(self.client, 'send_request')
+        self.mock_object(self.client, '_get_unique_svm_by_name',
+                         mock.Mock(return_value=fake.FAKE_UUID))
+
+        self.client.configure_cifs_signing(fake.VSERVER_NAME)
+        self.client._get_unique_svm_by_name.assert_called_once_with(
+            fake.VSERVER_NAME)
+
+        body = {
+            'security.smb_signing': True,
+        }
+        self.client.send_request.assert_called_once_with(
+            f'/protocols/cifs/services/{fake.FAKE_UUID}',
+            'patch', body=body)
 
     def test_configure_cifs_aes_encryption_enable(self):
         self.mock_object(self.client, 'send_request')
@@ -6657,6 +6675,8 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
         self.mock_object(self.client, 'configure_dns')
         self.mock_object(self.client, 'configure_cifs_aes_encryption')
         self.mock_object(self.client, 'set_preferred_dc')
+        self.mock_object(self.client, 'configure_cifs_signing')
+        self.mock_object(self.client, 'wait_for_cifs_server')
         self.mock_object(self.client, '_get_cifs_server_name')
         self.mock_object(self.client, 'send_request',
                          mock.Mock(side_effect=self._mock_api_error()))

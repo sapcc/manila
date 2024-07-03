@@ -2799,6 +2799,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.mock_object(self.client, 'send_request')
         self.mock_object(self.client, 'configure_certificates')
         self.mock_object(self.client, 'configure_cifs_aes_encryption')
+        self.mock_object(self.client, 'configure_cifs_signing')
+        self.mock_object(self.client, 'wait_for_cifs_server')
         self.mock_object(self.client, 'set_preferred_dc')
 
         self.client.configure_active_directory(fake.CIFS_SECURITY_SERVICE,
@@ -2829,6 +2831,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.mock_object(self.client, 'send_request')
         self.mock_object(self.client, 'configure_certificates')
         self.mock_object(self.client, 'configure_cifs_aes_encryption')
+        self.mock_object(self.client, 'configure_cifs_signing')
+        self.mock_object(self.client, 'wait_for_cifs_server')
         self.mock_object(self.client, 'set_preferred_dc')
 
         self.client.configure_active_directory(fake.CIFS_SECURITY_SERVICE_3,
@@ -3296,6 +3300,17 @@ class NetAppClientCmodeTestCase(test.TestCase):
         }
         self.assertEqual(expected_result, result)
         self.client.send_request.assert_called_once_with('net-dns-get', {})
+
+    def test_configure_cifs_signing(self):
+        self.mock_object(self.client, 'send_request')
+
+        self.client.configure_cifs_signing()
+
+        configure_cifs_signing_args = {
+            'is-signing-required': 'true',
+        }
+        self.client.send_request.assert_called_with(
+            'cifs-security-modify', configure_cifs_signing_args)
 
     @ddt.data(True, False)
     def test_configure_cifs_aes_encryption_enable(self, specify_types):
