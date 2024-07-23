@@ -1861,7 +1861,7 @@ class NetAppCmodeFileStorageLibrary(object):
                 is_flexgroup=self._is_flexgroup_pool(pool))
 
             # Generate export locations using addresses, metadata and callback
-            export_locations = [
+            export_locations.extend([
                 {
                     'path': callback(export_address),
                     'is_admin_only': metadata.pop('is_admin_only', False),
@@ -1869,7 +1869,7 @@ class NetAppCmodeFileStorageLibrary(object):
                 }
                 for export_address, metadata
                 in copy.deepcopy(export_addresses).items()
-            ]
+            ])
 
         # Sort the export locations to report preferred paths first
         export_locations = self._sort_export_locations_by_preferred_paths(
