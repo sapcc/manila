@@ -3641,7 +3641,8 @@ class ShareDriver(object):
         """
         raise NotImplementedError()
 
-    def update_share_from_metadata(self, context, share, metadata):
+    def update_share_from_metadata(self, context, share, metadata,
+                                   share_server=None):
         """Update the share from metadata.
 
         Driver must implement this method if needs to perform some action
@@ -3651,5 +3652,6 @@ class ShareDriver(object):
         :param share: Share instance model with share data.
         :param metadata: Dict contains key-value pair where driver will
             perform necessary action based on key.
+        :param share_server: Reference to the share server.
         """
         raise NotImplementedError()

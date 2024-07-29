@@ -349,3 +349,8 @@ class NetAppCmodeSingleSvmShareDriver(driver.ShareDriver):
             self, context, share_server, current_network_allocations,
             new_network_allocations, security_services, shares, snapshots):
         raise NotImplementedError
+
+    def update_share_from_metadata(self, context, share, metadata,
+                                   share_server=None):
+        self.library.update_share_from_metadata(
+            context, share, metadata, share_server=share_server)

@@ -4403,3 +4403,29 @@ class NetAppCmodeFileStorageLibrary(object):
 
         pool_name = share_utils.extract_host(host, level='pool')
         return pool_name in pools
+
+    @na_utils.trace
+    def update_volume_snapshot_policy(self, share, snapshot_policy,
+                                      share_server=None):
+        share_name = self._get_backend_share_name(share['id'])
+        _, vserver_client = self._get_vserver(share_server=share_server)
+        vserver_client.update_volume_snapshot_policy(share_name,
+                                                     snapshot_policy)
+
+    @na_utils.trace
+    def update_showmount(self, share, showmount, share_server=None):
+        _, vserver_client = self._get_vserver(share_server=share_server)
+        vserver_client.update_showmount(showmount)
+
+    @na_utils.trace
+    def update_share_from_metadata(self, context, share, metadata,
+                                   share_server=None):
+        metadata_update_func_map = {
+            "snapshot_policy": "update_volume_snapshot_policy",
+            "showmount": "update_showmount",
+        }
+
+        for k, v in metadata.items():
+            update_func = getattr(self, metadata_update_func_map.get(k))
+            if update_func:
+                update_func(share, v, share_server=share_server)
