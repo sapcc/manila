@@ -137,6 +137,12 @@ global_opts = [
                help='Maximum time (in seconds) to keep a share in '
                     'awaiting_transfer state, after timeout, the share will '
                     'automatically be rolled back to the available state'),
+    cfg.ListOpt('driver_updatable_metadata',
+                default=[],
+                help='Metadata keys that will decide which share metadata '
+                     '(element of the list is <driver_updatable_key>, '
+                     'i.e max_files) can be passed to share drivers as part '
+                     'of metadata create/update operations.'),
 ]
 
 CONF.register_opts(global_opts)
