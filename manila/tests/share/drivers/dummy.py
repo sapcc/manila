@@ -1010,3 +1010,10 @@ class DummyDriver(driver.ShareDriver):
                     new_server["backend_details"]["subnet_allocations"])
             },
         }
+
+    def update_share_from_metadata(self, context, share_instance, metadata,
+                                   share_server=None):
+        LOG.debug("Updated share %(share)s. Metadata %(metadata)s "
+                  "applied successfully.",
+                  {'share': share_instance['share_id'],
+                   'metadata': metadata})
