@@ -653,7 +653,12 @@ class ShareController(wsgi.Controller,
                                                        body['metadata'],
                                                        delete=False)
         body['metadata'] = _metadata
-        return self._create_metadata(req, resource_id, body)
+        metadata = self._create_metadata(req, resource_id, body)
+
+        context = req.environ['manila.context']
+        self.share_api.update_share_from_metadata(context, resource_id,
+                                                  metadata.get('metadata'))
+        return metadata
 
     @wsgi.Controller.api_version("2.0")
     @wsgi.Controller.authorize("update_share_metadata")
@@ -664,7 +669,12 @@ class ShareController(wsgi.Controller,
         _metadata = self._validate_metadata_for_update(req, resource_id,
                                                        body['metadata'])
         body['metadata'] = _metadata
-        return self._update_all_metadata(req, resource_id, body)
+        metadata = self._update_all_metadata(req, resource_id, body)
+
+        context = req.environ['manila.context']
+        self.share_api.update_share_from_metadata(context, resource_id,
+                                                  metadata.get('metadata'))
+        return metadata
 
     @wsgi.Controller.api_version("2.0")
     @wsgi.Controller.authorize("update_share_metadata")
@@ -676,7 +686,12 @@ class ShareController(wsgi.Controller,
                                                        body['metadata'],
                                                        delete=False)
         body['metadata'] = _metadata
-        return self._update_metadata_item(req, resource_id, body, key)
+        metadata = self._update_metadata_item(req, resource_id, body, key)
+
+        context = req.environ['manila.context']
+        self.share_api.update_share_from_metadata(context, resource_id,
+                                                  metadata.get('metadata'))
+        return metadata
 
     @wsgi.Controller.api_version("2.0")
     @wsgi.Controller.authorize("get_share_metadata")
