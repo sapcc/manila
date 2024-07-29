@@ -385,3 +385,8 @@ class NetAppCmodeMultiSvmShareDriver(driver.ShareDriver):
         return self.library.update_share_server_network_allocations(
             context, share_server, current_network_allocations,
             new_network_allocations, security_services, shares, snapshots)
+
+    def update_share_from_metadata(self, context, share, metadata,
+                                   share_server=None):
+        self.library.update_share_from_metadata(
+            context, share, metadata, share_server=share_server)
