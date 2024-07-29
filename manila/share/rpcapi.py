@@ -85,6 +85,7 @@ class ShareAPI(object):
             check_update_share_server_network_allocations()
         1.24 - Add quiesce_wait_time paramater to promote_share_replica()
         1.25 - Add transfer_accept()
+        1.26 -  Add update_share_from_metadata() method
     """
 
     BASE_RPC_API_VERSION = '1.0'
@@ -93,7 +94,7 @@ class ShareAPI(object):
         super(ShareAPI, self).__init__()
         target = messaging.Target(topic=CONF.share_topic,
                                   version=self.BASE_RPC_API_VERSION)
-        self.client = rpc.get_client(target, version_cap='1.25')
+        self.client = rpc.get_client(target, version_cap='1.26')
 
     def create_share_instance(self, context, share_instance, host,
                               request_spec, filter_properties,
@@ -502,3 +503,11 @@ class ShareAPI(object):
             'update_share_server_network_allocations',
             share_network_id=share_network_id,
             new_share_network_subnet_id=new_share_network_subnet_id)
+
+    def update_share_from_metadata(self, context, share, metadata):
+        host = utils.extract_host(share['instance']['host'])
+        call_context = self.client.prepare(server=host, version='1.26')
+        return call_context.cast(context,
+                                 'update_share_from_metadata',
+                                 share_id=share['id'],
+                                 metadata=metadata)
