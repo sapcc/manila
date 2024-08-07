@@ -552,12 +552,14 @@ def service_get_all(context, disabled=None):
 
 
 @context_manager.reader
-def service_get_all_by_topic(context, topic):
-    return (model_query(
-        context, models.Service, read_deleted="no").
-        filter_by(disabled=False).
-        filter_by(topic=topic).
-        all())
+def service_get_all_by_topic(context, topic, consider_disabled=False):
+    query = model_query(
+        context, models.Service, read_deleted="no")
+
+    if not consider_disabled:
+        query = query.filter_by(disabled=False)
+
+    return query.filter_by(topic=topic).all()
 
 
 @context_manager.reader
