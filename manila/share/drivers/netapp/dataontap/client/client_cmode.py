@@ -52,16 +52,24 @@ client_cmode_opts = [
     cfg.ListOpt(
         "cifs_cert_pem_paths",
         default=[
-            "/etc/ssl/certs/SAPNetCA_G2.pem",
-            "/etc/ssl/certs/SAP_Global_Root_CA.pem",
-            "/etc/ssl/certs/SAP_Global_Sub_CA_02.pem",
-            "/etc/ssl/certs/SAP_Global_Sub_CA_04.pem",
-            "/etc/ssl/certs/SAP_Global_Sub_CA_05.pem",
-            "/etc/ssl/certs/DigiCert_Global_Root_CA.pem",
-            "/etc/ssl/certs/DigiCert_Global_Root_G2.pem",
+            "/etc/ssl/certs/ca-certificates.crt",
+            # "/etc/ssl/certs/SAPNetCA_G2.pem",
+            # "/etc/ssl/certs/SAP_Global_Root_CA.pem",
+            # "/etc/ssl/certs/SAP_Global_Sub_CA_02.pem",
+            # "/etc/ssl/certs/DigiCert_Global_Root_CA.pem",
+            # "/etc/ssl/certs/DigiCert_Global_Root_G2.pem",
             ],
         help="Path to the x509 certificate used for secure ldap "
-             "connections.")
+             "connections."),
+    cfg.ListOpt(
+        "cifs_cert_pem_paths_expiring_soon",
+        default=[
+            "/etc/ssl/certs/SAP_Global_Sub_CA_04.pem",
+            "/etc/ssl/certs/SAP_Global_Sub_CA_05.pem",
+            ],
+        help="Path to the x509 certificate used for secure ldap "
+             "connections, that are soon expiring. You may keep certs here in "
+             "the last 60 days of validity"),
 ]
 
 CONF.register_opts(client_cmode_opts)
