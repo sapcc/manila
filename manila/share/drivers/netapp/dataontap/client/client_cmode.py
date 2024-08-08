@@ -1969,7 +1969,6 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             LOG.debug("Trying to setup CIFS server with data: %s", api_args)
             try:
                 self.send_request('cifs-server-create', api_args)
-                return True
             except netapp_api.NaApiError as e:
                 credential_msg = "could not authenticate"
                 privilege_msg = "insufficient access"
@@ -1983,6 +1982,14 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                         auth_msg % e.message)
                 LOG.debug("Failed to create CIFS server entry. %s", e.message)
                 return False
+            try:
+                self.wait_for_cifs_server(vserver_name)
+                self.configure_cifs_signing()
+            except exception.NetAppException as e:
+                # log error, still return True (signing is non-fatal)
+                LOG.error(f"Gave up waiting and proceed for cifs server on"
+                          f" vserver {vserver_name}. {e.message}")
+            return True
 
         # we try 3 times for each set of configurations with wait time of 3
         # seconds inbetween
@@ -2421,6 +2428,49 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         except netapp_api.NaApiError as e:
             msg = _("Failed to set aes encryption. %s")
             raise exception.NetAppException(msg % e.message)
+
+    @na_utils.trace
+    def cifs_server_exists(self, vserver_name):
+        """Checks if cifs server exists on vserver."""
+        cifs_server = self._get_cifs_server_name(vserver_name)
+        LOG.debug('Checking if cifs server %s exists', cifs_server)
+
+        api_args = {
+            'query': {
+                'cifs-server-config': {
+                    'cifs-server': cifs_server,
+                },
+            },
+            'desired-attributes': {
+                'cifs-server-config': {
+                    'cifs-server': None,
+                },
+            },
+        }
+
+        result = self.send_iter_request('cifs-server-get-iter', api_args)
+        return self._has_records(result)
+
+    @na_utils.trace
+    def configure_cifs_signing(self):
+        api_args = {
+            'is-signing-required': 'true',
+        }
+
+        try:
+            self.send_request('cifs-security-modify', api_args)
+        except netapp_api.NaApiError as e:
+            msg = _("Failed to enable SMB signing. %s")
+            raise exception.NetAppException(msg % e.message)
+
+    @manila_utils.retry(retry_param=exception.NetAppException,
+                        interval=5,
+                        retries=60,
+                        backoff_rate=1)
+    def wait_for_cifs_server(self, vserver_name):
+        if not self.cifs_server_exists(vserver_name):
+            msg = f"Cifs server on vserver {vserver_name} not found."
+            raise exception.NetAppException(msg)
 
     @na_utils.trace
     def set_preferred_dc(self, security_service):
