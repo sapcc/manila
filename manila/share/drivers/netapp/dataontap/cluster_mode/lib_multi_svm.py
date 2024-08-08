@@ -669,6 +669,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                     if security_service['type'].lower() == 'active_directory':
                         try:
                             vserver_client.configure_certificates()
+                            # vserver_client.configure_cifs_signing()
                         except exception.NetAppException as e:
                             LOG.warning(e.message)
 
