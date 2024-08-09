@@ -78,6 +78,8 @@ LANGUAGE = 'fake_language'
 SNAPSHOT_POLICY_NAME = 'fake_snapshot_policy'
 EXPORT_POLICY_NAME = 'fake_export_policy'
 VOLUME_EFFICIENCY_POLICY_NAME = 'fake_volume_efficiency_policy'
+SHARE_MOUNT_POINT = 'fake_mount_point'
+
 DELETED_EXPORT_POLICIES = {
     VSERVER_NAME: [
         'deleted_manila_fake_policy_1',
@@ -320,6 +322,22 @@ VSERVER_GET_RESPONSE = etree.XML("""
     'aggr1': SHARE_AGGREGATE_NAMES[0],
     'aggr2': SHARE_AGGREGATE_NAMES[1],
 })
+
+VSERVER_SHOW_AGGR_GET_RESPONSE = etree.XML("""
+<results status='passed'>
+    <attributes-list>
+    <show-aggregates>
+    <aggregate-name>fake_aggr</aggregate-name>
+    <aggregate-type>ssd</aggregate-type>
+    <available-size>3393178406912</available-size>
+    <is-nve-capable>false</is-nve-capable>
+    <snaplock-type>compliance</snaplock-type>
+    <vserver-name>os_vs</vserver-name>
+    </show-aggregates>
+    </attributes-list>
+    <num-records>1</num-records>
+</results>
+""")
 
 SECURITY_CERT_GET_RESPONSE = etree.XML("""
   <results status="passed">
@@ -1270,7 +1288,8 @@ AGGR_GET_ITER_RESPONSE = etree.XML("""
           <state>online</state>
         </aggr-raid-attributes>
         <aggr-snaplock-attributes>
-          <is-snaplock>false</is-snaplock>
+          <is-snaplock>true</is-snaplock>
+          <snaplock-type>enterprise</snaplock-type>
         </aggr-snaplock-attributes>
         <aggr-snapshot-attributes>
           <files-total>0</files-total>
@@ -1392,7 +1411,8 @@ AGGR_GET_ITER_RESPONSE = etree.XML("""
           <state>online</state>
         </aggr-raid-attributes>
         <aggr-snaplock-attributes>
-          <is-snaplock>false</is-snaplock>
+          <is-snaplock>true</is-snaplock>
+          <snaplock-type>compliance</snaplock-type>
         </aggr-snaplock-attributes>
         <aggr-snapshot-attributes>
           <files-total>0</files-total>
@@ -1516,7 +1536,8 @@ AGGR_GET_ITER_SSC_RESPONSE = etree.XML("""
           <state>online</state>
         </aggr-raid-attributes>
         <aggr-snaplock-attributes>
-          <is-snaplock>false</is-snaplock>
+          <is-snaplock>true</is-snaplock>
+          <snaplock-type>compliance</snaplock-type>
         </aggr-snaplock-attributes>
         <aggr-snapshot-attributes>
           <files-total>0</files-total>
@@ -2358,6 +2379,9 @@ VOLUME_GET_ITER_VOLUME_TO_MANAGE_RESPONSE = etree.XML("""
         <volume-qos-attributes>
           <policy-group-name>%(qos-policy-group-name)s</policy-group-name>
         </volume-qos-attributes>
+        <volume-snaplock-attributes>
+          <snaplock-type>compliance</snaplock-type>
+        </volume-snaplock-attributes>
       </volume-attributes>
     </attributes-list>
     <num-records>1</num-records>
@@ -2394,6 +2418,9 @@ VOLUME_GET_ITER_FLEXGROUP_VOLUME_TO_MANAGE_RESPONSE = etree.XML("""
         <volume-qos-attributes>
           <policy-group-name>%(qos-policy-group-name)s</policy-group-name>
         </volume-qos-attributes>
+        <volume-snaplock-attributes>
+          <snaplock-type>compliance</snaplock-type>
+        </volume-snaplock-attributes>
       </volume-attributes>
     </attributes-list>
     <num-records>1</num-records>
@@ -2425,6 +2452,9 @@ VOLUME_GET_ITER_NO_QOS_RESPONSE = etree.XML("""
           <size>%(size)s</size>
           <size-used>%(size-used)s</size-used>
         </volume-space-attributes>
+        <volume-snaplock-attributes>
+          <snaplock-type>compliance</snaplock-type>
+        </volume-snaplock-attributes>
       </volume-attributes>
     </attributes-list>
     <num-records>1</num-records>
@@ -3055,6 +3085,31 @@ FAKE_VOL_XML = """<volume-info>
     <is-invalid>false</is-invalid>
     </volume-info>"""
 
+SNAPLOCK_CLOCK_CONFIG_1 = etree.XML("""
+  <results status="passed">
+    <snaplock-node-compliance-clock>
+        <compliance-clock-info>
+            <formatted-snaplock-compliance-clock>%(clock_info)s</formatted-snaplock-compliance-clock>
+            <snaplock-compliance-clock>1723063070</snaplock-compliance-clock>
+        </compliance-clock-info>
+    </snaplock-node-compliance-clock>
+  </results>""" % {
+    'clock_info': 'Wed Aug 07 16:37:50'
+})
+
+
+SNAPLOCK_CLOCK_CONFIG_2 = etree.XML("""
+  <results status="passed">
+    <snaplock-node-compliance-clock>
+        <compliance-clock-info>
+            <formatted-snaplock-compliance-clock>%(clock_info)s</formatted-snaplock-compliance-clock>
+            <snaplock-compliance-clock>1723063070</snaplock-compliance-clock>
+        </compliance-clock-info>
+    </snaplock-node-compliance-clock>
+  </results>""" % {
+    'clock_info': 'not configured'
+})
+
 FAKE_XML1 = """<options>\
 <test1>abc</test1>\
 <test2>abc</test2>\
@@ -3596,6 +3651,8 @@ AGGR_GET_ITER_RESPONSE_REST = {
             "home_node": {
                 "name": "fake_home_node_name"
             },
+            "snaplock_type": "enterprise",
+            "is_snaplock": True,
             "space": {
                 "footprint": 702764609536,
                 "footprint_percent": 55,
@@ -3765,6 +3822,9 @@ GENERIC_EXPORT_POLICY_RESPONSE_AND_VOLUMES = {
                 "size": 21474836480,
                 'used': SHARE_USED_SIZE,
             },
+            "snaplock": {
+                "type": "compliance"
+            }
         }
     ],
     "num_records": 1,
@@ -4812,6 +4872,9 @@ FAKE_VOLUME_MANAGE = {
             'space': {
                 'size': SHARE_SIZE,
                 'used': SHARE_USED_SIZE,
+            },
+            'snaplock': {
+                'type': "compliance"
             }
         }
     ],
