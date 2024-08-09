@@ -1079,6 +1079,12 @@ class API(base.Base):
         if not size_increase:
             return None
 
+        use_max_size = self.share_rpcapi.revert_to_snapshot_max_size_check(
+            context, share)
+        if use_max_size:
+            if share['size'] > snapshot['size']:
+                return None
+
         try:
             return QUOTAS.reserve(
                 context,

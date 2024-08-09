@@ -141,6 +141,7 @@ class DummyDriver(driver.ShareDriver):
             "share_backend_name") or "DummyDriver"
         self.migration_progress = {}
         self.security_service_update_support = True
+        self.revert_to_snapshot_use_max_size = False
 
     def _verify_configuration(self):
         allowed_driver_methods = [m for m in dir(self) if m[0] != '_']

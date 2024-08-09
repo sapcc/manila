@@ -272,7 +272,7 @@ def add_hooks(f):
 class ShareManager(manager.SchedulerDependentManager):
     """Manages NAS storages."""
 
-    RPC_API_VERSION = '1.23'
+    RPC_API_VERSION = '1.24'
 
     def __init__(self, share_driver=None, service_name=None, *args, **kwargs):
         """Load the driver from args, or from flags."""
@@ -3502,6 +3502,11 @@ class ShareManager(manager.SchedulerDependentManager):
 
     @add_hooks
     @utils.require_driver_initialized
+    def revert_to_snapshot_max_size_check(self, context):
+        return self.driver.revert_to_snapshot_use_max_size
+
+    @add_hooks
+    @utils.require_driver_initialized
     def revert_to_snapshot(self, context, snapshot_id,
                            reservations):
         context = context.elevated()
@@ -3582,9 +3587,14 @@ class ShareManager(manager.SchedulerDependentManager):
                 share_type_id=share_type_id,
             )
 
-        self.db.share_update(
-            context, share_id,
-            {'status': constants.STATUS_AVAILABLE, 'size': snapshot['size']})
+        values = {'status': constants.STATUS_AVAILABLE}
+        if self.revert_to_snapshot_max_size_check(context):
+            if share['size'] < snapshot['size']:
+                values.update({'size': snapshot['size']})
+        else:
+            values.update({'size': snapshot['size']})
+
+        self.db.share_update(context, share_id, values)
         self.db.share_snapshot_update(
             context, snapshot_id, {'status': constants.STATUS_AVAILABLE})
 
