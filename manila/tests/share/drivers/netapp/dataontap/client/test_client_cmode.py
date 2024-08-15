@@ -5635,6 +5635,29 @@ class NetAppClientCmodeTestCase(test.TestCase):
             fake.SHARE_NAME, fake.SNAPSHOT_NAME)
         self.assertFalse(mock_rename_snapshot.called)
 
+    def test_soft_delete_snapshot_soft_only(self):
+        mock_delete_snapshot = self.mock_object(self.client, 'delete_snapshot')
+        mock_rename_snapshot = self.mock_object(self.client, 'rename_snapshot')
+        mock_get_clone_children_for_snapshot = self.mock_object(
+            self.client, 'get_clone_children_for_snapshot',
+            mock.Mock(return_value=fake.CDOT_CLONE_CHILDREN))
+        mock_volume_clone_split_start = self.mock_object(
+            self.client, 'volume_clone_split_start')
+
+        self.client.soft_delete_snapshot(
+            fake.SHARE_NAME, fake.SNAPSHOT_NAME, soft_only=True)
+
+        mock_rename_snapshot.assert_called_once_with(
+            fake.SHARE_NAME, fake.SNAPSHOT_NAME,
+            'deleted_manila_' + fake.SNAPSHOT_NAME)
+        mock_get_clone_children_for_snapshot.assert_called_once_with(
+            fake.SHARE_NAME, 'deleted_manila_' + fake.SNAPSHOT_NAME)
+        mock_volume_clone_split_start.assert_has_calls([
+            mock.call(fake.CDOT_CLONE_CHILD_1),
+            mock.call(fake.CDOT_CLONE_CHILD_2),
+        ])
+        self.assertFalse(mock_delete_snapshot.called)
+
     def test_soft_delete_snapshot_api_error(self):
 
         mock_delete_snapshot = self.mock_object(
