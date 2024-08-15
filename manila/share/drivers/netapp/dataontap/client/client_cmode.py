@@ -4261,23 +4261,38 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         self.send_request('snapshot-delete', api_args)
 
     @na_utils.trace
-    def soft_delete_snapshot(self, volume_name, snapshot_name):
+    def soft_delete_snapshot(self, volume_name, snapshot_name,
+                             soft_only=False):
         """Deletes a volume snapshot, or renames it if delete fails."""
-        try:
-            self.delete_snapshot(volume_name, snapshot_name)
-        except netapp_api.NaApiError:
-            self.rename_snapshot(volume_name,
-                                 snapshot_name,
-                                 DELETED_PREFIX + snapshot_name)
-            msg = _('Soft-deleted snapshot %(snapshot)s on volume %(volume)s.')
-            msg_args = {'snapshot': snapshot_name, 'volume': volume_name}
-            LOG.info(msg, msg_args)
+        def _soft_delete_snapshot(cli, volume_name, snapshot_name):
+            msg_args = {'snap': snapshot_name, 'vol': volume_name}
+            try:
+                cli.rename_snapshot(volume_name,
+                                    snapshot_name,
+                                    DELETED_PREFIX + snapshot_name)
+                msg = _('Soft-deleted snapshot %(snap)s on volume %(vol)s.')
+                LOG.info(msg, msg_args)
+            except netapp_api.NaApiError as e:
+                if e.code == netapp_api.EAPINOTFOUND:
+                    msg = _('Snapshot %(snap)s on volume %(vol)s not found.')
+                    LOG.debug(msg, msg_args)
+                    return
+                else:
+                    raise
 
             # Snapshots are locked by clone(s), so split the clone(s)
-            snapshot_children = self.get_clone_children_for_snapshot(
+            snapshot_children = cli.get_clone_children_for_snapshot(
                 volume_name, snapshot_name)
             for snapshot_child in snapshot_children:
-                self.volume_clone_split_start(snapshot_child['name'])
+                cli.volume_clone_split_start(snapshot_child['name'])
+
+        if soft_only:
+            _soft_delete_snapshot(self, volume_name, snapshot_name)
+        else:
+            try:
+                self.delete_snapshot(volume_name, snapshot_name)
+            except netapp_api.NaApiError:
+                _soft_delete_snapshot(self, volume_name, snapshot_name)
 
     @na_utils.trace
     def prune_deleted_snapshots(self):
