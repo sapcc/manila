@@ -601,8 +601,6 @@ class NaServer(object):
         )
         self._host = host
 
-        LOG.debug('Using NetApp controller: %s', self._host)
-
     def get_transport_type(self, use_zapi_client=True):
         """Get the transport type protocol."""
         return self.get_client(use_zapi=use_zapi_client).get_transport_type()
