@@ -328,7 +328,7 @@ class Share(BASE, ManilaBase):
     scheduled_to_be_deleted_at = Column(DateTime)
     instances = orm.relationship(
         "ShareInstance",
-        lazy='subquery',
+        lazy='selectin',
         primaryjoin=(
             'and_('
             'Share.id == ShareInstance.share_id, '
@@ -410,7 +410,7 @@ class ShareInstance(BASE, ManilaBase):
                                   nullable=True)
     _availability_zone = orm.relationship(
         "AvailabilityZone",
-        lazy='subquery',
+        lazy='selectin',
         foreign_keys=availability_zone_id,
         primaryjoin=(
             'and_('
@@ -437,7 +437,7 @@ class ShareInstance(BASE, ManilaBase):
                              nullable=True)
     share_type = orm.relationship(
         "ShareTypes",
-        lazy='subquery',
+        lazy='selectin',
         foreign_keys=share_type_id,
         primaryjoin='and_('
                     'ShareInstance.share_type_id == ShareTypes.id, '
