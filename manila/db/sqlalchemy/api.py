@@ -5277,10 +5277,14 @@ def purge_deleted_records(context, age_in_days):
 
     metadata = MetaData()
     metadata.reflect(get_engine())
+    tables = metadata.sorted_tables
+    if not tables:
+        msg = 'No tables found, check database connection'
+        raise exception.InvalidResults(msg)
     session = get_session()
     deleted_age = timeutils.utcnow() - datetime.timedelta(days=age_in_days)
 
-    for table in reversed(metadata.sorted_tables):
+    for table in reversed(tables):
         if 'deleted' in table.columns.keys():
             session.begin()
             try:
