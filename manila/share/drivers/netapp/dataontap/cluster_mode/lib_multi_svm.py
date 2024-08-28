@@ -541,7 +541,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                 if security_service['type'].lower() == 'active_directory':
                     try:
                         vserver_client.configure_certificates()
-                        vserver_client.configure_cifs_signing()
+                        # vserver_client.configure_cifs_signing()
                         # vserver_client.configure_cifs_encryption()
                         # vserver_client.configure_cifs_options(security_service) # noqa: E501
                     except exception.NetAppException as e:
