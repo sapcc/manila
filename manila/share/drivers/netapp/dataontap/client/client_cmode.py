@@ -3816,6 +3816,44 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         return self.get_volume_clone_parent_snaphot(volume_name) is None
 
     @na_utils.trace
+    def get_clones_of_parent_volume(self, vserver, volume):
+        """get one or more clones of given parent volume"""
+        api_args = {
+            'query': {
+                'volume-clone-info': {
+                    'parent-vserver': vserver,
+                    'parent-volume': volume,
+                    }
+            },
+            'desired-attributes': {
+                'volume-clone-info': {
+                    'volume': None,
+                },
+            }
+        }
+        result = self.send_request('volume-clone-get-iter', api_args)
+        attributes_list = result.get_child_by_name(
+            'attributes-list') or netapp_api.NaElement('none')
+
+        if not attributes_list:
+            return None
+
+        clones = []
+        for clone_info in attributes_list.get_children():
+            clones.append(clone_info.get_child_content('volume'))
+        return clones
+
+    @na_utils.trace
+    def volume_online(self, volume_name):
+        api_args = {'name': volume_name}
+        self.send_request('volume-online', api_args)
+
+    @na_utils.trace
+    def volume_offline(self, volume_name):
+        api_args = {'name': volume_name}
+        self.send_request('volume-offline', api_args)
+
+    @na_utils.trace
     def get_volume_clone_parent_snaphot(self, volume_name):
         """Gets volume's clone parent.
 
@@ -4057,6 +4095,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 'volume-attributes': {
                     'volume-id-attributes': {
                         'name': None,
+                        'owning-vserver-name': None,
                     },
                     'volume-state-attributes': {
                         'state': None,
@@ -4086,18 +4125,62 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                     .get_child_by_name('volume-id-attributes')
                     .get_child_content('owning-vserver-name'))
 
+            LOG.debug('Found volume %(vv)s in state  %(vs)s', {
+                      'vv': volume_name, 'vs': volume_state})
             if volume_state == 'offline':
+                clones = self.get_clones_of_parent_volume(vserver, volume_name)
+                if clones:
+                    # Found parent volume which has multiple clone childs, so
+                    # make volume online. Once the volume will be online, we
+                    # will split clones (in next callback).
+                    client = copy.deepcopy(self)
+                    client.set_vserver(vserver)
+                    try:
+                        client.volume_online(volume_name)
+                    except Exception:
+                        LOG.error("Volume online failed for "
+                                  "volume %s", volume_name)
+
+                    for clone in clones:
+                        try:
+                            client.volume_online(clone)
+                        except Exception:
+                            LOG.error("Volume online failed for "
+                                      "volume %s", clone)
+
+                else:
+                    # Either child or parent without child clones.
+                    client = copy.deepcopy(self)
+                    client.set_vserver(vserver)
+                    try:
+                        client.send_request(
+                            'volume-destroy', {'name': volume_name})
+                    except netapp_api.NaApiError as e:
+                        LOG.error('Pruning soft-deleted '
+                                  'volume %s failed', volume_name)
+                        if e.code == netapp_api.EVOLDEL_NOT_ALLOW_BY_CLONE:
+                            if client.volume_clone_split_status(
+                                    volume_name) != 100:
+                                client.volume_clone_split_start(volume_name)
+                                LOG.debug('Starting clone split for '
+                                          'volume %s ', volume_name)
+            elif volume_state == 'online':
+                # These must be parent volume which was brought online in
+                # previous callback. If no clones found means all splits are
+                # completed, so offline the volume.
+                clones = self.get_clones_of_parent_volume(vserver, volume_name)
                 client = copy.deepcopy(self)
                 client.set_vserver(vserver)
-                try:
-                    client.send_request(
-                        'volume-destroy', {'name': volume_name})
-                except netapp_api.NaApiError as e:
-                    LOG.error(
-                        'Pruning soft-deleted volume %s failed', volume_name)
-                    if e.code == netapp_api.EVOLDEL_NOT_ALLOW_BY_CLONE:
-                        if self.volume_clone_split_status(volume_name) != 100:
-                            self.volume_clone_split_start(volume_name)
+                if not clones:
+                    try:
+                        client.volume_offline(volume_name)
+                    except Exception:
+                        LOG.error("Volume offline failed for "
+                                  "volume %s", volume_name)
+                else:
+                    for clone in clones:
+                        if client.volume_clone_split_status(clone) != 100:
+                            client.volume_clone_split_start(clone)
                             LOG.debug('Starting clone split for '
                                       'volume %s ', volume_name)
 
