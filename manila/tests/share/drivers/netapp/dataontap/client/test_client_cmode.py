@@ -4868,6 +4868,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
                     'volume-space-attributes': {
                         'size': None,
                         'size-used': None,
+                        'size-total': None,
                         'is-space-enforcement-logical': None,
                         'is-space-reporting-logical': None,
                     },
@@ -4890,6 +4891,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'style': 'flex',
             'size': fake.SHARE_SIZE,
             'size-used': fake.SHARE_USED_SIZE,
+            'size-total': None,
             'owning-vserver-name': fake.VSERVER_NAME,
             'qos-policy-group-name': fake.QOS_POLICY_GROUP_NAME,
             'style-extended': (fake.FLEXGROUP_STYLE_EXTENDED
@@ -4939,6 +4941,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
                     'volume-space-attributes': {
                         'size': None,
                         'size-used': None,
+                        'size-total': None,
                         'is-space-enforcement-logical': None,
                         'is-space-reporting-logical': None,
                     },
@@ -4961,6 +4964,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'style': 'flex',
             'size': fake.SHARE_SIZE,
             'size-used': fake.SHARE_USED_SIZE,
+            'size-total': None,
             'owning-vserver-name': fake.VSERVER_NAME,
             'qos-policy-group-name': None,
             'style-extended': fake.FLEXVOL_STYLE_EXTENDED,

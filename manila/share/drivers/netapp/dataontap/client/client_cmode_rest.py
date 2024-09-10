@@ -886,7 +886,8 @@ class NetAppRestClient(object):
         query = {
             'name': volume_name,
             'fields': 'aggregates.name,nas.path,name,svm.name,type,style,'
-                      'qos.policy.name,space.size,space.used,snaplock.type'
+                      'qos.policy.name,space.size,space.used,snaplock.type,'
+                      'space.filesystem_size'
         }
 
         result = self.send_request('/storage/volumes', 'get', query=query)
@@ -918,6 +919,7 @@ class NetAppRestClient(object):
             'style': volume_infos.get('style'),
             'size': volume_infos.get('space', {}).get('size'),
             'size-used': volume_infos.get('space', {}).get('used'),
+            'size-total': volume_infos.get('space', {}).get('filesystem_size'),
             'qos-policy-group-name': (
                 volume_infos.get('qos', {}).get('policy', {}).get('name')),
             'style-extended': volume_infos.get('style'),

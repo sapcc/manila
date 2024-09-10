@@ -967,6 +967,8 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             'style': fake_volume.get('style', ''),
             'size': fake_volume.get('space', {}).get('size', ''),
             'size-used': fake_volume.get('space', {}).get('used', ''),
+            'size-total': fake_volume.get('space', {})
+            .get('filesystem_size', ''),
             'qos-policy-group-name': fake_volume.get('qos', {})
             .get('policy', {})
             .get('name'),
@@ -6831,6 +6833,8 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             'style': fake_volume.get('style', ''),
             'size': fake_volume.get('space', {}).get('size', ''),
             'size-used': fake_volume.get('space', {}).get('used', ''),
+            'size-total': fake_volume.get('space', {})
+            .get('filesystem_size', {}),
             'qos-policy-group-name': fake_volume.get('qos', {})
             .get('policy', {})
             .get('name', ''),

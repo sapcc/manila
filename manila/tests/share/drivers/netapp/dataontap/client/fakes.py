@@ -3869,6 +3869,7 @@ GENERIC_EXPORT_POLICY_RESPONSE_AND_VOLUMES = {
             },
             "space": {
                 "size": 21474836480,
+                "filesystem_size": 21474836480,
                 'used': SHARE_USED_SIZE,
             },
             "snaplock": {
@@ -4932,6 +4933,7 @@ FAKE_VOLUME_MANAGE = {
             },
             'space': {
                 'size': SHARE_SIZE,
+                'filesystem_size': SHARE_SIZE,
                 'used': SHARE_USED_SIZE,
             },
             'snaplock': {
