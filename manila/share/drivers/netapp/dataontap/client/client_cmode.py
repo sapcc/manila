@@ -3517,6 +3517,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                     'volume-space-attributes': {
                         'size': None,
                         'size-used': None,
+                        'size-total': None,
                         'is-space-enforcement-logical': None,
                         'is-space-reporting-logical': None,
                     },
@@ -3568,6 +3569,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'size': volume_space_attributes.get_child_content('size'),
             'size-used': volume_space_attributes.get_child_content(
                 'size-used'),
+            'size-total': volume_space_attributes.get_child_content(
+                'size-total'),
             'qos-policy-group-name': volume_qos_attributes.get_child_content(
                 'policy-group-name'),
             'style-extended': volume_id_attributes.get_child_content(
