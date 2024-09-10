@@ -1976,7 +1976,10 @@ class NetAppCmodeFileStorageLibrary(object):
         volume = vserver_client.get_volume(share_name)
 
         # When calculating the size, round up to the next GB.
-        return int(math.ceil(float(volume['size']) / units.Gi))
+        if self.configuration.netapp_volume_provision_net_capacity:
+            return int(math.ceil(float(volume['size-total']) / units.Gi))
+        else:
+            return int(math.ceil(float(volume['size']) / units.Gi))
 
     @na_utils.trace
     def delete_snapshot(self, context, snapshot, share_server=None,
