@@ -5161,13 +5161,16 @@ def share_server_get_all_by_host_and_share_subnet_valid(context, host,
 
 
 @require_context
-def share_server_get_all_by_host_and_share_subnet(context, host,
-                                                  share_subnet_id,
-                                                  session=None):
-    result = (_server_get_query(context, session)
-              .filter_by(host=host)
-              .filter(models.ShareServer.share_network_subnets.any(
-                      id=share_subnet_id)).all())
+@context_manager.reader
+def share_server_get_all_by_host_and_or_share_subnet(
+    context, host=None, share_subnet_id=None, session=None
+):
+    result = _server_get_query(context, session)
+    if host:
+        result = result.filter_by(host=host)
+    result = result.filter(
+        models.ShareServer.share_network_subnets.any(id=share_subnet_id)
+    ).all()
 
     if not result:
         filters_description = ('share_network_subnet_id is '

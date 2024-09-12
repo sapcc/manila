@@ -143,6 +143,13 @@ global_opts = [
                      '(element of the list is <driver_updatable_key>, '
                      'i.e max_files) can be passed to share drivers as part '
                      'of metadata create/update operations.'),
+    cfg.ListOpt('driver_updatable_subnet_metadata',
+                default=[],
+                help='Metadata keys that will decide which share network '
+                     'subnet metadata (element of the list is '
+                     '<driver_updatable_key>, e.g. pnfs) can be passed to '
+                     'share drivers as part of metadata create/update '
+                     'operations.'),
 ]
 
 CONF.register_opts(global_opts)

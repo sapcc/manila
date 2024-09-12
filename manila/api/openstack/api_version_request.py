@@ -200,6 +200,8 @@ REST_API_VERSION_HISTORY = """
     * 2.80 - Added share backup APIs.
     * 2.81 - Added API methods, endpoint /resource-locks.
     * 2.81 - Added support for update Share access rule.
+    * 2.81 - Added support for passing Share network subnet metadata updates
+             to driver.
 """
 
 # The minimum and maximum versions of the API supported
