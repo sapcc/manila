@@ -439,3 +439,6 @@ ____
 ----
   Introduce resource locks as a way users can restrict certain actions on
   resources. Only share deletion can be prevented at this version.
+  Allows updating the access rule's access type.
+  Added support for passing share network subnet metadata updates to share
+  backend driver.

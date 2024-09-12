@@ -87,7 +87,8 @@ class ShareAPI(object):
         1.25 - Add transfer_accept()
         1.26 - Add create_backup() and delete_backup()
             restore_backup() methods
-        1.28 -  Add update_share_from_metadata() method
+        1.28 - Add update_share_from_metadata() method
+        1.29 - Add update_share_network_subnet_from_metadata() method
     """
 
     BASE_RPC_API_VERSION = '1.0'
@@ -96,7 +97,7 @@ class ShareAPI(object):
         super(ShareAPI, self).__init__()
         target = messaging.Target(topic=CONF.share_topic,
                                   version=self.BASE_RPC_API_VERSION)
-        self.client = rpc.get_client(target, version_cap='1.26')
+        self.client = rpc.get_client(target, version_cap='1.29')
 
     def create_share_instance(self, context, share_instance, host,
                               request_spec, filter_properties,
@@ -535,3 +536,18 @@ class ShareAPI(object):
                                  'restore_backup',
                                  backup=backup,
                                  share_id=share_id)
+
+    def update_share_network_subnet_from_metadata(self, context,
+                                                  share_network_id,
+                                                  share_network_subnet_id,
+                                                  share_server,
+                                                  metadata):
+        host = utils.extract_host(share_server['host'])
+        call_context = self.client.prepare(server=host, version='1.29')
+        call_context.cast(
+            context,
+            'update_share_network_subnet_from_metadata',
+            share_network_id=share_network_id,
+            share_network_subnet_id=share_network_subnet_id,
+            share_server_id=share_server['id'],
+            metadata=metadata)

@@ -21,6 +21,7 @@ class Resource(object):
     SHARE_REPLICA = 'SHARE_REPLICA'
     SHARE_SNAPSHOT = 'SHARE_SNAPSHOT'
     SECURITY_SERVICE = 'SECURITY_SERVICE'
+    SHARE_NETWORK_SUBNET = 'SHARE_NETWORK_SUBNET'
 
 
 class Action(object):
@@ -159,6 +160,10 @@ class Detail(object):
         '030',
         _("Metadata passed to share driver failed to perform required "
           "operation."))
+    UPDATE_METADATA_NOT_DELETED = (
+        '031',
+        _("Metadata delete operation includes driver updatable metadata, and "
+          "it is not passed to share driver to perform required operation."))
 
     ALL = (
         UNKNOWN_ERROR,
@@ -192,6 +197,7 @@ class Detail(object):
         DRIVER_FAILED_TRANSFER_ACCEPT,
         UPDATE_METADATA_SUCCESS,
         UPDATE_METADATA_FAILURE,
+        UPDATE_METADATA_NOT_DELETED
     )
 
     # Exception and detail mappings
