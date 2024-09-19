@@ -30,6 +30,7 @@ from oslo_config import cfg
 from oslo_log import log
 from oslo_service import loopingcall
 from oslo_utils import excutils
+from oslo_utils import strutils
 from oslo_utils import timeutils
 from oslo_utils import units
 from oslo_utils import uuidutils
@@ -2073,6 +2074,22 @@ class NetAppCmodeFileStorageLibrary(object):
                     "FlexGroup snapshot to not be busy.")
             raise exception.NetAppException(msg % snapshot_name)
 
+    def _get_driver_option(self, options, key, default=None, value_type=None):
+        """Get the value of the specified key from the dictionary."""
+        value = options.get(key, default) if options else default
+        try:
+            # Convert the option value to the correct type, ...
+            # but return None without converting if the value is None.
+            if value_type is int:
+                return int(value) if value else None
+            if value_type is bool:
+                return strutils.bool_from_string(value) if value else None
+        except (ValueError, TypeError):
+            msg = ("Invalid value '%(value)s' for option '%(key)s'. ")
+            msg_args = {'value': value, 'key': key}
+            raise exception.InvalidInput(reason=msg % msg_args)
+        return value
+
     @na_utils.trace
     def manage_existing(self, share, driver_options, share_server=None):
         vserver, vserver_client = self._get_vserver(share_server=share_server)
@@ -2189,9 +2206,10 @@ class NetAppCmodeFileStorageLibrary(object):
                   'provisioning options %(options)s', debug_args)
 
         # Rename & remount volume on new path.
-        vserver_client.unmount_volume(volume_name)
-        vserver_client.set_volume_name(volume_name, share_name)
-        vserver_client.mount_volume(share_name)
+        if volume_name != share_name:
+            vserver_client.unmount_volume(volume_name)
+            vserver_client.set_volume_name(volume_name, share_name)
+            vserver_client.mount_volume(share_name)
 
         qos_policy_group_name = self._modify_or_create_qos_for_existing_share(
             share, extra_specs, vserver, vserver_client)
