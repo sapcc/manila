@@ -2320,6 +2320,7 @@ def share_create(context, share_values, create_share_instance=True):
     values = ensure_model_dict_has_id(values)
     values['share_metadata'] = _metadata_refs(values.get('metadata'),
                                               models.ShareMetadata)
+
     session = get_session()
     share_ref = models.Share()
     share_instance_values, share_values = _extract_share_instance_values(
@@ -2332,6 +2333,8 @@ def share_create(context, share_values, create_share_instance=True):
         share_ref.save(session=session)
 
         if create_share_instance:
+            instance_id = values.pop('instance_id', None)
+            share_instance_values['id'] = instance_id
             _share_instance_create(context, share_ref['id'],
                                    share_instance_values, session=session)
 
