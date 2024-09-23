@@ -2370,9 +2370,10 @@ class NetAppCmodeFileStorageLibrary(object):
         mount_point_name = share.get('mount_point_name')
 
         # Rename & remount volume on new path.
-        vserver_client.unmount_volume(volume_name)
-        vserver_client.set_volume_name(volume_name, share_name)
-        vserver_client.mount_volume(share_name, mount_point_name)
+        if volume_name != share_name:
+            vserver_client.unmount_volume(volume_name)
+            vserver_client.set_volume_name(volume_name, share_name)
+            vserver_client.mount_volume(share_name, mount_point_name)
 
         qos_policy_group_name = self._modify_or_create_qos_for_existing_share(
             share, extra_specs, vserver, vserver_client)
