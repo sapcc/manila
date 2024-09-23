@@ -1104,6 +1104,18 @@ class API(base.Base):
         share_data.update(
             self.get_share_attributes_from_share_type(share_type))
 
+        instance_id = driver_options.get('instance_id', None)
+        if instance_id:
+            if not uuidutils.is_uuid_like(instance_id):
+                msg = "Provided instance_id is not valid UUID: %s"
+                msg = msg % instance_id
+                raise exception.InvalidInput(reason=msg)
+
+            msg = "Manage share with provided instance_id %s"
+            msg = msg % instance_id
+            LOG.info(msg)
+            share_data['instance_id'] = driver_options.pop('instance_id')
+
         share = self.db.share_create(context, share_data)
 
         export_location_path = share_data.pop('export_location_path')
