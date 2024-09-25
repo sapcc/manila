@@ -501,6 +501,17 @@ You can update the metadata:
 You also can unset the metadata using
 **manila metadata <share_name> unset <metadata_key(s)>**.
 
+.. note::
+  In case you want to prevent certain metadata key-values to be manipulated by
+  less privileged users, you can provide a list of such keys through the admin
+  only metadata configuration option listed in the
+  :ref:`additional configuration options page <manila-common>`.
+
+  In case you want to pass certain metadata key-values to be consumed by share
+  drivers, you can provide a list of such keys through the driver updatable
+  metadata configuration option listed in the
+  :ref:`additional configuration options page <manila-common>`.
+
 Reset share state
 -----------------
 
