@@ -50,7 +50,7 @@ class NASHelperBase(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def update_access(self, context, share, access_rules, add_rules,
-                      delete_rules, share_server=None):
+                      delete_rules, update_rules, share_server=None):
         """Update access rules of share."""
 
     def get_backend_info(self, context):
@@ -161,7 +161,7 @@ class GaneshaNASHelper(NASHelperBase):
         self.ganesha.remove_export("%s--%s" % (share['name'], access['id']))
 
     def update_access(self, context, share, access_rules, add_rules,
-                      delete_rules, share_server=None):
+                      delete_rules, update_rules, share_server=None):
         """Update access rules of share."""
         rule_state_map = {}
         if not (add_rules or delete_rules):
@@ -232,7 +232,7 @@ class GaneshaNASHelper2(GaneshaNASHelper):
         raise NotImplementedError()
 
     def update_access(self, context, share, access_rules, add_rules,
-                      delete_rules, share_server=None):
+                      delete_rules, update_rules, share_server=None):
         """Update access rules of share.
 
         Creates an export per share. Modifies access rules of shares by
