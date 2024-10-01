@@ -256,7 +256,7 @@ class EMCShareDriver(driver.ShareDriver):
         self.plugin.deny_access(context, share, access, share_server)
 
     def update_access(self, context, share, access_rules, add_rules,
-                      delete_rules, share_server=None):
+                      delete_rules, update_rules, share_server=None):
         """Update access to the share."""
         self.plugin.update_access(context, share, access_rules, add_rules,
                                   delete_rules, share_server)

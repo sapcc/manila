@@ -833,7 +833,9 @@ class NativeProtocolHelperTestCase(test.TestCase):
             self._share,
             access_rules=[alice, manila, admin, dabo],
             add_rules=[alice, manila, admin, dabo],
-            delete_rules=[bob])
+            delete_rules=[bob],
+            update_rules=[],
+        )
 
         expected_access_updates = {
             'accessid1': {'access_key': 'abc123'},
@@ -901,7 +903,7 @@ class NativeProtocolHelperTestCase(test.TestCase):
 
         access_updates = self._native_protocol_helper.update_access(
             self._context, self._share, access_rules=[alice], add_rules=[],
-            delete_rules=[])
+            delete_rules=[], update_rules=[])
 
         self.assertEqual(
             {'accessid1': {'access_key': 'abc123'}}, access_updates)
