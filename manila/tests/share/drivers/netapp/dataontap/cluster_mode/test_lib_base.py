@@ -3662,6 +3662,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                                    [fake.SHARE_ACCESS],
                                    [],
                                    [],
+                                   [],
                                    share_server=fake.SHARE_SERVER)
 
         mock_get_vserver.assert_called_once_with(
@@ -3693,6 +3694,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.library.update_access(self.context,
                                    fake.SHARE,
                                    [fake.SHARE_ACCESS],
+                                   [],
                                    [],
                                    [],
                                    share_server=fake.SHARE_SERVER)
@@ -3728,6 +3730,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                           [fake.SHARE_ACCESS],
                           [],
                           [],
+                          [],
                           share_server=fake.SHARE_SERVER)
 
         mock_get_vserver.assert_called_once_with(
@@ -3759,6 +3762,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.library.update_access(self.context,
                                    fake_share_copy,
                                    [fake.SHARE_ACCESS],
+                                   [],
                                    [],
                                    [],
                                    share_server=fake.SHARE_SERVER)
@@ -3794,6 +3798,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.library.update_access(self.context,
                                    fake_share_copy,
                                    [fake.SHARE_ACCESS],
+                                   [],
                                    [],
                                    [],
                                    share_server=fake.SHARE_SERVER)
