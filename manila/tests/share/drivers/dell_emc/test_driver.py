@@ -179,6 +179,34 @@ class EMCShareFrameworkTestCase(test.TestCase):
                                                          share_server)
         self.driver.manage_server(context, share_server, identifier,
                                   driver_options)
+        self.driver.get_share_server_network_info_support = True
+        self.driver.get_share_server_network_info(context, share_server,
+                                                  identifier, driver_options)
+        self.driver.create_share(context, share, share_server)
+        self.driver.create_share_from_snapshot(context, share, snapshot,
+                                               share_server)
+        self.driver.extend_share(share, 20, share_server)
+        self.driver.shrink_share_support = True
+        self.driver.shrink_share(share, 20, share_server)
+        self.driver.create_snapshot(context, snapshot, share_server)
+        self.driver.delete_share(context, share, share_server)
+        self.driver.delete_snapshot(context, snapshot, share_server)
+        self.driver.ensure_share(context, share, share_server)
+        access = mock.Mock()
+        self.driver.allow_access(context, share, access, share_server)
+        self.driver.deny_access(context, share, access, share_server)
+        self.driver.update_access(context, share, None, None,
+                                  None, share_server)
+        self.driver.check_for_setup_error()
+        self.driver.get_network_allocations_number()
+        self.driver._teardown_server(None)
+        self.driver.revert_to_snap_support = True
+        share_access_rules = mock.Mock()
+        snapshot_access_rules = mock.Mock()
+        self.driver.revert_to_snapshot(context, snapshot, share_access_rules,
+                                       snapshot_access_rules, share_server)
+        self.driver.ipv6_implemented = False
+        self.driver.get_configured_ip_versions()
 
     def test_not_support_manage(self):
         share = mock.Mock()
