@@ -697,7 +697,8 @@ class ShareDriverTestCase(test.TestCase):
             'fake_share',
             'fake_access_rules',
             'fake_add_rules',
-            'fake_delete_rules'
+            'fake_delete_rules',
+            'fake_update_rules'
         )
 
     def test_create_replica(self):

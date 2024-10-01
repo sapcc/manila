@@ -448,6 +448,7 @@ class FlashBladeShareDriver(driver.ShareDriver):
         access_rules,
         add_rules,
         delete_rules,
+        update_rules,
         share_server=None,
     ):
         """Update access of share"""
