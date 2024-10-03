@@ -289,7 +289,8 @@ class ShareInstanceAccess(ShareInstanceAccessDatabaseMixin):
         # Is there a sync in progress? If yes, ignore the incoming request.
         rule_filter = {
             'state': (constants.ACCESS_STATE_APPLYING,
-                      constants.ACCESS_STATE_DENYING),
+                      constants.ACCESS_STATE_DENYING,
+                      constants.ACCESS_STATE_UPDATING),
         }
         syncing_rules = self.get_and_update_share_instance_access_rules(
             context, filters=rule_filter, share_instance_id=share_instance_id)
@@ -332,7 +333,8 @@ class ShareInstanceAccess(ShareInstanceAccessDatabaseMixin):
 
         rules_to_be_removed_from_db = []
         # Populate rules to send to the driver
-        (access_rules_to_be_on_share, add_rules, delete_rules) = (
+        (access_rules_to_be_on_share, add_rules,
+            delete_rules, update_rules) = (
             self._get_rules_to_send_to_driver(context, share_instance)
         )
 
@@ -343,11 +345,13 @@ class ShareInstanceAccess(ShareInstanceAccessDatabaseMixin):
             add_rules = []
             rules_to_be_removed_from_db = delete_rules
             delete_rules = []
+            update_rules = []
 
         try:
             driver_rule_updates = self._update_rules_through_share_driver(
                 context, share_instance, access_rules_to_be_on_share,
-                add_rules, delete_rules, rules_to_be_removed_from_db,
+                add_rules, delete_rules, update_rules,
+                rules_to_be_removed_from_db,
                 share_server)
 
             self.process_driver_rule_updates(
@@ -356,6 +360,7 @@ class ShareInstanceAccess(ShareInstanceAccessDatabaseMixin):
             # Update access rules that are still in 'applying' state
             conditionally_change = {
                 constants.ACCESS_STATE_APPLYING: constants.ACCESS_STATE_ACTIVE,
+                constants.ACCESS_STATE_UPDATING: constants.ACCESS_STATE_ACTIVE
             }
             self.get_and_update_share_instance_access_rules(
                 context, share_instance_id=share_instance_id,
@@ -365,6 +370,7 @@ class ShareInstanceAccess(ShareInstanceAccessDatabaseMixin):
             conditionally_change_rule_state = {
                 constants.ACCESS_STATE_APPLYING: constants.ACCESS_STATE_ERROR,
                 constants.ACCESS_STATE_DENYING: constants.ACCESS_STATE_ERROR,
+                constants.ACCESS_STATE_UPDATING: constants.ACCESS_STATE_ERROR,
             }
             self.get_and_update_share_instance_access_rules(
                 context, share_instance_id=share_instance_id,
@@ -399,6 +405,7 @@ class ShareInstanceAccess(ShareInstanceAccessDatabaseMixin):
     def _update_rules_through_share_driver(self, context, share_instance,
                                            access_rules_to_be_on_share,
                                            add_rules, delete_rules,
+                                           update_rules,
                                            rules_to_be_removed_from_db,
                                            share_server):
         driver_rule_updates = {}
@@ -407,6 +414,7 @@ class ShareInstanceAccess(ShareInstanceAccessDatabaseMixin):
                 share_protocol == 'nfs'):
             add_rules = self._filter_ipv6_rules(add_rules)
             delete_rules = self._filter_ipv6_rules(delete_rules)
+            update_rules = self._filter_ipv6_rules(update_rules)
             access_rules_to_be_on_share = self._filter_ipv6_rules(
                 access_rules_to_be_on_share)
         try:
@@ -416,6 +424,7 @@ class ShareInstanceAccess(ShareInstanceAccessDatabaseMixin):
                 access_rules_to_be_on_share,
                 add_rules=add_rules,
                 delete_rules=delete_rules,
+                update_rules=update_rules,
                 share_server=share_server
             ) or {}
         except NotImplementedError:
@@ -476,6 +485,7 @@ class ShareInstanceAccess(ShareInstanceAccessDatabaseMixin):
                 conditional_state_updates = {
                     constants.ACCESS_STATE_APPLYING: state,
                     constants.ACCESS_STATE_DENYING: state,
+                    constants.ACCESS_STATE_UPDATING: state,
                     constants.ACCESS_STATE_ACTIVE: state,
                 }
             else:
@@ -513,10 +523,12 @@ class ShareInstanceAccess(ShareInstanceAccessDatabaseMixin):
     def _get_rules_to_send_to_driver(self, context, share_instance):
         add_rules = []
         delete_rules = []
+        update_rules = []
         access_filters = {
             'state': (constants.ACCESS_STATE_APPLYING,
                       constants.ACCESS_STATE_ACTIVE,
-                      constants.ACCESS_STATE_DENYING),
+                      constants.ACCESS_STATE_DENYING,
+                      constants.ACCESS_STATE_UPDATING),
         }
         existing_rules_in_db = self.get_and_update_share_instance_access_rules(
             context, filters=access_filters,
@@ -528,11 +540,14 @@ class ShareInstanceAccess(ShareInstanceAccessDatabaseMixin):
                 add_rules.append(rule)
             elif rule['state'] == constants.ACCESS_STATE_DENYING:
                 delete_rules.append(rule)
+            elif rule['state'] == constants.ACCESS_STATE_UPDATING:
+                update_rules.append(rule)
         delete_rule_ids = [r['id'] for r in delete_rules]
         access_rules_to_be_on_share = [
             r for r in existing_rules_in_db if r['id'] not in delete_rule_ids
         ]
-        return access_rules_to_be_on_share, add_rules, delete_rules
+        return (access_rules_to_be_on_share, add_rules,
+                delete_rules, update_rules)
 
     def _check_needs_refresh(self, context, share_instance_id):
         rules_to_apply_or_deny = (
@@ -579,13 +594,16 @@ class ShareInstanceAccess(ShareInstanceAccessDatabaseMixin):
                                                       share_instance_id):
         rule_filter = {
             'state': (constants.ACCESS_STATE_QUEUED_TO_APPLY,
-                      constants.ACCESS_STATE_QUEUED_TO_DENY),
+                      constants.ACCESS_STATE_QUEUED_TO_DENY,
+                      constants.ACCESS_STATE_QUEUED_TO_UPDATE),
         }
         conditionally_change = {
             constants.ACCESS_STATE_QUEUED_TO_APPLY:
                 constants.ACCESS_STATE_APPLYING,
             constants.ACCESS_STATE_QUEUED_TO_DENY:
                 constants.ACCESS_STATE_DENYING,
+            constants.ACCESS_STATE_QUEUED_TO_UPDATE:
+                constants.ACCESS_STATE_UPDATING,
         }
         rules_to_apply_or_deny = (
             self.get_and_update_share_instance_access_rules(

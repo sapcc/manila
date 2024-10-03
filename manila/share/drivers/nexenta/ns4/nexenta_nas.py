@@ -108,7 +108,7 @@ class NexentaNasDriver(driver.ShareDriver):
         self.helper.delete_snapshot(snapshot['share_name'], snapshot['name'])
 
     def update_access(self, context, share, access_rules, add_rules,
-                      delete_rules, share_server=None):
+                      delete_rules, update_rules, share_server=None):
         """Update access rules for given share.
 
         :param context: The `context.RequestContext` object for the request

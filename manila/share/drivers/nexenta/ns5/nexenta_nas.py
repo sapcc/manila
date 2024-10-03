@@ -392,7 +392,7 @@ class NexentaNasDriver(driver.ShareDriver):
         }]}
 
     def update_access(self, context, share, access_rules, add_rules,
-                      delete_rules, share_server=None):
+                      delete_rules, update_rules, share_server=None):
         """Update access rules for given share.
 
         Using access_rules list for both adding and deleting rules.
