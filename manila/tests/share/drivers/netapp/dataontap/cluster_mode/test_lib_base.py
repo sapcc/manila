@@ -488,6 +488,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
         expected = {
             'share_backend_name': fake.BACKEND_NAME,
+            'share_backend_host': fake.BACKEND_NAME,
             'driver_name': fake.DRIVER_NAME,
             'vendor_name': 'NetApp',
             'driver_version': system_version['version-tuple'],
