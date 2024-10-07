@@ -214,6 +214,8 @@ class NetAppCmodeFileStorageLibrary(object):
                                self.configuration.netapp_api_trace_pattern)
         self._backend_name = self.configuration.safe_get(
             'share_backend_name') or driver_name
+        self._backend_host = self.configuration.safe_get(
+            'netapp_server_hostname') or self._backend_name
         self.message_api = message_api.API()
         self._snapmirror_schedule = self._convert_schedule_to_seconds(
             schedule=self.configuration.netapp_snapmirror_schedule)
@@ -480,6 +482,7 @@ class NetAppCmodeFileStorageLibrary(object):
 
         data = {
             'share_backend_name': self._backend_name,
+            'share_backend_host': self._backend_host,
             'driver_name': self.driver_name,
             'vendor_name': 'NetApp',
             'driver_version': driver_version,
