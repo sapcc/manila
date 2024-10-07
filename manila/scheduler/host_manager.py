@@ -129,6 +129,7 @@ class HostState(object):
         self.update_capabilities(capabilities, service)
 
         self.share_backend_name = None
+        self.share_backend_host = None
         self.vendor_name = None
         self.driver_version = 0
         self.storage_protocol = None
@@ -307,6 +308,9 @@ class HostState(object):
         if not pool_cap.get('share_backend_name'):
             pool_cap['share_backend_name'] = self.share_backend_name
 
+        if not pool_cap.get('share_backend_host'):
+            pool_cap['share_backend_host'] = self.share_backend_host
+
         if not pool_cap.get('storage_protocol'):
             pool_cap['storage_protocol'] = self.storage_protocol
 
@@ -380,6 +384,7 @@ class HostState(object):
 
     def update_backend(self, capability):
         self.share_backend_name = capability.get('share_backend_name')
+        self.share_backend_host = capability.get('share_backend_host')
         self.vendor_name = capability.get('vendor_name')
         self.driver_version = capability.get('driver_version')
         self.storage_protocol = capability.get('storage_protocol')
