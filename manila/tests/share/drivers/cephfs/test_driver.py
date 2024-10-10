@@ -226,10 +226,11 @@ class CephFSDriverTestCase(test.TestCase):
         }
         add_rules = access_rules = [alice, ]
         delete_rules = []
+        update_rules = []
 
         self._driver.update_access(
             self._context, self._share, access_rules, add_rules, delete_rules,
-            None)
+            update_rules, None)
 
         self._driver.protocol_helper.update_access.assert_called_once_with(
             self._context, self._share, access_rules, add_rules, delete_rules,
@@ -833,6 +834,7 @@ class NativeProtocolHelperTestCase(test.TestCase):
             self._share,
             access_rules=[alice, manila, admin, dabo],
             add_rules=[alice, manila, admin, dabo],
+            update_rules=[],
             delete_rules=[bob])
 
         expected_access_updates = {
@@ -901,7 +903,7 @@ class NativeProtocolHelperTestCase(test.TestCase):
 
         access_updates = self._native_protocol_helper.update_access(
             self._context, self._share, access_rules=[alice], add_rules=[],
-            delete_rules=[])
+            delete_rules=[], update_rules=[])
 
         self.assertEqual(
             {'accessid1': {'access_key': 'abc123'}}, access_updates)
