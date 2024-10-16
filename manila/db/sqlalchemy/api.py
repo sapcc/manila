@@ -2941,11 +2941,10 @@ def transfer_accept_rollback(
 ###################
 
 
-def _share_access_get_query(context, values, read_deleted='no'):
+def _share_access_get_query(context, values):
     """Get access record."""
     query = model_query(
         context, models.ShareAccessMapping,
-        read_deleted=read_deleted
     ).options(
         orm.joinedload(models.ShareAccessMapping.share_access_rules_metadata),
     )
@@ -6437,6 +6436,8 @@ def purge_deleted_records(context, age_in_days):
         msg = 'No tables found, check database connection'
         raise exception.InvalidResults(msg)
 
+    tables_without_id = ['async_operation_data', 'backend_info',
+                         'drivers_private_data']
     deleted_age = timeutils.utcnow() - datetime.timedelta(days=age_in_days)
 
     # Deleting rows in share_network_security_service_association
@@ -6463,9 +6464,20 @@ def purge_deleted_records(context, age_in_days):
                 # collect all soft-deleted records
                 with context.session.begin_nested():
                     model = mds[0]
-                    s_deleted_records = context.session.query(
-                        model,
-                    ).filter(model.deleted_at <= deleted_age)
+                    if str(table) in tables_without_id:
+                        s_deleted_records = context.session.query(
+                            model,
+                        ).filter(model.deleted_at <= deleted_age,
+                                 model.deleted == 1)
+                    else:
+                        # NOTE: table.columns['deleted'].type.python_type
+                        # is str (default 'False') or int (default 0),
+                        # but both are set to the id on soft-delete
+                        s_deleted_records = context.session.query(
+                            model,
+                        ).filter(model.deleted_at <= deleted_age,
+                                 model.deleted == model.id)
+
                 deleted_count = 0
                 # delete records one by one,
                 # skip the records which has FK constraints
