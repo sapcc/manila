@@ -2377,6 +2377,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'is-aes-encryption-enabled': 'true',
             'use-ldaps-for-ad-ldap': 'true',
             'session-security-for-ad-ldap': 'sign',
+            'advertised-enc-types': 'aes-256,aes-128',
         }
 
         if not secure:
