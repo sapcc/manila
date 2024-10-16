@@ -4162,7 +4162,9 @@ class PurgeDeletedTest(test.TestCase):
 
     def setUp(self):
         super(PurgeDeletedTest, self).setUp()
-        self.context = context.get_admin_context()
+        # FIXME: adjust to read_deleted="yes" after 2023.2 bobcat
+        # because of https://review.opendev.org/c/openstack/manila/+/879294
+        self.context = context.get_admin_context(read_deleted="only")
 
     def _days_ago(self, begin, end):
         return timeutils.utcnow() - datetime.timedelta(
@@ -4189,47 +4191,70 @@ class PurgeDeletedTest(test.TestCase):
             for start, end in ((0, 9), (10, 19)):
                 for unused in range(2):
                     # share type
-                    db_utils.create_share_type(id=uuidutils.generate_uuid(),
+                    type_id = uuidutils.generate_uuid()
+                    db_utils.create_share_type(context=self.context,
+                                               id=type_id,
+                                               deleted=type_id,
                                                deleted_at=self._days_ago(start,
                                                                          end))
                     # share
+                    share_id = uuidutils.generate_uuid()
                     share = db_utils.create_share_without_instance(
+                        context=self.context,
                         metadata={},
+                        id=share_id,
+                        deleted=share_id,
                         deleted_at=self._days_ago(start, end))
                     # create share network
+                    network_id = uuidutils.generate_uuid()
                     network = db_utils.create_share_network(
-                        id=uuidutils.generate_uuid(),
+                        context=self.context,
+                        id=network_id,
+                        deleted=network_id,
                         deleted_at=self._days_ago(start, end))
                     # create security service
+                    secserv_id = uuidutils.generate_uuid()
                     db_utils.create_security_service(
-                        id=uuidutils.generate_uuid(),
+                        context=self.context,
+                        id=secserv_id,
+                        deleted=secserv_id,
                         share_network_id=network.id,
                         deleted_at=self._days_ago(start, end))
                     # create share instance
                     s_instance = db_utils.create_share_instance(
-                        id=uuidutils.generate_uuid(),
+                        context=self.context,
                         share_network_id=network.id,
                         share_id=share.id)
                     # share access
+                    access_id = uuidutils.generate_uuid()
                     db_utils.create_share_access(
-                        id=uuidutils.generate_uuid(),
+                        context=self.context,
+                        id=access_id,
+                        deleted=access_id,
                         share_id=share['id'],
                         deleted_at=self._days_ago(start, end))
                     # create share server
+                    server_id = uuidutils.generate_uuid()
                     db_utils.create_share_server(
-                        id=uuidutils.generate_uuid(),
+                        context=self.context,
+                        id=server_id,
+                        deleted=server_id,
                         deleted_at=self._days_ago(start, end))
                     # create snapshot
+                    snap_id = uuidutils.generate_uuid()
                     db_api.share_snapshot_create(
                         self.context, {'share_id': share['id'],
+                                       'id': snap_id,
+                                       'deleted': snap_id,
                                        'deleted_at': self._days_ago(start,
                                                                     end)},
                         create_snapshot_instance=False)
-                    # update share instance
+                    # soft-delete share instance
                     db_api.share_instance_update(
                         self.context,
                         s_instance.id,
-                        {'deleted_at': self._days_ago(start, end)})
+                        {'deleted': s_instance.id,
+                         'deleted_at': self._days_ago(start, end)})
 
             db_api.purge_deleted_records(self.context, age_in_days=del_days)
 
@@ -4251,11 +4276,14 @@ class PurgeDeletedTest(test.TestCase):
     def test_purge_records_with_constraint(self):
         self._turn_on_foreign_key()
         type_id = uuidutils.generate_uuid()
+        type_id2 = uuidutils.generate_uuid()
         # create share type1
         db_utils.create_share_type(id=type_id,
+                                   deleted=type_id,
                                    deleted_at=self._days_ago(1, 1))
         # create share type2
-        db_utils.create_share_type(id=uuidutils.generate_uuid(),
+        db_utils.create_share_type(id=type_id2,
+                                   deleted=type_id2,
                                    deleted_at=self._days_ago(1, 1))
         # create share
         share = db_utils.create_share(share_type_id=type_id)
