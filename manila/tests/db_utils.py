@@ -23,11 +23,12 @@ from manila.message import message_levels
 
 def _create_db_row(method, default_values, custom_values):
     override_defaults = custom_values.pop('override_defaults', None)
+    ctxt = custom_values.pop('context', context.get_admin_context())
     if override_defaults:
         default_values = custom_values
     else:
         default_values.update(copy.deepcopy(custom_values))
-    return method(context.get_admin_context(), default_values)
+    return method(ctxt, default_values)
 
 
 def create_share_group(**kwargs):
@@ -71,7 +72,6 @@ def create_share_group_snapshot_member(share_group_snapshot_id, **kwargs):
 
 def create_share_access(**kwargs):
     share_access = {
-        'id': 'fake_id',
         'access_type': 'ip',
         'access_to': 'fake_ip_address'
     }
@@ -97,6 +97,7 @@ def create_share(**kwargs):
 
 
 def create_share_without_instance(**kwargs):
+    ctxt = kwargs.pop('context', context.get_admin_context())
     share = {
         'share_proto': "NFS",
         'size': 0,
@@ -111,7 +112,7 @@ def create_share_without_instance(**kwargs):
         'host': 'fake_host'
     }
     share.update(copy.deepcopy(kwargs))
-    return db.share_create(context.get_admin_context(), share, False)
+    return db.share_create(ctxt, share, False)
 
 
 def create_share_instance(**kwargs):
@@ -181,6 +182,7 @@ def create_snapshot_instance_export_locations(snapshot_id, **kwargs):
 def create_access(**kwargs):
     """Create an access rule object."""
     state = kwargs.pop('state', constants.ACCESS_STATE_QUEUED_TO_APPLY)
+    ctxt = kwargs.get('context', context.get_admin_context())
     access = {
         'access_type': 'fake_type',
         'access_to': 'fake_IP',
@@ -191,7 +193,7 @@ def create_access(**kwargs):
 
     for mapping in share_access_rule.instance_mappings:
         db.share_instance_access_update(
-            context.get_admin_context(), share_access_rule['id'],
+            ctxt, share_access_rule['id'],
             mapping.share_instance_id, {'state': state})
 
     return share_access_rule
@@ -210,6 +212,7 @@ def create_snapshot_access(**kwargs):
 def create_share_server(**kwargs):
     """Create a share server object."""
     backend_details = kwargs.pop('backend_details', {})
+    ctxt = kwargs.get('context', context.get_admin_context())
     srv = {
         'host': 'host1',
         'share_network_subnet_id': 'fake_srv_id',
@@ -218,9 +221,8 @@ def create_share_server(**kwargs):
     share_srv = _create_db_row(db.share_server_create, srv, kwargs)
     if backend_details:
         db.share_server_backend_details_set(
-            context.get_admin_context(), share_srv['id'], backend_details)
-    return db.share_server_get(context.get_admin_context(),
-                               share_srv['id'])
+            ctxt, share_srv['id'], backend_details)
+    return db.share_server_get(ctxt, share_srv['id'])
 
 
 def create_share_type(**kwargs):
@@ -261,7 +263,6 @@ def create_share_network(**kwargs):
 def create_share_network_subnet(**kwargs):
     """Create a share network subnet object."""
     subnet = {
-        'id': 'fake_sns_id',
         'neutron_net_id': 'fake-neutron-net',
         'neutron_subnet_id': 'fake-neutron-subnet',
         'network_type': 'vlan',
@@ -278,6 +279,7 @@ def create_share_network_subnet(**kwargs):
 
 def create_security_service(**kwargs):
     share_network_id = kwargs.pop('share_network_id', None)
+    ctxt = kwargs.get('context', context.get_admin_context())
     service = {
         'type': "FAKE",
         'project_id': 'fake-project-id',
@@ -285,7 +287,7 @@ def create_security_service(**kwargs):
     service_ref = _create_db_row(db.security_service_create, service, kwargs)
 
     if share_network_id:
-        db.share_network_add_security_service(context.get_admin_context(),
+        db.share_network_add_security_service(ctxt,
                                               share_network_id,
                                               service_ref['id'])
     return service_ref
