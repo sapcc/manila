@@ -68,6 +68,7 @@ class ShareNetworkSubnetControllerTest(test.TestCase):
             name='fake_network', id='fake_sn_id')
         self.subnet_metadata = {'fake_key': 'fake_value'}
         self.subnet = db_utils.create_share_network_subnet(
+            id='fake_sns_id',
             share_network_id=self.share_network['id'],
             metadata=self.subnet_metadata)
         self.share_server = db_utils.create_share_server(
