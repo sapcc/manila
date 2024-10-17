@@ -2366,13 +2366,18 @@ class API(base.Base):
         else:
             policy.check_policy(context, 'share', 'extend')
 
-        if share['status'] != constants.STATUS_AVAILABLE:
+        valid_statuses = [constants.STATUS_AVAILABLE]
+
+        if force:
+            valid_statuses.append(constants.STATUS_EXTENDING_ERROR)
+
+        if share['status'] not in valid_statuses:
             msg_params = {
-                'valid_status': constants.STATUS_AVAILABLE,
+                'valid_status': ", ".join(valid_statuses),
                 'share_id': share['id'],
                 'status': share['status'],
             }
-            msg = _("Share %(share_id)s status must be '%(valid_status)s' "
+            msg = _("Share %(share_id)s status must be in (%(valid_status)s) "
                     "to extend, but current status is: "
                     "%(status)s.") % msg_params
             raise exception.InvalidShare(reason=msg)
@@ -2478,6 +2483,7 @@ class API(base.Base):
 
         status = six.text_type(share['status']).lower()
         valid_statuses = (constants.STATUS_AVAILABLE,
+                          constants.STATUS_SHRINKING_ERROR,
                           constants.STATUS_SHRINKING_POSSIBLE_DATA_LOSS_ERROR)
 
         if status not in valid_statuses:
@@ -2486,7 +2492,7 @@ class API(base.Base):
                 'share_id': share['id'],
                 'status': status,
             }
-            msg = _("Share %(share_id)s status must in (%(valid_status)s) "
+            msg = _("Share %(share_id)s status must be in (%(valid_status)s) "
                     "to shrink, but current status is: "
                     "%(status)s.") % msg_params
             raise exception.InvalidShare(reason=msg)
