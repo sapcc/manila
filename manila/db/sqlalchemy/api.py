@@ -5284,6 +5284,8 @@ def purge_deleted_records(context, age_in_days):
     if not tables:
         msg = 'No tables found, check database connection'
         raise exception.InvalidResults(msg)
+    tables_without_id = ['async_operation_data', 'backend_info',
+                         'drivers_private_data']
     session = get_session()
     deleted_age = timeutils.utcnow() - datetime.timedelta(days=age_in_days)
 
@@ -5298,8 +5300,18 @@ def purge_deleted_records(context, age_in_days):
                     # collect all soft-deleted records
                     with session.begin_nested():
                         model = mds[0]
-                        s_deleted_records = session.query(model).filter(
-                            model.deleted_at <= deleted_age)
+                        if str(table) in tables_without_id:
+                            s_deleted_records = session.query(model).filter(
+                                model.deleted_at <= deleted_age,
+                                model.deleted == 1)
+                        else:
+                            # NOTE: table.columns['deleted'].type.python_type
+                            # is str (default 'False') or int (default 0),
+                            # but both are set to the id on soft-delete
+                            s_deleted_records = session.query(model).filter(
+                                model.deleted_at <= deleted_age,
+                                model.deleted == model.id)
+
                     deleted_count = 0
                     # delete records one by one,
                     # skip the records which has FK constraints
