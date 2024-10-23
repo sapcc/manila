@@ -365,7 +365,7 @@ class QuobyteShareDriver(driver.ExecuteMixin, driver.ShareDriver,):
         self._resize_share(share=shrink_share, new_size=shrink_size)
 
     def update_access(self, context, share, access_rules, add_rules,
-                      delete_rules, share_server=None):
+                      delete_rules, update_rules, share_server=None):
         """Update access rules for given share.
 
         Two different cases are supported in here:

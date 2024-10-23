@@ -535,7 +535,7 @@ class CephFSDriver(driver.ExecuteMixin, driver.GaneshaMixin,
         rados_command(self.rados_client, "fs subvolume rm", argdict)
 
     def update_access(self, context, share, access_rules, add_rules,
-                      delete_rules, share_server=None):
+                      delete_rules, update_access, share_server=None):
         return self.protocol_helper.update_access(
             context, share, access_rules, add_rules, delete_rules,
             share_server=share_server)
@@ -895,7 +895,7 @@ class NativeProtocolHelper(ganesha.NASHelperBase):
         rados_command(self.rados_client, "fs subvolume evict", argdict)
 
     def update_access(self, context, share, access_rules, add_rules,
-                      delete_rules, share_server=None):
+                      delete_rules, update_rules, share_server=None):
         access_updates = {}
 
         argdict = {

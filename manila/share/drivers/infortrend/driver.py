@@ -132,7 +132,7 @@ class InfortrendNASDriver(driver.ShareDriver):
         super(InfortrendNASDriver, self)._update_share_stats(data)
 
     def update_access(self, context, share, access_rules, add_rules,
-                      delete_rules, share_server=None):
+                      delete_rules, update_rules, share_server=None):
         """Update access rules for given share.
 
         :param context: Current context
