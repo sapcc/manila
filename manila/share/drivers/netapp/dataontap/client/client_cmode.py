@@ -2374,10 +2374,12 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
     @na_utils.trace
     def configure_cifs_encryption(self, secure=True):
         api_args = {
-            'is-aes-encryption-enabled': 'true',
             'use-ldaps-for-ad-ldap': 'true',
             'session-security-for-ad-ldap': 'sign',
-            'advertised-enc-types': 'aes-256,aes-128',
+            'advertised-enc-types': [
+                {'cifskrbenctypes': 'aes_256'},
+                {'cifskrbenctypes': 'aes_128'}
+            ]
         }
 
         if not secure:
