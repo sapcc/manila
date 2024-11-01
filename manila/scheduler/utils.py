@@ -66,7 +66,9 @@ def generate_stats(host_state, properties):
         'network_allocation_update_support': (
             host_state.network_allocation_update_support),
         'share_server_multiple_subnet_support': (
-            host_state.share_server_multiple_subnet_support)
+            host_state.share_server_multiple_subnet_support),
+        'share_replicas_migration_support': (
+            host_state.share_replicas_migration_support),
     }
 
     host_caps = host_state.capabilities
