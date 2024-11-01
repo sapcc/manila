@@ -848,6 +848,8 @@ class ShareManager(manager.SchedulerDependentManager):
                             self.driver.security_service_update_support),
                         'network_allocation_update_support': (
                             self.driver.network_allocation_update_support),
+                        'share_replicas_migration_support': (
+                            self.driver.share_replicas_migration_support),
                     }
                 )
 
@@ -938,6 +940,8 @@ class ShareManager(manager.SchedulerDependentManager):
                         self.driver.security_service_update_support),
                     'network_allocation_update_support': (
                         self.driver.network_allocation_update_support),
+                    'share_replicas_migration_support': (
+                        self.driver.share_replicas_migration_support),
                 }
             )
 
@@ -1125,6 +1129,8 @@ class ShareManager(manager.SchedulerDependentManager):
                             self.driver.security_service_update_support),
                         'network_allocation_update_support': (
                             self.driver.network_allocation_update_support),
+                        'share_replicas_migration_support': (
+                            self.driver.share_replicas_migration_support),
                     }
                 )
 
@@ -3382,7 +3388,9 @@ class ShareManager(manager.SchedulerDependentManager):
                 {'status': constants.STATUS_ACTIVE,
                  'identifier': new_identifier,
                  'network_allocation_update_support': (
-                     self.driver.network_allocation_update_support)})
+                     self.driver.network_allocation_update_support),
+                 'share_replicas_migration_support': (
+                     self.driver.share_replicas_migration_support)})
 
         except Exception:
             msg = "Error managing share server %s"
