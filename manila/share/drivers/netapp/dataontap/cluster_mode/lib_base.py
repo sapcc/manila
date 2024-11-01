@@ -530,7 +530,8 @@ class NetAppCmodeFileStorageLibrary(object):
             'create_share_from_snapshot_support': True,
             'revert_to_snapshot_support': self._revert_to_snapshot_support,
             'security_service_update_support': True,
-            'share_server_multiple_subnet_support': True
+            'share_server_multiple_subnet_support': True,
+            'share_replicas_migration_support': True,
         }
 
         # Add storage service catalog data.
