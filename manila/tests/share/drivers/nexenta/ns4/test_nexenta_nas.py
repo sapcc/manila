@@ -442,6 +442,7 @@ class TestNexentaNasDriver(test.TestCase):
                           share,
                           [access],
                           None,
+                          None,
                           None)
 
     @mock.patch(PATH_TO_RPC)
@@ -485,7 +486,7 @@ class TestNexentaNasDriver(test.TestCase):
         post.return_value = FakeResponse()
         post.side_effect = my_side_effect
 
-        self.drv.update_access(self.ctx, share, access_rules, None, None)
+        self.drv.update_access(self.ctx, share, access_rules, None, None, None)
 
         post.assert_called_with(
             self.request_params.url, data=self.request_params.build_post_args(
@@ -498,7 +499,7 @@ class TestNexentaNasDriver(test.TestCase):
                           [access1, {'access_type': 'ip',
                                      'access_to': '2.2.2.2',
                                      'access_level': 'rw'}],
-                          None, None)
+                          None, None, None)
 
     @mock.patch(PATH_TO_RPC)
     def test_update_access__add_one_ip_to_empty_access_list(self, post):
@@ -536,7 +537,7 @@ class TestNexentaNasDriver(test.TestCase):
                 raise exception.ManilaException('Unexpected request')
         post.return_value = FakeResponse()
 
-        self.drv.update_access(self.ctx, share, [access], None, None)
+        self.drv.update_access(self.ctx, share, [access], None, None, None)
 
         post.assert_called_with(
             self.request_params.url, data=self.request_params.build_post_args(
@@ -552,7 +553,7 @@ class TestNexentaNasDriver(test.TestCase):
                           [{'access_type': 'ip',
                             'access_to': '1111',
                             'access_level': 'rw'}],
-                          None, None)
+                          None, None, None)
 
     @mock.patch(PATH_TO_RPC)
     def test_deny_access__unsupported_access_type(self, post):
@@ -565,7 +566,7 @@ class TestNexentaNasDriver(test.TestCase):
         }
 
         self.assertRaises(exception.InvalidShareAccess, self.drv.update_access,
-                          self.ctx, share, [access], None, None)
+                          self.ctx, share, [access], None, None, None)
 
     def test_share_backend_name(self):
         self.assertEqual('NexentaStor', self.drv.share_backend_name)
