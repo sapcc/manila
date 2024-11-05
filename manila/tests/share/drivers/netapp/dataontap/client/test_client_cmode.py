@@ -3287,7 +3287,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         volume_create_args = {
             'volume-name': fake.SHARE_NAME,
-            'size': '1073741824'
+            'size': 1073741824
         }
         if auto_provisioned:
             volume_create_args['auto-provision-as'] = 'flexgroup'
