@@ -2596,7 +2596,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             size_b = size_gb * units.Gi * 100 / (100 - snapshot_reserve)
         else:
             size_b = size_gb * units.Gi
-        api_args['size'] = six.text_type(size_b)
+        api_args['size'] = int(size_b)
 
         if options.get('unix-permissions') is not None:
             # special case for multi-protocol shares:
