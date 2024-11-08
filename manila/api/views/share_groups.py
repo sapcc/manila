@@ -59,6 +59,7 @@ class ShareGroupViewBuilder(common.ViewBuilder):
             'share_network_id': share_group.get('share_network_id'),
             'share_types': [st['share_type_id'] for st in share_group.get(
                 'share_types')],
+            'share_affinity': share_group.get('share_affinity'),
             'links': self._get_links(request, share_group['id']),
         }
         self.update_versioned_resource_dict(
