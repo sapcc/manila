@@ -15,6 +15,8 @@
 
 import copy
 
+from oslo_utils import uuidutils
+
 from manila.common import constants
 from manila import context
 from manila import db
@@ -307,3 +309,35 @@ def create_transfer(**kwargs):
                 'crypt_hash': 'crypt_hash',
                 'resource_type': constants.SHARE_RESOURCE_TYPE}
     return _create_db_row(db.transfer_create, transfer, kwargs)
+
+
+def create_backup(share_id, **kwargs):
+    """Create a share backup object."""
+    backup = {
+        'host': "fake_host",
+        'share_network_id': None,
+        'share_server_id': None,
+        'user_id': 'fake',
+        'project_id': 'fake',
+        'availability_zone': 'fake_availability_zone',
+        'status': constants.STATUS_CREATING,
+        'topic': 'fake_topic',
+        'description': 'fake_description',
+        'size': '1',
+    }
+    backup.update(kwargs)
+    return db.share_backup_create(
+        context.get_admin_context(), share_id, backup)
+
+
+def create_lock(**kwargs):
+    lock = {
+        'resource_id': uuidutils.generate_uuid(),
+        'user_id': uuidutils.generate_uuid(dashed=False),
+        'project_id': uuidutils.generate_uuid(dashed=False),
+        'lock_context': 'user',
+        'lock_reason': 'for the tests',
+        'resource_type': 'share',
+        'resource_action': 'delete',
+    }
+    return _create_db_row(db.resource_lock_create, lock, kwargs)

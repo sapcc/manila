@@ -1,5 +1,16 @@
 # variables in header
 #{}
+service_token_locks:
+  description: |
+    An auth-token specified via the header ``X-Service-Token``. With the
+    OpenStack Identity (Keystone) context, this token can be obtained by
+    a user that has the ``service`` role. The presence of this header is
+    used by resource lock API methods to set or match the lock user's context.
+    A resource lock created by a service user cannot be manipulated by
+    non-service users.
+  in: header
+  required: false
+  type: string
 
 # variables in path
 access_id_path:
@@ -14,6 +25,12 @@ api_version:
   type: string
   description: >
     The API version as returned in the links from the ``GET /`` call.
+backup_id_request_path:
+  description: |
+    The UUID of the share backup.
+  in: path
+  required: true
+  type: string
 export_location_id_path:
   description: |
     The UUID of the export location.
@@ -80,6 +97,12 @@ project_id_quota_request_path:
 quota_class_name:
   description:
     The name of the quota class for which to set quotas.
+  in: path
+  required: true
+  type: string
+resource_lock_id_path:
+  description: |
+    The UUID of the resource lock.
   in: path
   required: true
   type: string
@@ -207,6 +230,34 @@ backend_query:
   in: query
   required: false
   type: string
+backup_host_query:
+  description: |
+    The host name of the backup to query with. Querying by hostname is a
+    privileged operation. If restricted by API policy, this query parameter
+    may be silently ignored by the server.
+  in: query
+  required: false
+  type: string
+backup_share_id_query:
+  description: |
+    The UUID of the share that the backup pertains to.
+  in: query
+  required: false
+  type: string
+backup_status_query:
+  description: |
+    Filters by a backup status. A valid filter value can be one of 'creating',
+    'error', 'available', 'restoring'.
+  in: query
+  required: false
+  type: string
+backup_topic_query:
+  description: |
+    Filters by a backup topic. A valid filter value can be one of
+    'manila-data', 'manila-share'.
+  in: query
+  required: false
+  type: string
 cidr_query:
   description: |
     The CIDR to filter share networks.
@@ -275,6 +326,12 @@ description_inexact_query:
   required: false
   type: string
   min_version: 2.36
+description_inexact_query_versionless:
+  description: |
+    The description pattern that can be used to filter share backups.
+  in: query
+  required: false
+  type: string
 description_query:
   description: |
     The user defined description text that can be used to filter resources.
@@ -369,7 +426,7 @@ is_soft_deleted_query:
   min_version: 2.69
 limit:
   description: |
-    The maximum number of shares to return.
+    The maximum number of resource records to return.
   in: query
   required: false
   type: integer
@@ -400,6 +457,12 @@ name_inexact_query:
   required: false
   type: string
   min_version: 2.36
+name_inexact_query_versionless:
+  description: |
+    The name pattern that can be used to filter share backups.
+  in: query
+  required: false
+  type: string
 name_query:
   description: |
     The user defined name of the resource to filter resources by.
@@ -433,8 +496,7 @@ nova_net_id_query:
   max_version: 2.26
 offset:
   description: |
-    The offset to define start point of share or share group
-    listing.
+    The offset to define start point of resource listing.
   in: query
   required: false
   type: integer
@@ -460,6 +522,69 @@ request_id:
 resource_id:
   description: |
     The UUID of the resource for which the message was created.
+  in: query
+  required: false
+  type: string
+resource_lock_all_projects_query:
+  description: |
+    Set this parameter to True to get resource locks across all project
+    namespaces.
+  in: query
+  required: false
+  type: string
+resource_lock_id_query:
+  description: |
+    The ID of the resource lock to filter resource locks by.
+  in: query
+  required: false
+  type: string
+resource_lock_lock_context_query:
+  description: |
+    The lock creator's context to filter locks by.
+  in: query
+  required: false
+  type: string
+resource_lock_lock_reason_inexact_query:
+  description: |
+    The lock reason pattern that can be used to filter resource locks.
+  in: query
+  required: false
+  type: string
+resource_lock_lock_reason_query:
+  description: |
+    The lock reason that can be used to filter resource locks.
+  in: query
+  required: false
+  type: string
+resource_lock_project_id_query:
+  description: |
+    The ID of a project to filter resource locks by.
+  in: query
+  required: false
+  type: string
+resource_lock_resource_action_query:
+  description: |
+    The ``action`` prevented by the filtered resource locks.
+  in: query
+  required: false
+  type: string
+resource_lock_resource_id_query:
+  description: |
+    The ID of the resource that the locks pertain to to filter resource
+    locks by.
+  in: query
+  required: false
+  type: string
+resource_lock_resource_type_query:
+  description: |
+    The type of the resource that the locks pertain to to filter resource
+    locks by.
+  in: query
+  required: false
+  type: string
+resource_lock_user_id_query:
+  description: |
+    The ID of a user to filter resource locks by.
   in: query
   required: false
   type: string
@@ -609,6 +734,15 @@ sort_key:
   in: query
   required: false
   type: string
+sort_key_backup:
+  description: |
+    The key to sort a list of share backups. A valid value
+    is ``id``, ``status``, ``size``, ``host``, ``share_id``
+    ``availability_zone``, ``created_at``, ``updated_at``, ``display_name``,
+    ``topic``, ``progress`` and ``restore_progress``
+  in: query
+  required: false
+  type: string
 sort_key_messages:
   description: |
     The key to sort a list of messages. A valid value
@@ -618,12 +752,27 @@ sort_key_messages:
   in: query
   required: false
   type: string
+sort_key_resource_locks:
+  description: |
+    The key to sort a list of resource locks. A valid value
+    is ``id``, ``resource_id``, ``resource_type``, ``resource_action``,
+    ``user_id``, ``project_id``, ``created_at``, ``updated_act``,
+    ``lock_context``.
+  in: query
+  required: false
+  type: string
 sort_key_transfer:
   description: |
     The key to sort a list of transfers. A valid value
     is ``id``, ``name``, ``resource_type``, ``resource_id``,
     ``source_project_id``, ``destination_project_id``, ``created_at``,
     ``expires_at``.
+  in: query
+  required: false
+  type: string
+source_backup_id_query:
+  description: |
+    The UUID of the share's backup  to filter the request based on.
   in: query
   required: false
   type: string
@@ -653,11 +802,27 @@ user_id_query:
   type: string
 with_count_query:
   description: |
-    Whether to show ``count`` in API response or not, default is ``False``.
+    Whether to show ``count`` in share list API response or not, default is ``False``.
+    This query parameter is useful with pagination.
   in: query
   required: false
   type: boolean
   min_version: 2.42
+with_count_query_without_min_version:
+  description: |
+    Whether to show ``count`` in API response or not, default is ``False``.
+    This query parameter is useful with pagination.
+  in: query
+  required: false
+  type: boolean
+with_count_snapshot_query:
+  description: |
+    Whether to show ``count`` in share snapshot list API response or not, default is ``False``.
+    This query parameter is useful with pagination.
+  in: query
+  required: false
+  type: boolean
+  min_version: 2.79
 
 # variables in body
 accepted:
@@ -883,6 +1048,63 @@ backend_name:
   in: body
   required: true
   type: string
+backup_az:
+  description: |
+    The availability zone.
+  in: body
+  required: true
+  type: string
+backup_id_response:
+  description: |
+    The UUID of the share backup.
+  in: body
+  required: true
+  type: string
+backup_options_request:
+  description: |
+    One or more backup options key and value pairs as a
+    url encoded dictionary of strings.
+  in: body
+  required: false
+  type: object
+backup_progress:
+  description: |
+    The progress of the backup creation in percentange.
+  in: body
+  required: true
+  type: string
+backup_restore_progress:
+  description: |
+    The progress of the backup restoration in percentage.
+  in: body
+  required: true
+  type: string
+backup_share_id:
+  description: |
+    The UUID of the share that the backup pertains to.
+  in: body
+  required: true
+  type: string
+backup_size:
+  description: |
+    The share backup size, in GiBs.
+  in: body
+  required: true
+  type: integer
+backup_status:
+  description: |
+    The status of backup which can be one of ``creating``, ``error``,
+    ``available``, ``restoring``.
+  in: body
+  required: true
+  type: string
+backup_status_request:
+  description: |
+    The backup status, which can be ``available``,
+    ``error``, ``creating``, ``deleting``, ``restoring``.
+  in: body
+  required: false
+  type: string
 capabilities:
   description: |
     The back end capabilities which include ``qos``, ``total_capacity_gb``,
@@ -1016,6 +1238,14 @@ count:
   required: false
   type: integer
   min_version: 2.42
+count_without_min_version:
+  description: |
+    The total count of requested resource before pagination is applied. This
+    parameter is only present in the API response if "with_count=True" is
+    supplied in the query.
+  in: body
+  required: false
+  type: integer
 create_share_from_snapshot_support:
   description: |
     Boolean extra spec used for filtering of back ends by
@@ -1543,6 +1773,22 @@ managed_share_user_id:
   required: true
   type: string
   min_version: 2.16
+maxTotalBackupGigabytes:
+  description: |
+    The total maximum number of backup gigabytes
+    that are allowed in a project.
+  in: body
+  required: true
+  type: integer
+  min_version: 2.80
+maxTotalBackupGigabytesOptional:
+  description: |
+    The total maximum number of backup gigabytes
+    that are allowed in a project.
+  in: body
+  required: false
+  type: integer
+  min_version: 2.80
 maxTotalReplicaGigabytes:
     description: |
       The maximum number of replica gigabytes that are allowed in a project.
@@ -1561,6 +1807,22 @@ maxTotalReplicaGigabytesOptional:
     required: false
     type: integer
     min_version: 2.53
+maxTotalShareBackups:
+  description: |
+    The total maximum number of share backups that
+    are allowed in a project.
+  in: body
+  required: true
+  type: integer
+  min_version: 2.80
+maxTotalShareBackupsOptional:
+  description: |
+    The total maximum number of share backups that
+    are allowed in a project.
+  in: body
+  required: false
+  type: integer
+  min_version: 2.80
 maxTotalShareGigabytes:
   description: |
     The total maximum number of share gigabytes that
@@ -2056,6 +2318,51 @@ protocol:
   in: body
   required: true
   type: string
+quota_backup_gigabytes:
+  description: |
+    The number of gigabytes for the backups allowed for each project.
+  in: body
+  min_version: 2.80
+  required: true
+  type: integer
+quota_backup_gigabytes_detail:
+  description: |
+    The limit, in_use, reserved number of gigabytes for the
+    backups allowed for each project.
+  in: body
+  min_version: 2.80
+  required: true
+  type: object
+quota_backup_gigabytes_request:
+  description: |
+    The number of gigabytes for the backups for the
+    project.
+  in: body
+  min_version: 2.80
+  required: false
+  type: integer
+quota_backups:
+  description: |
+    The number of backups allowed for each project.
+  in: body
+  min_version: 2.80
+  required: true
+  type: integer
+quota_backups_detail:
+  description: |
+    The limit, in_use, reserved number of backups allowed
+    for each project.
+  in: body
+  min_version: 2.80
+  required: true
+  type: object
+quota_backups_request:
+  description: |
+    The number of backups for the project.
+  in: body
+  min_version: 2.80
+  required: false
+  type: integer
 quota_class_id:
   description: |
     A ``quota_class_set`` id.
@@ -2415,6 +2722,109 @@ resource_id_body:
   in: body
   required: true
   type: string
+resource_lock_id:
+  description: |
+    The UUID identifying the specific resource lock.
+  in: body
+  required: true
+  type: string
+resource_lock_lock_context:
+  description: |
+    The lock creator's context. Resource locks can be created by users with
+    different roles. If a user with ``admin`` role creates the lock, the value
+    of this field is ``admin``. If a user with ``service`` role creates the
+    lock, the value of this field is ``service``. For all other contexts, the
+    value of this field is ``user``. This field also determines the user's
+    role that is required to unlock or manipulate a lock by virtue of the
+    service's default RBAC.
+  in: body
+  required: true
+  type: string
+resource_lock_lock_reason:
+  description: |
+    A blob of text representing the reason for the specific resource lock.
+  in: body
+  required: true
+  type: string
+resource_lock_lock_reason_optional:
+  description: |
+    A blob of text representing the reason for the specific resource lock.
+  in: body
+  required: false
+  type: string
+resource_lock_object:
+  description: |
+    A resource lock object when making resource lock requests. All other
+    parameters are included in this object.
+  in: body
+  required: true
+  type: object
+resource_lock_project_id:
+  description: |
+    The ID of the project that the resource lock was created for.
+  in: body
+  required: true
+  type: string
+resource_lock_resource_action:
+  description: |
+    The action pertaining to a resource that the resource lock prevents. For
+    example, if a resource lock prevents deletion of a share, the value of
+    ``resource_action`` is ``delete``. Resource locks are not supported for
+    all API actions. Currently support only exists for ``delete``, and for
+    specific resources.
+  in: body
+  required: true
+  type: string
+resource_lock_resource_action_create_optional:
+  description: |
+    The action pertaining to a resource that the resource lock prevents. For
+    example, if a resource lock prevents deletion of a share, the value of
+    ``resource_action`` is ``delete``. Resource locks are not supported for
+    all API actions. Currently support only exists for ``delete``, and for
+    specific resources. If not provided, the value of this parameter
+    defaults to ``delete``.
+  in: body
+  required: false
+  type: string
+resource_lock_resource_action_optional:
+  description: |
+    The action pertaining to a resource that the resource lock prevents. For
+    example, if a resource lock prevents deletion of a share, the value of
+    ``resource_action`` is ``delete``. Resource locks are not supported for
+    all API actions. Currently support only exists for ``delete``, and for
+    specific resources.
+  in: body
+  required: false
+  type: string
+resource_lock_resource_id:
+  description: |
+    The UUID of the resource that the lock pertains to. For example, this
+    can be the ID of the share that is locked from deletion.
+  in: body
+  required: true
+  type: string
+resource_lock_resource_type:
+  description: |
+    The type of resource that the ID in ``resource_id`` denotes. For
+    example, ``share`` is the resource type that is specified when the
+    resource lock pertains to a share being locked from deletion. Resource
+    locks are not supported for all resources. Currently support only
+    exists for ``share``.
+  in: body
+  required: true
+  type: string
+resource_lock_user_id:
+  description: |
+    The ID of the user the resource lock was created for.
+  in: body
+  required: true
+  type: string
+resource_locks_object:
+  description: |
+    A resource locks object containing a collection or list of resource locks.
+  in: body
+  required: true
+  type: object
 resource_type_body:
   description: |
     The type of the resource for which the message was created.
@@ -3495,6 +3905,13 @@ snapshot_user_id:
   required: true
   type: string
   min_version: 2.17
+source_backup_id_shares_response:
+  description: |
+    The UUID of the backup that was restored in the share.
+  in: body
+  required: true
+  type: string
+  min_version: 2.80
 source_share_group_snapshot_id:
   description: |
     The source share group snapshot ID to create the
@@ -3597,10 +4014,24 @@ total_progress_server_migration:
   in: body
   required: true
   type: integer
+totalBackupGigabytesUsed:
+  description: |
+    The total number of gigabytes used in a project
+    by backups.
+  in: body
+  required: true
+  type: integer
 totalReplicaGigabytesUsed:
   description: |
     The total number of replica gigabytes used in a
     project by share replicas.
+  in: body
+  required: true
+  type: integer
+totalShareBackupsUsed:
+  description: |
+    The total number of created share backups in a
+    project.
   in: body
   required: true
   type: integer

@@ -57,6 +57,9 @@ db_opts = [
                default='share-snapshot-%s',
                help='Template string to be used to generate share snapshot '
                     'names.'),
+    cfg.StrOpt('share_backup_name_template',
+               default='share-backup-%s',
+               help='Template string to be used to generate backup names.'),
 ]
 
 CONF = cfg.CONF
@@ -700,11 +703,30 @@ def share_snapshot_get_all(context, filters=None, limit=None, offset=None,
         sort_key=sort_key, sort_dir=sort_dir)
 
 
+def share_snapshot_get_all_with_count(context, filters=None, limit=None,
+                                      offset=None, sort_key=None,
+                                      sort_dir=None):
+    """Get all snapshots."""
+    return IMPL.share_snapshot_get_all_with_count(
+        context, filters=filters, limit=limit, offset=offset,
+        sort_key=sort_key, sort_dir=sort_dir)
+
+
 def share_snapshot_get_all_by_project(context, project_id, filters=None,
                                       limit=None, offset=None, sort_key=None,
                                       sort_dir=None):
     """Get all snapshots belonging to a project."""
     return IMPL.share_snapshot_get_all_by_project(
+        context, project_id, filters=filters, limit=limit, offset=offset,
+        sort_key=sort_key, sort_dir=sort_dir)
+
+
+def share_snapshot_get_all_by_project_with_count(context, project_id,
+                                                 filters=None, limit=None,
+                                                 offset=None, sort_key=None,
+                                                 sort_dir=None):
+    """Get all snapshots belonging to a project."""
+    return IMPL.share_snapshot_get_all_by_project_with_count(
         context, project_id, filters=filters, limit=limit, offset=offset,
         sort_key=sort_key, sort_dir=sort_dir)
 
@@ -1780,3 +1802,60 @@ def async_operation_data_update(context, entity_id, details,
 def async_operation_data_delete(context, entity_id, key=None):
     """Remove one, list or all key-value pairs for given entity_id."""
     return IMPL.async_operation_data_delete(context, entity_id, key)
+
+####################
+
+
+def share_backup_create(context, share_id, values):
+    """Create new share backup with specified values."""
+    return IMPL.share_backup_create(context, share_id, values)
+
+
+def share_backup_update(context, backup_id, values):
+    """Updates a share backup with given values."""
+    return IMPL.share_backup_update(context, backup_id, values)
+
+
+def share_backup_get(context, backup_id):
+    """Get share backup by id."""
+    return IMPL.share_backup_get(context, backup_id)
+
+
+def share_backups_get_all(context, filters=None, limit=None, offset=None,
+                          sort_key=None, sort_dir=None):
+    """Get all backups."""
+    return IMPL.share_backups_get_all(
+        context, filters=filters, limit=limit, offset=offset,
+        sort_key=sort_key, sort_dir=sort_dir)
+
+
+def share_backup_delete(context, backup_id):
+    """Deletes backup with the specified ID."""
+    return IMPL.share_backup_delete(context, backup_id)
+
+#####################
+
+
+def resource_lock_create(context, values):
+    """Create a resource lock."""
+    return IMPL.resource_lock_create(context, values)
+
+
+def resource_lock_update(context, lock_id, values):
+    """Update a resource lock."""
+    return IMPL.resource_lock_update(context, lock_id, values)
+
+
+def resource_lock_delete(context, lock_id):
+    """Delete a resource lock."""
+    return IMPL.resource_lock_delete(context, lock_id)
+
+
+def resource_lock_get(context, lock_id):
+    """Retrieve a resource lock."""
+    return IMPL.resource_lock_get(context, lock_id)
+
+
+def resource_lock_get_all(context, **kwargs):
+    """Retrieve all resource locks."""
+    return IMPL.resource_lock_get_all(context, **kwargs)

@@ -53,6 +53,7 @@ shared file system storage resources.
 .. include:: share-group-types.inc
 .. include:: share-group-snapshots.inc
 .. include:: share-transfers.inc
+.. include:: resource-locks.inc
 
 ======================================
 Shared File Systems API (EXPERIMENTAL)
@@ -63,3 +64,4 @@ Shared File Systems API (EXPERIMENTAL)
 .. include:: experimental.inc
 .. include:: share-migration.inc
 .. include:: share-server-migration.inc
+.. include:: share-backups.inc

@@ -306,6 +306,7 @@ class Share(BASE, ManilaBase):
     display_name = Column(String(255))
     display_description = Column(String(255))
     snapshot_id = Column(String(36))
+    source_backup_id = Column(String(36))
     snapshot_support = Column(Boolean, default=True)
     create_share_from_snapshot_support = Column(Boolean, default=True)
     revert_to_snapshot_support = Column(Boolean, default=False)
@@ -1479,6 +1480,31 @@ class Message(BASE, ManilaBase):
     deleted = Column(String(36), default='False')
 
 
+class ResourceLock(BASE, ManilaBase):
+    """Represents a resource lock.
+
+    Resource locks are held by users (or on behalf of users) and prevent
+    actions to be performed on resources while the lock is present.
+    """
+    __tablename__ = 'resource_locks'
+    id = Column(String(36), primary_key=True, nullable=False)
+    user_id = Column(String(255), nullable=False)
+    project_id = Column(String(255), nullable=False)
+    # If the lock is held on behalf of the user, but created by 'service' or
+    # 'admin' users, as opposed to the user themselves ('project')
+    lock_context = Column(String(10), nullable=False)
+    # The uuid of the resource being locked.
+    resource_id = Column(String(36), nullable=False)
+    # The resource type, a constant dict will hold possible values
+    resource_type = Column(Enum(*constants.RESOURCE_LOCK_RESOURCE_TYPES),
+                           default=constants.SHARE_RESOURCE_TYPE)
+    # Action that lock prevents, a constant dict will hold possible values
+    resource_action = Column(Enum(*constants.RESOURCE_LOCK_RESOURCE_ACTIONS),
+                             default=constants.RESOURCE_ACTION_DELETE)
+    lock_reason = Column(String(1023), nullable=True)
+    deleted = Column(String(36), default='False')
+
+
 class BackendInfo(BASE, ManilaBase):
     """Represent Backend Info."""
     __tablename__ = "backend_info"
@@ -1492,6 +1518,50 @@ class AsynchronousOperationData(BASE, ManilaBase):
     entity_uuid = Column(String(36), nullable=False, primary_key=True)
     key = Column(String(255), nullable=False, primary_key=True)
     value = Column(String(1023), nullable=False)
+
+
+class ShareBackup(BASE, ManilaBase):
+    """Represents a backup of a share."""
+    __tablename__ = 'share_backups'
+    id = Column(String(36), primary_key=True)
+
+    @property
+    def name(self):
+        return CONF.share_backup_name_template % self.id
+
+    @property
+    def availability_zone(self):
+        if self._availability_zone:
+            return self._availability_zone['name']
+
+    deleted = Column(String(36), default='False')
+    user_id = Column(String(255), nullable=False)
+    project_id = Column(String(255), nullable=False)
+
+    share_id = Column(String(36), ForeignKey('shares.id'))
+    size = Column(Integer)
+    host = Column(String(255))
+    topic = Column(String(255))
+    display_name = Column(String(255))
+    display_description = Column(String(255))
+    progress = Column(String(32))
+    restore_progress = Column(String(32))
+    status = Column(String(255))
+    fail_reason = Column(String(1023))
+    availability_zone_id = Column(String(36),
+                                  ForeignKey('availability_zones.id'),
+                                  nullable=True)
+
+    _availability_zone = orm.relationship(
+        "AvailabilityZone",
+        lazy='immediate',
+        primaryjoin=(
+            'and_('
+            'ShareBackup.availability_zone_id == '
+            'AvailabilityZone.id, '
+            'AvailabilityZone.deleted == \'False\')'
+        )
+    )
 
 
 def register_models():
