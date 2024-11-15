@@ -340,6 +340,7 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
 
     def test__wait_job_result_failure(self):
         response = fake.JOB_ERROR_REST
+        self.client.async_rest_timeout = 2
         self.mock_object(self.client,
                          'send_request',
                          mock.Mock(return_value=response))
