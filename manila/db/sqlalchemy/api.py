@@ -5247,7 +5247,6 @@ def share_server_get_all(context):
 
 @require_context
 def share_server_get_all_with_filters(context, filters):
-
     query = _server_get_query(context)
 
     if filters.get('host'):
@@ -5257,6 +5256,8 @@ def share_server_get_all_with_filters(context, filters):
     if filters.get('source_share_server_id'):
         query = query.filter_by(
             source_share_server_id=filters.get('source_share_server_id'))
+    if filters.get('identifier'):
+        query = query.filter_by(identifier=filters.get('identifier'))
     if filters.get('share_network_id'):
         query = query.join(
             models.ShareServerShareNetworkSubnetMapping,
