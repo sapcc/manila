@@ -700,15 +700,20 @@ class ShareManager(manager.SchedulerDependentManager):
                 ctxt, share_instance['id'], export_locations)
 
     def _skip_ensure_by_status(self, share_instance):
-        skip_by_status = (
-            share_instance['status'] != constants.STATUS_AVAILABLE and
-            share_instance['status'] != constants.STATUS_CREATING)
+        skip_by_status = True
+
+        if share_instance['status'] == constants.STATUS_CREATING:
+            skip_by_status = not share_instance['share_server_id']
+        elif share_instance['status'] == constants.STATUS_AVAILABLE:
+            skip_by_status = False
+
         if skip_by_status:
             LOG.info(
-                "Share instance %(id)s: skipping export, "
-                "because it has '%(status)s' status.",
+                "Share instance %(id)s on share server '%(server_id)s': "
+                "skipping export, because it has '%(status)s' status.",
                 {'id': share_instance['id'],
-                    'status': share_instance['status']},
+                 'server_id': share_instance['share_server_id'],
+                 'status': share_instance['status']}
             )
         return skip_by_status
 

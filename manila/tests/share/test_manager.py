@@ -555,7 +555,8 @@ class ShareManagerTestCase(test.TestCase):
         )
         manager.LOG.info.assert_any_call(
             mock.ANY,
-            {'id': instances[1]['id'], 'status': instances[1]['status']},
+            {'id': instances[1]['id'], 'status': instances[1]['status'],
+             'server_id': instances[1]['share_server_id']},
         )
 
     def _get_share_instance_dict(self, share_instance, **kwargs):
@@ -742,7 +743,8 @@ class ShareManagerTestCase(test.TestCase):
         )
         manager.LOG.info.assert_any_call(
             mock.ANY,
-            {'id': instances[1]['id'], 'status': instances[1]['status']},
+            {'id': instances[1]['id'], 'status': instances[1]['status'],
+             'server_id': instances[1]['share_server_id']},
         )
         smanager.access_helper.update_access_rules.assert_has_calls([
             mock.call(utils.IsAMatcher(context.RequestContext),
