@@ -2136,9 +2136,14 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
         self.assertFalse(result)
 
-    def test_delete_share(self):
+    @ddt.data(False, True)
+    def test_delete_share(self, force):
 
         vserver_client = mock.Mock()
+        fake_share = copy.deepcopy(fake.SHARE)
+        if force:
+            # assuming CONF.force_delete_time > 0 (which it is by default)
+            fake_share['duration_seconds'] = 0
         self.mock_object(self.library,
                          '_get_vserver',
                          mock.Mock(return_value=(fake.VSERVER1,
@@ -2153,18 +2158,18 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                                               '_delete_fpolicy_for_share')
 
         self.library.delete_share(self.context,
-                                  fake.SHARE,
+                                  fake_share,
                                   share_server=fake.SHARE_SERVER)
 
-        share_name = self.library._get_backend_share_name(fake.SHARE['id'])
+        share_name = self.library._get_backend_share_name(fake_share['id'])
         qos_policy_name = self.library._get_backend_qos_policy_group_name(
-            fake.SHARE['id'])
+            fake_share['id'])
         mock_share_exists.assert_called_once_with(share_name, vserver_client)
-        mock_remove_export.assert_called_once_with(fake.SHARE, vserver_client)
+        mock_remove_export.assert_called_once_with(fake_share, vserver_client)
         mock_deallocate_container.assert_called_once_with(share_name,
                                                           vserver_client,
-                                                          False)
-        mock_delete_policy.assert_called_once_with(fake.SHARE, fake.VSERVER1,
+                                                          force)
+        mock_delete_policy.assert_called_once_with(fake_share, fake.VSERVER1,
                                                    vserver_client)
         (vserver_client.mark_qos_policy_group_for_deletion
          .assert_called_once_with(qos_policy_name))

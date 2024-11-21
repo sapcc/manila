@@ -4032,19 +4032,29 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 # Get volume UUID.
                 volume = self.get_volume(volume_name)
                 volume_uuid = volume['instance-uuid']
-                request = {
-                    "force": "true"
+                request = {}
+                # FIXME: use proper wait for job to finish after antelope upgrd
+                query = {
+                    "return_timeout": 120,
+                    "force": "true",
                 }
                 url_params = {
                     "volume_uuid": volume_uuid
                 }
-                api_args = self._format_request(request, url_params=url_params)
+                api_args = self._format_request(request, query=query,
+                                                url_params=url_params)
+                msg = _('Force-deleting volume REST %(volume)s. with %(args)s')
+                msg_args = {'volume': volume_name, 'args': api_args}
+                LOG.info(msg, msg_args)
                 try:
                     return self.send_request(
                         'volume-destroy', api_args=api_args, use_zapi=False)
                 except netapp_api.NaApiError as e:
-                    LOG.exception(e)
+                    LOG.warning(e)
             else:
+                msg = _('Force-deleting volume ZAPI %(volume)s.')
+                msg_args = {'volume': volume_name}
+                LOG.info(msg, msg_args)
                 res = self.send_request(
                     'system-cli', [{'priv': 'advanced'}, {'args': [
                         {'arg': 'volume'}, {'arg': 'destroy'},
