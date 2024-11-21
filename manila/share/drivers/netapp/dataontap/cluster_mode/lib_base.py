@@ -1812,7 +1812,8 @@ class NetAppCmodeFileStorageLibrary(object):
         if force_delete_sec > 0 and duration_sec < force_delete_sec:
             force_delete = True
         if self._share_exists(share_name, vserver_client):
-            if vserver_client.volume_clone_split_status(share_name) != 100:
+            clone_status = vserver_client.volume_clone_split_status(share_name)
+            if clone_status == 'ongoing':
                 vserver_client.volume_clone_split_stop(share_name)
             if remove_export:
                 self._remove_export(share, vserver_client)
