@@ -3755,14 +3755,33 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
 
     @na_utils.trace
     def volume_clone_split_status(self, volume_name):
-        """Status of splitting a clone from its parent."""
+        """Status of splitting a clone from its parent.
+
+        Returns the split status:
+
+        'finished' means split is done, i.e. volume is not a clone (anymore)
+        'unknown' means we cannot tell, because the split job is not running
+        'ongoing' means the split job is currently running
+        """
         try:
             api_args = {'volume': volume_name}
             result = self.send_request('volume-clone-split-status', api_args)
-        except netapp_api.NaApiError:
-            # any exception in status is considered either clone split is
-            # completed or not triggred on this volume
-            return 100
+        except netapp_api.NaApiError as e:
+            if e.code in (netapp_api.EVOLOPNOTUNDERWAY,
+                          netapp_api.EVOLUMENOTONLINE,
+                          netapp_api.EPARENTNOTONLINE):
+                # we cannot tell about the progress
+                return 'unknown'
+            elif e.code == netapp_api.EVOLNOTCLONE:
+                # volume no longer is a clone means it is 100% split
+                return 'finished'
+            else:
+                # log other exceptions for future code improvement
+                LOG.exception(f"unexpected volume-clone-split-status error "
+                              f"code {e.code}, message {e.message} for "
+                              f"volume {volume_name}")
+
+                return 'unknown'
 
         clone_split_details = result.get_child_by_name(
             'clone-split-details') or netapp_api.NaElement('none')
@@ -3770,10 +3789,14 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             percentage = clone_split_details_info.get_child_content(
                 'block-percentage-complete')
             try:
-                return int(percentage)
-            except Exception:
-                return 100
-        return 100
+                if int(percentage) < 100:
+                    return 'ongoing'
+            except Exception as e:
+                LOG.exception(f"unexpected error converting clone-split "
+                              f"percentage '{percentage}' to integer: "
+                              f"{e}")
+                return 'unknown'
+        return 'unknown'
 
     @na_utils.trace
     def volume_clone_split_stop(self, volume_name):
@@ -4148,7 +4171,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                                   'volume %s failed', volume_name)
                         if e.code == netapp_api.EVOLDEL_NOT_ALLOW_BY_CLONE:
                             if client.volume_clone_split_status(
-                                    volume_name) != 100:
+                                    volume_name) == 'unknown':
                                 client.volume_clone_split_start(volume_name)
                                 LOG.debug('Starting clone split for '
                                           'volume %s ', volume_name)
@@ -4167,7 +4190,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                                   "volume %s", volume_name)
                 else:
                     for clone in clones:
-                        if client.volume_clone_split_status(clone) != 100:
+                        clone_status = client.volume_clone_split_status(clone)
+                        if clone_status == 'unknown':
                             client.volume_clone_split_start(clone)
                             LOG.debug('Starting clone split for '
                                       'volume %s ', volume_name)
