@@ -156,12 +156,13 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.assertTrue(self.library._cluster_info['nve_support'],
                         fake.CLUSTER_NODES)
 
-    def test_check_for_setup_error(self):
+    @ddt.data(False, True)
+    def test_check_for_setup_error(self, ensure):
         mock_start_periodic_tasks = self.mock_object(self.library,
                                                      '_start_periodic_tasks')
-        self.library.check_for_setup_error()
+        self.library.check_for_setup_error(ensure)
 
-        mock_start_periodic_tasks.assert_called_once_with()
+        mock_start_periodic_tasks.assert_called_once_with(ensure)
 
     def test_get_vserver(self):
         self.assertRaises(NotImplementedError, self.library._get_vserver)
@@ -260,7 +261,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.assertListEqual([], result)
         self.assertEqual(1, lib_base.LOG.debug.call_count)
 
-    def test_start_periodic_tasks(self):
+    @ddt.data(False, True)
+    def test_start_periodic_tasks(self, ensure):
 
         mock_update_ssc_info = self.mock_object(self.library,
                                                 '_update_ssc_info')
@@ -278,18 +280,20 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                                    mock_ems_periodic_task,
                                    mock_housekeeping_periodic_task]))
 
-        self.library._start_periodic_tasks()
+        self.library._start_periodic_tasks(ensure)
 
         self.assertTrue(mock_update_ssc_info.called)
         self.assertFalse(mock_handle_ems_logging.called)
         self.assertFalse(mock_housekeeping_periodic_task.called)
-        mock_loopingcall.assert_has_calls(
-            [mock.call(mock_update_ssc_info),
-             mock.call(mock_handle_ems_logging),
-             mock.call(mock_handle_housekeeping_tasks)])
+        loopingcalls = [
+            mock.call(mock_update_ssc_info),
+            mock.call(mock_handle_ems_logging)]
         self.assertTrue(mock_ssc_periodic_task.start.called)
         self.assertTrue(mock_ems_periodic_task.start.called)
-        self.assertTrue(mock_housekeeping_periodic_task.start.called)
+        if ensure:
+            self.assertTrue(mock_housekeeping_periodic_task.start.called)
+            loopingcalls.append(mock.call(mock_handle_housekeeping_tasks))
+        mock_loopingcall.assert_has_calls(loopingcalls)
 
     def test_get_backend_share_name(self):
 

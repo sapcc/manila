@@ -226,8 +226,8 @@ class NetAppCmodeFileStorageLibrary(object):
             and self._client.features.FLEXVOL_ENCRYPTION)
 
     @na_utils.trace
-    def check_for_setup_error(self):
-        self._start_periodic_tasks()
+    def check_for_setup_error(self, ensure=False):
+        self._start_periodic_tasks(ensure)
 
     def _get_vserver(self, share_server=None):
         raise NotImplementedError()
@@ -277,7 +277,7 @@ class NetAppCmodeFileStorageLibrary(object):
         return self._licenses
 
     @na_utils.trace
-    def _start_periodic_tasks(self):
+    def _start_periodic_tasks(self, ensure):
 
         # Run the task once in the current thread so prevent a race with
         # the first invocation of get_share_stats.
@@ -295,12 +295,13 @@ class NetAppCmodeFileStorageLibrary(object):
         ems_periodic_task.start(interval=self.AUTOSUPPORT_INTERVAL_SECONDS,
                                 initial_delay=0)
 
-        # Start the task that runs other housekeeping tasks, such as deletion
-        # of previously soft-deleted storage artifacts.
-        housekeeping_periodic_task = loopingcall.FixedIntervalLoopingCall(
-            self._handle_housekeeping_tasks)
-        housekeeping_periodic_task.start(
-            interval=self.HOUSEKEEPING_INTERVAL_SECONDS, initial_delay=0)
+        if ensure:
+            # Start the task that runs other housekeeping tasks, such as
+            # deletion of previously soft-deleted storage artifacts.
+            housekeeping_periodic_task = loopingcall.FixedIntervalLoopingCall(
+                self._handle_housekeeping_tasks)
+            housekeeping_periodic_task.start(
+                interval=self.HOUSEKEEPING_INTERVAL_SECONDS, initial_delay=0)
 
     def _get_backend_share_name(self, share_id):
         """Get share name according to share name template."""

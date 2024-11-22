@@ -83,7 +83,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.library.check_for_setup_error()
 
         self.assertTrue(lib_single_svm.LOG.info.called)
-        mock_super.assert_called_once_with()
+        mock_super.assert_called_once_with(False)
         mock_client.list_vserver_aggregates.assert_called_once_with()
         self.assertTrue(self.library._get_api_client.called)
         mock_init_flexgroup.assert_called_once_with(set(fake.AGGREGATES))
@@ -124,7 +124,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
         self.library.check_for_setup_error()
 
-        mock_super.assert_called_once_with()
+        mock_super.assert_called_once_with(False)
         mock_client.list_vserver_aggregates.assert_called_once_with()
         self.assertTrue(self.library._get_api_client.called)
         mock_init_flexgroup.assert_called_once_with(set(fake.AGGREGATES))

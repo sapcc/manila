@@ -43,7 +43,7 @@ class NetAppCmodeSingleSVMFileStorageLibrary(
         self._vserver = self.configuration.netapp_vserver
 
     @na_utils.trace
-    def check_for_setup_error(self):
+    def check_for_setup_error(self, ensure=False):
 
         # Ensure vserver is specified in configuration.
         if not self._vserver:
@@ -86,7 +86,7 @@ class NetAppCmodeSingleSVMFileStorageLibrary(
         LOG.info(msg, msg_args)
 
         (super(NetAppCmodeSingleSVMFileStorageLibrary, self).
-            check_for_setup_error())
+            check_for_setup_error(ensure))
 
     @na_utils.trace
     def _get_vserver(self, share_server=None):

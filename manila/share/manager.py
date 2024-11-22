@@ -379,6 +379,7 @@ class ShareManager(manager.SchedulerDependentManager):
                      infinite=True, backoff_sleep_max=600)
         def _driver_setup():
             self.driver.initialized = False
+            self.driver.ensure = reexport
             LOG.debug("Start initialization of driver: '%s'", driver_host_pair)
             try:
                 self.driver.do_setup(ctxt)
@@ -403,7 +404,7 @@ class ShareManager(manager.SchedulerDependentManager):
             (self.driver.service_instance_manager.network_helper.
              setup_connectivity_with_service_instances())
 
-        if reexport:
+        if self.driver.ensure:
             # NOTE(chuan137) To be compatible with the old behavior, we run
             # ensure_driver_resources only once when its interval is set to
             # ngeative.
