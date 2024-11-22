@@ -4220,14 +4220,6 @@ class NetAppCmodeFileStorageLibrary(object):
                 else:
                     LOG.warning(msg)
 
-        try:
-            self._client.prune_deleted_nfs_export_policies()
-            self._client.prune_deleted_snapshots()
-            self._client.prune_deleted_volumes()
-        except Exception as e:
-            LOG.warning("Failed to cleanup resources in ensure share: "
-                        "Error - %s", e.message)
-
         return updates
 
     def ensure_share_server(self, context, share_server, network_info):

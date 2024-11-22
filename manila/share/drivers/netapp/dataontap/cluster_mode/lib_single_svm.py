@@ -118,9 +118,12 @@ class NetAppCmodeSingleSVMFileStorageLibrary(
     @na_utils.trace
     def _handle_housekeeping_tasks(self):
         """Handle various cleanup activities."""
+        vserver_client = self._get_api_client(vserver=self._vserver)
+        vserver_client.prune_deleted_nfs_export_policies()
+        vserver_client.prune_deleted_snapshots()
+        vserver_client.prune_deleted_volumes()
 
         if self._have_cluster_creds:
-            vserver_client = self._get_api_client(vserver=self._vserver)
             # Harvest soft-deleted QoS policy groups
             vserver_client.remove_unused_qos_policy_groups()
 
