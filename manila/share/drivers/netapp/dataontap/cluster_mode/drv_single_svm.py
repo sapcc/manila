@@ -41,7 +41,7 @@ class NetAppCmodeSingleSvmShareDriver(driver.ShareDriver):
         self.library.do_setup(context)
 
     def check_for_setup_error(self):
-        self.library.check_for_setup_error()
+        self.library.check_for_setup_error(self.ensure)
 
     def get_pool(self, share):
         return self.library.get_pool(share)
