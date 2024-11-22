@@ -239,6 +239,9 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
         self.library._handle_housekeeping_tasks()
 
+        self.assertTrue(
+            mock_vserver_client.prune_deleted_nfs_export_policies.called)
+        self.assertTrue(mock_vserver_client.prune_deleted_snapshots.called)
         self.assertIs(
             have_creds,
             mock_vserver_client.remove_unused_qos_policy_groups.called)
