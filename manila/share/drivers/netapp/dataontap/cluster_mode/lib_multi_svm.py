@@ -67,7 +67,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         lib_base.NetAppCmodeFileStorageLibrary):
 
     @na_utils.trace
-    def check_for_setup_error(self):
+    def check_for_setup_error(self, ensure=False):
 
         if self._have_cluster_creds:
             if self.configuration.netapp_vserver:
@@ -93,7 +93,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             raise exception.NetAppException(msg)
 
         (super(NetAppCmodeMultiSVMFileStorageLibrary, self).
-            check_for_setup_error())
+            check_for_setup_error(ensure))
 
     @na_utils.trace
     def _get_vserver(self, share_server=None, vserver_name=None,
