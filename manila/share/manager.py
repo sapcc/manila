@@ -566,8 +566,11 @@ class ShareManager(manager.SchedulerDependentManager):
                     )
                     continue
 
-            share_instance = self.db.share_instance_get(
-                ctxt, share_instance['id'], with_share_data=True)
+            try:
+                share_instance = self.db.share_instance_get(
+                    ctxt, share_instance['id'], with_share_data=True)
+            except exception.NotFound:
+                continue
             share_instance_dict = self._get_share_instance_dict(
                 ctxt, share_instance)
             update_share_instances.append(share_instance_dict)
