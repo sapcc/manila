@@ -2914,6 +2914,7 @@ class ShareManagerTestCase(test.TestCase):
             'status': constants.STATUS_CREATING,
             'security_service_update_support': False,
             'network_allocation_update_support': False,
+            'share_replicas_migration_support': False,
         }
         fake_metadata = {
             'migration_destination': True,

@@ -1,0 +1,7 @@
+---
+fixes:
+  - |
+    New config option ``allow_share_server_migration_with_replicas``, if set to
+    True will skip the check of one or more shares on given share server has
+    replicas and hence allow share server migration. For more details, check
+    `Launchpad bug #2052785 <https://bugs.launchpad.net/manila/+bug/2052785>`_
