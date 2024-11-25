@@ -399,7 +399,6 @@ ____
 
 2.72
 ----
-
   Added 'share_network' option to share replica create API.
 
 2.73 (Maximum in Zed)
@@ -427,3 +426,16 @@ ____
 ----
   Added Metadata API methods (GET, PUT, POST, DELETE)
   to Share Network Subnets.
+
+2.79
+----
+  Added ``with_count`` in share snapshot list API to get total count info.
+
+2.80
+----
+  Added share backup APIs.
+
+2.81
+----
+  Introduce resource locks as a way users can restrict certain actions on
+  resources. Only share deletion can be prevented at this version.

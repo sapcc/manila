@@ -113,6 +113,8 @@ class ShareAPITestCase(test.TestCase):
         self.scheduler_rpcapi = mock.Mock()
         self.share_rpcapi = mock.Mock()
         self.api = share.API()
+        self.mock_object(self.api.db, 'resource_lock_get_all',
+                         mock.Mock(return_value=([], None)))
         self.mock_object(self.api, 'scheduler_rpcapi', self.scheduler_rpcapi)
         self.mock_object(self.api, 'share_rpcapi', self.share_rpcapi)
         self.mock_object(quota.QUOTAS, 'reserve',
@@ -224,6 +226,8 @@ class ShareAPITestCase(test.TestCase):
         self.mock_object(db_api, 'share_server_update')
         self.mock_object(db_api, 'share_snapshot_get_all_for_share',
                          mock.Mock(return_value=snapshots))
+        self.mock_object(db_api, 'share_backups_get_all',
+                         mock.Mock(return_value=[]))
         self.mock_object(self.api, 'delete_instance')
         return share
 
@@ -1579,6 +1583,31 @@ class ShareAPITestCase(test.TestCase):
         self.assertRaises(exception.ShareBusyException, self.api.unmanage,
                           self.context, share)
 
+    def test_unmanage_locked_share(self):
+        self.mock_object(
+            self.api.db,
+            'resource_lock_get_all',
+            mock.Mock(return_value=([{'id': 'l1'}, {'id': 'l2'}], None))
+        )
+        share = db_utils.create_share(
+            id='fakeid',
+            host='fake',
+            size='1',
+            status=constants.STATUS_AVAILABLE,
+            user_id=self.context.user_id,
+            project_id=self.context.project_id,
+            task_state=None)
+        self.mock_object(db_api, 'share_update', mock.Mock())
+
+        self.assertRaises(exception.InvalidShare,
+                          self.api.unmanage,
+                          self.context,
+                          share)
+
+        # lock check decorator executed first, nothing else is invoked
+        self.share_rpcapi.unmanage_share.assert_not_called()
+        db_api.share_update.assert_not_called()
+
     @mock.patch.object(quota.QUOTAS, 'reserve',
                        mock.Mock(return_value='reservation'))
     @mock.patch.object(quota.QUOTAS, 'commit', mock.Mock())
@@ -2663,6 +2692,23 @@ class ShareAPITestCase(test.TestCase):
                          mock.Mock(side_effect=exception.QuotaError('fake')))
 
         self.api.delete(self.context, share)
+
+    def test_delete_locked_share(self):
+        self.mock_object(
+            self.api.db,
+            'resource_lock_get_all',
+            mock.Mock(return_value=([{'id': 'l1'}, {'id': 'l2'}], None))
+        )
+        share = self._setup_delete_mocks('available')
+
+        self.assertRaises(exception.InvalidShare,
+                          self.api.delete,
+                          self.context,
+                          share)
+
+        # lock check decorator executed first, nothing else is invoked
+        self.api.delete_instance.assert_not_called()
+        db_api.share_snapshot_get_all_for_share.assert_not_called()
 
     @ddt.data({'status': constants.STATUS_AVAILABLE, 'force': False},
               {'status': constants.STATUS_ERROR, 'force': True})
@@ -5375,7 +5421,7 @@ class ShareAPITestCase(test.TestCase):
             get_type_calls.append(
                 mock.call(self.context, instance['share_type_id']))
             get_request_spec_calls.append(
-                mock.call(instance, fake_share_type, self.context))
+                mock.call(self.context, instance, fake_share_type))
 
         mock_get_type = self.mock_object(
             share_types, 'get_share_type',
@@ -6672,9 +6718,29 @@ class ShareAPITestCase(test.TestCase):
                                  status=constants.STATUS_AVAILABLE,
                                  has_replicas=False,
                                  is_soft_deleted=False)
+        self.mock_object(db_api, 'share_backups_get_all',
+                         mock.Mock(return_value=[]))
 
         self.assertRaises(exception.InvalidShare,
                           self.api.soft_delete, self.context, share)
+
+    def test_soft_delete_locked_share(self):
+        self.mock_object(
+            self.api.db,
+            'resource_lock_get_all',
+            mock.Mock(return_value=([{'id': 'l1'}, {'id': 'l2'}], None))
+        )
+        share = self._setup_delete_mocks('available')
+        self.mock_object(db_api, 'share_soft_delete')
+
+        self.assertRaises(exception.InvalidShare,
+                          self.api.soft_delete,
+                          self.context,
+                          share)
+
+        # lock check decorator executed first, nothing else is invoked
+        db_api.share_soft_delete.assert_not_called()
+        db_api.share_snapshot_get_all_for_share.assert_not_called()
 
     def test_soft_delete_share(self):
         share = fakes.fake_share(id='fake_id',
@@ -6682,6 +6748,8 @@ class ShareAPITestCase(test.TestCase):
                                  has_replicas=False,
                                  is_soft_deleted=False)
         self.mock_object(db_api, 'share_snapshot_get_all_for_share',
+                         mock.Mock(return_value=[]))
+        self.mock_object(db_api, 'share_backups_get_all',
                          mock.Mock(return_value=[]))
         self.mock_object(db_api, 'count_share_group_snapshot_members_in_share',
                          mock.Mock(return_value=0))
@@ -7099,6 +7167,213 @@ class ShareAPITestCase(test.TestCase):
             self.context,
             share_network,
             new_share_network_subnet)
+
+    @ddt.data(None, {'driver': test})
+    def test_create_share_backup(self, backup_opts):
+        share = db_utils.create_share(is_public=True, status='available')
+        backup_ref = db_utils.create_backup(share['id'], status='available')
+
+        reservation = 'fake'
+        self.mock_object(quota.QUOTAS, 'reserve',
+                         mock.Mock(return_value=reservation))
+        self.mock_object(quota.QUOTAS, 'commit')
+        self.mock_object(db_api, 'share_backup_create',
+                         mock.Mock(return_value=backup_ref))
+        self.mock_object(db_api, 'share_backup_update', mock.Mock())
+        self.mock_object(data_rpc.DataAPI, 'create_backup', mock.Mock())
+        self.mock_object(self.share_rpcapi, 'create_backup', mock.Mock())
+
+        backup = {'display_name': 'tmp_backup', 'backup_options': backup_opts}
+        self.api.create_share_backup(self.context, share, backup)
+
+        quota.QUOTAS.reserve.assert_called_once()
+        db_api.share_backup_create.assert_called_once()
+        quota.QUOTAS.commit.assert_called_once()
+        db_api.share_backup_update.assert_called_once()
+        if backup_opts:
+            self.share_rpcapi.create_backup.assert_called_once_with(
+                self.context, backup_ref)
+        else:
+            data_rpc.DataAPI.create_backup.assert_called_once_with(
+                self.context, backup_ref)
+
+    def test_create_share_backup_share_error_state(self):
+        share = db_utils.create_share(is_public=True, status='error')
+        backup = {'display_name': 'tmp_backup'}
+
+        self.assertRaises(exception.InvalidShare,
+                          self.api.create_share_backup,
+                          self.context, share, backup)
+
+    def test_create_share_backup_share_busy_task_state(self):
+        share = db_utils.create_share(
+            is_public=True, task_state='data_copying_in_progress')
+        backup = {'display_name': 'tmp_backup'}
+
+        self.assertRaises(exception.ShareBusyException,
+                          self.api.create_share_backup,
+                          self.context, share, backup)
+
+    def test_create_share_backup_share_has_snapshots(self):
+        share = db_utils.create_share(
+            is_public=True, state='available')
+        snapshot = db_utils.create_snapshot(
+            share_id=share['id'], status='available', size=1)
+
+        backup = {'display_name': 'tmp_backup'}
+
+        self.mock_object(db_api, 'share_snapshot_get_all_for_share',
+                         mock.Mock(return_value=[snapshot]))
+
+        self.assertRaises(exception.InvalidShare,
+                          self.api.create_share_backup,
+                          self.context, share, backup)
+
+    def test_create_share_backup_share_has_replicas(self):
+        share = fakes.fake_share(id='fake_id',
+                                 has_replicas=True,
+                                 status=constants.STATUS_AVAILABLE,
+                                 is_soft_deleted=False)
+        backup = {'display_name': 'tmp_backup'}
+
+        self.assertRaises(exception.InvalidShare,
+                          self.api.create_share_backup,
+                          self.context, share, backup)
+
+    @ddt.data({'overs': {'backup_gigabytes': 'fake'},
+               'expected_exception':
+                   exception.ShareBackupSizeExceedsAvailableQuota},
+              {'overs': {'backups': 'fake'},
+               'expected_exception': exception.BackupLimitExceeded},)
+    @ddt.unpack
+    def test_create_share_backup_over_quota(self, overs, expected_exception):
+        share = fakes.fake_share(id='fake_id',
+                                 status=constants.STATUS_AVAILABLE,
+                                 is_soft_deleted=False, size=5)
+        backup = {'display_name': 'tmp_backup'}
+
+        usages = {'backup_gigabytes': {'reserved': 5, 'in_use': 5},
+                  'backups': {'reserved': 5, 'in_use': 5}}
+
+        quotas = {'backup_gigabytes': 5, 'backups': 5}
+
+        exc = exception.OverQuota(overs=overs, usages=usages, quotas=quotas)
+        self.mock_object(quota.QUOTAS, 'reserve', mock.Mock(side_effect=exc))
+
+        self.assertRaises(expected_exception, self.api.create_share_backup,
+                          self.context, share, backup)
+
+        quota.QUOTAS.reserve.assert_called_once_with(
+            self.context, backups=1, backup_gigabytes=share['size'])
+
+    def test_create_share_backup_rollback_quota(self):
+        share = db_utils.create_share(is_public=True, status='available')
+
+        reservation = 'fake'
+        self.mock_object(quota.QUOTAS, 'reserve',
+                         mock.Mock(return_value=reservation))
+        self.mock_object(quota.QUOTAS, 'rollback')
+        self.mock_object(db_api, 'share_backup_create',
+                         mock.Mock(side_effect=exception.ManilaException))
+        self.mock_object(data_rpc.DataAPI, 'create_backup', mock.Mock())
+        self.mock_object(self.share_rpcapi, 'create_backup', mock.Mock())
+
+        backup = {'display_name': 'tmp_backup'}
+        self.assertRaises(exception.ManilaException,
+                          self.api.create_share_backup,
+                          self.context, share, backup)
+
+        quota.QUOTAS.reserve.assert_called_once()
+        db_api.share_backup_create.assert_called_once()
+        quota.QUOTAS.rollback.assert_called_once_with(
+            self.context, reservation)
+
+    @ddt.data(CONF.share_topic, CONF.data_topic)
+    def test_delete_share_backup(self, topic):
+        share = db_utils.create_share(is_public=True, status='available')
+        backup = db_utils.create_backup(share['id'], status='available')
+
+        self.mock_object(db_api, 'share_backup_update', mock.Mock())
+        self.mock_object(data_rpc.DataAPI, 'delete_backup', mock.Mock())
+        self.mock_object(self.share_rpcapi, 'delete_backup', mock.Mock())
+
+        backup.update({'topic': topic})
+        self.api.delete_share_backup(self.context, backup)
+
+        db_api.share_backup_update.assert_called_once()
+        if topic == CONF.share_topic:
+            self.share_rpcapi.delete_backup.assert_called_once_with(
+                self.context, backup)
+        else:
+            data_rpc.DataAPI.delete_backup.assert_called_once_with(
+                self.context, backup)
+
+    @ddt.data(constants.STATUS_DELETING, constants.STATUS_CREATING)
+    def test_delete_share_backup_invalid_state(self, state):
+        share = db_utils.create_share(is_public=True, status='available')
+        backup = db_utils.create_backup(share['id'], status=state)
+        self.assertRaises(exception.InvalidBackup,
+                          self.api.delete_share_backup,
+                          self.context, backup)
+
+    @ddt.data(CONF.share_topic, CONF.data_topic)
+    def test_restore_share_backup(self, topic):
+        share = db_utils.create_share(
+            is_public=True, status='available', size=1)
+        backup = db_utils.create_backup(
+            share['id'], status='available', size=1)
+
+        self.mock_object(self.api, 'get', mock.Mock(return_value=share))
+        self.mock_object(db_api, 'share_backup_update', mock.Mock())
+        self.mock_object(db_api, 'share_update', mock.Mock())
+        self.mock_object(data_rpc.DataAPI, 'restore_backup', mock.Mock())
+        self.mock_object(self.share_rpcapi, 'restore_backup', mock.Mock())
+
+        backup.update({'topic': topic})
+        self.api.restore_share_backup(self.context, backup)
+
+        self.api.get.assert_called_once()
+        db_api.share_update.assert_called_once()
+        db_api.share_backup_update.assert_called_once()
+        if topic == CONF.share_topic:
+            self.share_rpcapi.restore_backup.assert_called_once_with(
+                self.context, backup, share['id'])
+        else:
+            data_rpc.DataAPI.restore_backup.assert_called_once_with(
+                self.context, backup, share['id'])
+
+    def test_restore_share_backup_invalid_share_sizee(self):
+        share = db_utils.create_share(
+            is_public=True, status='available', size=1)
+        backup = db_utils.create_backup(
+            share['id'], status='available', size=2)
+        self.assertRaises(exception.InvalidShare,
+                          self.api.restore_share_backup,
+                          self.context, backup)
+
+    def test_restore_share_backup_invalid_share_state(self):
+        share = db_utils.create_share(is_public=True, status='deleting')
+        backup = db_utils.create_backup(share['id'], status='available')
+        self.assertRaises(exception.InvalidShare,
+                          self.api.restore_share_backup,
+                          self.context, backup)
+
+    def test_restore_share_backup_invalid_backup_state(self):
+        share = db_utils.create_share(is_public=True, status='available')
+        backup = db_utils.create_backup(share['id'], status='deleting')
+        self.assertRaises(exception.InvalidBackup,
+                          self.api.restore_share_backup,
+                          self.context, backup)
+
+    def test_update_share_backup(self):
+        share = db_utils.create_share(is_public=True, status='available')
+        backup = db_utils.create_backup(share['id'], status='available')
+        self.mock_object(db_api, 'share_backup_update', mock.Mock())
+
+        self.api.update_share_backup(self.context, backup,
+                                     {'display_name': 'new_name'})
+
+        db_api.share_backup_update.assert_called_once()
 
 
 class OtherTenantsShareActionsTestCase(test.TestCase):

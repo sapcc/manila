@@ -19,6 +19,7 @@
 """
 Handles all requests relating to shares.
 """
+import functools
 import json
 
 from oslo_config import cfg
@@ -126,6 +127,55 @@ class API(base.Base):
         self.share_rpcapi = share_rpcapi.ShareAPI()
         self.access_helper = access.ShareInstanceAccess(self.db, None)
         coordination.LOCK_COORDINATOR.start()
+
+    def prevent_locked_action_on_share(arg):
+        """Decorator for preventing a locked method from executing on a share.
+
+        Add this decorator to any API method which takes a RequestContext
+        object as a first  parameter and a share object as the second
+        parameter.
+
+        Can be used in any of the following forms
+        @prevent_locked_action_on_share
+        @prevent_locked_action_on_share('my_action_name')
+
+        :param arg: Can either be the function being decorated or a str
+        containing the 'action' that we need to check resource locks for.
+        If no action name is provided, the function name is assumed to be
+        the action name.
+        """
+        action_name = None
+
+        def check_for_locks(f):
+            @functools.wraps(f)
+            def wrapper(self, context, share, *args, **kwargs):
+                action = action_name or f.__name__
+                resource_locks, __ = (
+                    self.db.resource_lock_get_all(
+                        context.elevated(),
+                        filters={'resource_id': share['id'],
+                                 'resource_action': action,
+                                 'all_projects': True},
+                    )
+                )
+                if resource_locks:
+                    msg_payload = {
+                        'locks': ', '.join(
+                            [lock['id'] for lock in resource_locks]
+                        ),
+                        'action': action,
+                    }
+                    msg = (f"Resource lock/s [{msg_payload['locks']}] "
+                           f"prevent {action} action.")
+                    raise exception.InvalidShare(msg)
+                return f(self, context, share, *args, **kwargs)
+            return wrapper
+
+        if callable(arg):
+            return check_for_locks(arg)
+        else:
+            action_name = arg
+            return check_for_locks
 
     def _get_all_availability_zones_with_subnets(self, context,
                                                  share_network_id):
@@ -1025,7 +1075,7 @@ class API(base.Base):
                                               export_location_path)
 
         request_spec = self._get_request_spec_dict(
-            share, share_type, context, size=0,
+            context, share, share_type, size=0,
             share_proto=share_data['share_proto'],
             host=share_data['host'])
 
@@ -1037,7 +1087,7 @@ class API(base.Base):
 
         return self.db.share_get(context, share['id'])
 
-    def _get_request_spec_dict(self, share, share_type, context, **kwargs):
+    def _get_request_spec_dict(self, context, share, share_type, **kwargs):
 
         if share is None:
             share = {'instance': {}}
@@ -1102,6 +1152,7 @@ class API(base.Base):
         }
         return request_spec
 
+    @prevent_locked_action_on_share('delete')
     def unmanage(self, context, share):
         policy.check_policy(context, 'share', 'unmanage')
 
@@ -1297,6 +1348,7 @@ class API(base.Base):
             context, share, snapshot, active_replica['host'], reservations)
 
     @policy.wrap_check_policy('share')
+    @prevent_locked_action_on_share('delete')
     def soft_delete(self, context, share):
         """Soft delete share."""
         share_id = share['id']
@@ -1324,6 +1376,12 @@ class API(base.Base):
             msg = _("Share still has %d dependent snapshots.") % len(snapshots)
             raise exception.InvalidShare(reason=msg)
 
+        filters = dict(share_id=share_id)
+        backups = self.db.share_backups_get_all(context, filters=filters)
+        if len(backups):
+            msg = _("Share still has %d dependent backups.") % len(backups)
+            raise exception.InvalidShare(reason=msg)
+
         share_group_snapshot_members_count = (
             self.db.count_share_group_snapshot_members_in_share(
                 context, share_id))
@@ -1343,6 +1401,7 @@ class API(base.Base):
         self.db.share_restore(context, share_id)
 
     @policy.wrap_check_policy('share')
+    @prevent_locked_action_on_share
     def delete(self, context, share, force=False):
         """Delete share."""
         share = self.db.share_get(context, share['id'])
@@ -1364,6 +1423,12 @@ class API(base.Base):
         snapshots = self.db.share_snapshot_get_all_for_share(context, share_id)
         if len(snapshots):
             msg = _("Share still has %d dependent snapshots.") % len(snapshots)
+            raise exception.InvalidShare(reason=msg)
+
+        filters = dict(share_id=share_id)
+        backups = self.db.share_backups_get_all(context, filters=filters)
+        if len(backups):
+            msg = _("Share still has %d dependent backups.") % len(backups)
             raise exception.InvalidShare(reason=msg)
 
         share_group_snapshot_members_count = (
@@ -1851,9 +1916,9 @@ class API(base.Base):
             raise exception.InvalidShare(reason=msg % payload)
 
         request_spec = self._get_request_spec_dict(
+            context,
             share,
             share_type,
-            context,
             availability_zone_id=service['availability_zone_id'],
             share_network_id=new_share_network_id)
 
@@ -2235,6 +2300,21 @@ class API(base.Base):
 
     def get_all_snapshots(self, context, search_opts=None, limit=None,
                           offset=None, sort_key='share_id', sort_dir='desc'):
+        return self._get_all_snapshots(context, search_opts=search_opts,
+                                       limit=limit, offset=offset,
+                                       sort_key=sort_key, sort_dir=sort_dir)
+
+    def get_all_snapshots_with_count(self, context, search_opts=None,
+                                     limit=None, offset=None,
+                                     sort_key='share_id', sort_dir='desc'):
+        return self._get_all_snapshots(context, search_opts=search_opts,
+                                       limit=limit, offset=offset,
+                                       sort_key=sort_key, sort_dir=sort_dir,
+                                       show_count=True)
+
+    def _get_all_snapshots(self, context, search_opts=None, limit=None,
+                           offset=None, sort_key='share_id', sort_dir='desc',
+                           show_count=False):
         policy.check_policy(context, 'share_snapshot', 'get_all_snapshots')
 
         search_opts = search_opts or {}
@@ -2251,17 +2331,32 @@ class API(base.Base):
                         "'%(v)s'.") % {'k': k, 'v': string_args[k]}
                 raise exception.InvalidInput(reason=msg)
 
+        get_methods = {
+            'get_all': (
+                self.db.share_snapshot_get_all_with_count
+                if show_count else self.db.share_snapshot_get_all),
+            'get_all_by_project': (
+                self.db.share_snapshot_get_all_by_project_with_count
+                if show_count else self.db.share_snapshot_get_all_by_project)}
+
         if context.is_admin and all_tenants:
-            snapshots = self.db.share_snapshot_get_all(
+            result = get_methods['get_all'](
                 context, filters=search_opts, limit=limit, offset=offset,
                 sort_key=sort_key, sort_dir=sort_dir)
         else:
-            snapshots = self.db.share_snapshot_get_all_by_project(
+            result = get_methods['get_all_by_project'](
                 context, context.project_id, filters=search_opts,
                 limit=limit, offset=offset, sort_key=sort_key,
                 sort_dir=sort_dir)
 
-        return snapshots
+        if show_count:
+            count = result[0]
+            snapshots = result[1]
+        else:
+            snapshots = result
+
+        result = (count, snapshots) if show_count else snapshots
+        return result
 
     def get_latest_snapshot_for_share(self, context, share_id):
         """Get the newest snapshot of a share."""
@@ -2588,8 +2683,8 @@ class API(base.Base):
         else:
             share_type = share_types.get_share_type(
                 context, share['instance']['share_type_id'])
-            request_spec = self._get_request_spec_dict(share, share_type,
-                                                       context)
+            request_spec = self._get_request_spec_dict(context, share,
+                                                       share_type)
             request_spec.update({'is_share_extend': True})
             self.scheduler_rpcapi.extend_share(context, share['id'], new_size,
                                                reservations, request_spec)
@@ -2741,8 +2836,8 @@ class API(base.Base):
         for share_instance in share_instances:
             share_type_id = share_instance['share_type_id']
             share_type = share_types.get_share_type(context, share_type_id)
-            req_spec = self._get_request_spec_dict(share_instance,
-                                                   share_type, context,
+            req_spec = self._get_request_spec_dict(context, share_instance,
+                                                   share_type,
                                                    **kwargs)
             shares_req_spec.append(req_spec)
 
@@ -3765,3 +3860,173 @@ class API(base.Base):
                      'subnet_id': new_share_network_subnet_db['id'],
                  })
         return new_share_network_subnet_db
+
+    def create_share_backup(self, context, share, backup):
+        share_id = share['id']
+        self._check_is_share_busy(share)
+
+        if share['status'] != constants.STATUS_AVAILABLE:
+            msg_args = {'share_id': share_id, 'state': share['status']}
+            msg = (_("Share %(share_id)s is in '%(state)s' state, but it must "
+                     "be in 'available' state to create a backup.") % msg_args)
+            raise exception.InvalidShare(message=msg)
+
+        snapshots = self.db.share_snapshot_get_all_for_share(context, share_id)
+        if snapshots:
+            msg = _("Cannot backup share %s while it has snapshots.")
+            raise exception.InvalidShare(message=msg % share_id)
+
+        if share.has_replicas:
+            msg = _("Cannot backup share %s while it has replicas.")
+            raise exception.InvalidShare(message=msg % share_id)
+
+        # Reserve a quota before setting share status and backup status
+        try:
+            reservations = QUOTAS.reserve(
+                context, backups=1, backup_gigabytes=share['size'])
+        except exception.OverQuota as e:
+            overs = e.kwargs['overs']
+            usages = e.kwargs['usages']
+            quotas = e.kwargs['quotas']
+
+            def _consumed(resource_name):
+                return (usages[resource_name]['reserved'] +
+                        usages[resource_name]['in_use'])
+
+            for over in overs:
+                if 'backup_gigabytes' in over:
+                    msg = ("Quota exceeded for %(s_pid)s, tried to create "
+                           "%(s_size)sG backup, but (%(d_consumed)dG of "
+                           "%(d_quota)dG already consumed.)")
+                    LOG.warning(msg, {'s_pid': context.project_id,
+                                      's_size': share['size'],
+                                      'd_consumed': _consumed(over),
+                                      'd_quota': quotas[over]})
+                    raise exception.ShareBackupSizeExceedsAvailableQuota(
+                        requested=share['size'],
+                        consumed=_consumed('backup_gigabytes'),
+                        quota=quotas['backup_gigabytes'])
+                elif 'backups' in over:
+                    msg = ("Quota exceeded for %(s_pid)s, tried to create "
+                           "backup, but (%(d_consumed)d of %(d_quota)d "
+                           "backups already consumed.)")
+                    LOG.warning(msg, {'s_pid': context.project_id,
+                                      'd_consumed': _consumed(over),
+                                      'd_quota': quotas[over]})
+                    raise exception.BackupLimitExceeded(
+                        allowed=quotas[over])
+
+        backup_ref = {}
+        try:
+            backup_ref = self.db.share_backup_create(
+                context, share['id'],
+                {
+                    'user_id': context.user_id,
+                    'project_id': context.project_id,
+                    'progress': '0',
+                    'restore_progress': '0',
+                    'status': constants.STATUS_CREATING,
+                    'display_description': backup.get('description'),
+                    'display_name': backup.get('name'),
+                    'size': share['size'],
+                    'availability_zone': share['instance']['availability_zone']
+                }
+            )
+            QUOTAS.commit(context, reservations)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                QUOTAS.rollback(context, reservations)
+
+        self.db.share_update(
+            context, share_id,
+            {'status': constants.STATUS_BACKUP_CREATING})
+
+        backup_ref['backup_options'] = backup.get('backup_options', {})
+        backup_values = {}
+        if backup_ref['backup_options']:
+            topic = CONF.share_topic
+            backup_ref['host'] = share_utils.extract_host(share['host'])
+            backup_values.update({'host': backup_ref['host']})
+        else:
+            topic = CONF.data_topic
+
+        backup_values.update({'topic': topic})
+        self.db.share_backup_update(context, backup_ref['id'], backup_values)
+
+        if topic == CONF.share_topic:
+            self.share_rpcapi.create_backup(context, backup_ref)
+        elif topic == CONF.data_topic:
+            data_rpc = data_rpcapi.DataAPI()
+            data_rpc.create_backup(context, backup_ref)
+        return backup_ref
+
+    def delete_share_backup(self, context, backup):
+        """Make the RPC call to delete a share backup.
+
+        :param context: request context
+        :param backup: the model of backup that is retrieved from DB.
+        :raises: InvalidBackup
+        :raises: BackupDriverException
+        :raises: ServiceNotFound
+        """
+        if backup.status not in [constants.STATUS_AVAILABLE,
+                                 constants.STATUS_ERROR]:
+            msg = (_('Backup %s status must be available or error.')
+                   % backup['id'])
+            raise exception.InvalidBackup(reason=msg)
+
+        self.db.share_backup_update(
+            context, backup['id'], {'status': constants.STATUS_DELETING})
+
+        if backup['topic'] == CONF.share_topic:
+            self.share_rpcapi.delete_backup(context, backup)
+        elif backup['topic'] == CONF.data_topic:
+            data_rpc = data_rpcapi.DataAPI()
+            data_rpc.delete_backup(context, backup)
+
+    def restore_share_backup(self, context, backup):
+        """Make the RPC call to restore a backup."""
+        backup_id = backup['id']
+        if backup['status'] != constants.STATUS_AVAILABLE:
+            msg = (_('Backup %s status must be available.') % backup['id'])
+            raise exception.InvalidBackup(reason=msg)
+
+        share = self.get(context, backup['share_id'])
+        share_id = share['id']
+        if share['status'] != constants.STATUS_AVAILABLE:
+            msg = _('Share to be restored to must be available.')
+            raise exception.InvalidShare(reason=msg)
+
+        backup_size = backup['size']
+        LOG.debug('Checking backup size %(backup_size)s against share size '
+                  '%(share_size)s.', {'backup_size': backup_size,
+                                      'share_size': share['size']})
+        if backup_size > share['size']:
+            msg = (_('Share size %(share_size)d is too small to restore '
+                     'backup of size %(size)d.') %
+                   {'share_size': share['size'], 'size': backup_size})
+            raise exception.InvalidShare(reason=msg)
+
+        LOG.info("Overwriting share %(share_id)s with restore of "
+                 "backup %(backup_id)s.",
+                 {'share_id': share_id, 'backup_id': backup_id})
+
+        self.db.share_backup_update(
+            context, backup_id,
+            {'status': constants.STATUS_RESTORING})
+        self.db.share_update(
+            context, share_id,
+            {'status': constants.STATUS_BACKUP_RESTORING,
+             'source_backup_id': backup_id})
+
+        if backup['topic'] == CONF.share_topic:
+            self.share_rpcapi.restore_backup(context, backup, share_id)
+        elif backup['topic'] == CONF.data_topic:
+            data_rpc = data_rpcapi.DataAPI()
+            data_rpc.restore_backup(context, backup, share_id)
+
+        restore_info = {'backup_id': backup_id, 'share_id': share_id}
+        return restore_info
+
+    def update_share_backup(self, context, backup, fields):
+        return self.db.share_backup_update(context, backup['id'], fields)

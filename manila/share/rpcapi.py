@@ -85,7 +85,9 @@ class ShareAPI(object):
             check_update_share_server_network_allocations()
         1.24 - Add quiesce_wait_time paramater to promote_share_replica()
         1.25 - Add transfer_accept()
-        1.26 -  Add update_share_from_metadata() method
+        1.26 - Add create_backup() and delete_backup()
+            restore_backup() methods
+        1.28 -  Add update_share_from_metadata() method
     """
 
     BASE_RPC_API_VERSION = '1.0'
@@ -506,8 +508,30 @@ class ShareAPI(object):
 
     def update_share_from_metadata(self, context, share, metadata):
         host = utils.extract_host(share['instance']['host'])
-        call_context = self.client.prepare(server=host, version='1.26')
+        call_context = self.client.prepare(server=host, version='1.28')
         return call_context.cast(context,
                                  'update_share_from_metadata',
                                  share_id=share['id'],
                                  metadata=metadata)
+
+    def create_backup(self, context, backup):
+        host = utils.extract_host(backup['host'])
+        call_context = self.client.prepare(server=host, version='1.26')
+        return call_context.cast(context,
+                                 'create_backup',
+                                 backup=backup)
+
+    def delete_backup(self, context, backup):
+        host = utils.extract_host(backup['host'])
+        call_context = self.client.prepare(server=host, version='1.26')
+        return call_context.cast(context,
+                                 'delete_backup',
+                                 backup=backup)
+
+    def restore_backup(self, context, backup, share_id):
+        host = utils.extract_host(backup['host'])
+        call_context = self.client.prepare(server=host, version='1.26')
+        return call_context.cast(context,
+                                 'restore_backup',
+                                 backup=backup,
+                                 share_id=share_id)

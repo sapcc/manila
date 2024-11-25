@@ -1711,6 +1711,42 @@ class ShareSnapshotDatabaseAPITestCase(test.TestCase):
         self.assertEqual(1, len(actual_result.instances))
         self.assertSubDictMatch(values, actual_result.to_dict())
 
+    @ddt.data(
+        ({'with_count': True}, 3, 3),
+        ({'with_count': True, 'limit': 2}, 3, 2)
+    )
+    @ddt.unpack
+    def test_share_snapshot_get_all_with_count(self, filters,
+                                               amount_of_share_snapshots,
+                                               expected_share_snapshots_len):
+        share = db_utils.create_share(size=1)
+        values = {
+            'share_id': share['id'],
+            'size': share['size'],
+            'user_id': share['user_id'],
+            'project_id': share['project_id'],
+            'status': constants.STATUS_CREATING,
+            'progress': '0%',
+            'share_size': share['size'],
+            'display_description': 'fake_count_test',
+            'share_proto': share['share_proto'],
+        }
+
+        # consider only shares created in this function
+        filters.update({'share_id': share['id']})
+
+        for i in range(amount_of_share_snapshots):
+            tmp_values = copy.deepcopy(values)
+            tmp_values['display_name'] = 'fake_name_%s' % str(i)
+            db_api.share_snapshot_create(self.ctxt, tmp_values)
+
+        limit = filters.get('limit')
+        count, share_snapshots = db_api.share_snapshot_get_all_with_count(
+            self.ctxt, filters=filters, limit=limit)
+
+        self.assertEqual(count, amount_of_share_snapshots)
+        self.assertEqual(expected_share_snapshots_len, len(share_snapshots))
+
     def test_share_snapshot_get_all_with_filters_some(self):
         expected_status = constants.STATUS_AVAILABLE
         filters = {
@@ -5286,3 +5322,247 @@ class TransfersTestCase(test.TestCase):
         self.assertEqual(share['project_id'], self.project_id)
         self.assertEqual(share['user_id'], self.user_id)
         self.assertFalse(transfer['accepted'])
+
+
+class ShareBackupDatabaseAPITestCase(BaseDatabaseAPITestCase):
+
+    def setUp(self):
+        """Run before each test."""
+        super(ShareBackupDatabaseAPITestCase, self).setUp()
+        self.ctxt = context.get_admin_context()
+        self.backup = {
+            'id': 'fake_backup_id',
+            'host': "fake_host",
+            'user_id': 'fake',
+            'project_id': 'fake',
+            'availability_zone': 'fake_availability_zone',
+            'status': constants.STATUS_CREATING,
+            'progress': '0',
+            'display_name': 'fake_name',
+            'display_description': 'fake_description',
+            'size': 1,
+        }
+        self.share_id = "fake_share_id"
+
+    def test_create_share_backup(self):
+        result = db_api.share_backup_create(
+            self.ctxt, self.share_id, self.backup)
+        self._check_fields(expected=self.backup, actual=result)
+
+    def test_get(self):
+        db_api.share_backup_create(
+            self.ctxt, self.share_id, self.backup)
+        result = db_api.share_backup_get(
+            self.ctxt, self.backup['id'])
+        self._check_fields(expected=self.backup, actual=result)
+
+    def test_delete(self):
+        db_api.share_backup_create(
+            self.ctxt, self.share_id, self.backup)
+        db_api.share_backup_delete(self.ctxt,
+                                   self.backup['id'])
+
+        self.assertRaises(exception.ShareBackupNotFound,
+                          db_api.share_backup_get,
+                          self.ctxt,
+                          self.backup['id'])
+
+    def test_delete_not_found(self):
+        self.assertRaises(exception.ShareBackupNotFound,
+                          db_api.share_backup_delete,
+                          self.ctxt,
+                          'fake not exist id')
+
+    def test_update(self):
+        new_status = constants.STATUS_ERROR
+        db_api.share_backup_create(
+            self.ctxt, self.share_id, self.backup)
+        result_update = db_api.share_backup_update(
+            self.ctxt, self.backup['id'],
+            {'status': constants.STATUS_ERROR})
+        result_get = db_api.share_backup_get(self.ctxt,
+                                             self.backup['id'])
+        self.assertEqual(new_status, result_update['status'])
+        self._check_fields(expected=dict(result_update.items()),
+                           actual=dict(result_get.items()))
+
+    def test_update_not_found(self):
+        self.assertRaises(exception.ShareBackupNotFound,
+                          db_api.share_backup_update,
+                          self.ctxt,
+                          'fake id',
+                          {})
+
+
+class ResourceLocksTestCase(test.TestCase):
+    """Test case for resource locks."""
+
+    def setUp(self):
+        super(ResourceLocksTestCase, self).setUp()
+        self.user_id = uuidutils.generate_uuid(dashed=False)
+        self.project_id = uuidutils.generate_uuid(dashed=False)
+        self.ctxt = context.RequestContext(user_id=self.user_id,
+                                           project_id=self.project_id)
+
+    def test_resource_lock_create(self):
+        lock_data = {
+            'resource_id': uuidutils.generate_uuid(),
+            'resource_type': 'share',
+            'resource_action': 'delete',
+            'lock_context': 'user',
+            'user_id': self.user_id,
+            'project_id': self.project_id,
+            'lock_reason': 'xyzzyspoon!',
+        }
+        lock = db_api.resource_lock_create(self.ctxt, lock_data)
+
+        self.assertTrue(uuidutils.is_uuid_like(lock['id']))
+        self.assertEqual(lock_data['user_id'], lock['user_id'])
+        self.assertEqual(lock_data['project_id'], lock['project_id'])
+        self.assertIsNone(lock['updated_at'])
+        self.assertEqual('False', lock['deleted'])
+
+    def test_resource_lock_update_invalid(self):
+        self.assertRaises(exception.ResourceLockNotFound,
+                          db_api.resource_lock_update,
+                          self.ctxt,
+                          'invalid-lock-id',
+                          {'lock_reason': 'yadayada'})
+
+    def test_resource_lock_update(self):
+        lock = db_utils.create_lock(project_id=self.project_id)
+        updated_lock = db_api.resource_lock_update(
+            self.ctxt,
+            lock['id'],
+            {'lock_reason': 'new reason'},
+        )
+
+        self.assertEqual(lock['id'], updated_lock['id'])
+        self.assertEqual('new reason', updated_lock['lock_reason'])
+        self.assertEqual(lock['user_id'], updated_lock['user_id'])
+        self.assertEqual(lock['project_id'], updated_lock['project_id'])
+
+        lock_get = db_api.resource_lock_get(self.ctxt, lock['id'])
+
+        self.assertEqual(lock['id'], lock_get['id'])
+        self.assertEqual('new reason', lock_get['lock_reason'])
+        self.assertEqual(lock['user_id'], lock_get['user_id'])
+        self.assertEqual(lock['project_id'], lock_get['project_id'])
+
+    def test_resource_lock_delete_invalid(self):
+        self.assertRaises(exception.ResourceLockNotFound,
+                          db_api.resource_lock_delete,
+                          self.ctxt,
+                          'invalid-lock-id')
+
+    def test_resource_lock_delete(self):
+        lock = db_utils.create_lock(project_id=self.project_id)
+        lock_get = db_api.resource_lock_get(self.ctxt, lock['id'])
+
+        return_value = db_api.resource_lock_delete(self.ctxt, lock['id'])
+
+        self.assertIsNone(return_value)
+        self.assertRaises(exception.ResourceLockNotFound,
+                          db_api._resource_lock_get,
+                          self.ctxt,
+                          lock_get['id'])
+
+    def test_resource_lock_get_invalid(self):
+        self.assertRaises(exception.ResourceLockNotFound,
+                          db_api.resource_lock_get,
+                          self.ctxt,
+                          'invalid-lock-id')
+
+    def test_resource_lock_get(self):
+        lock = db_utils.create_lock(project_id=self.project_id)
+
+        lock_get = db_api.resource_lock_get(self.ctxt, lock['id'])
+
+        self.assertEqual(lock['id'], lock_get['id'])
+        self.assertEqual('for the tests', lock_get['lock_reason'])
+        self.assertEqual(lock['user_id'], lock_get['user_id'])
+        self.assertEqual(lock['project_id'], lock_get['project_id'])
+
+    def test_resource_lock_get_all_basic_filters(self):
+        user_id_2 = uuidutils.generate_uuid(dashed=False)
+        project_id_2 = uuidutils.generate_uuid(dashed=False)
+
+        lk_1 = db_utils.create_lock(lock_reason='austin',
+                                    user_id=self.user_id,
+                                    project_id=self.project_id)
+        lk_2 = db_utils.create_lock(lock_reason='bexar',
+                                    user_id=self.user_id,
+                                    project_id=self.project_id)
+        lk_3 = db_utils.create_lock(lock_reason='cactus',
+                                    user_id=self.user_id,
+                                    project_id=self.project_id)
+        lk_4 = db_utils.create_lock(lock_reason='diablo',
+                                    user_id=user_id_2,
+                                    project_id=project_id_2)
+        lk_5 = db_utils.create_lock(lock_reason='essex')
+
+        project_locks_limited_offset, count = db_api.resource_lock_get_all(
+            self.ctxt, limit=2, offset=1, show_count=True)
+        self.assertEqual(2, len(project_locks_limited_offset))
+        self.assertEqual(3, count)
+        order_expected = [lk_2['id'], lk_1['id']]
+        self.assertEqual(order_expected,
+                         [lock['id'] for lock in project_locks_limited_offset])
+
+        all_project_locks, count = db_api.resource_lock_get_all(
+            self.ctxt, filters={'all_projects': True}, sort_dir='asc')
+        self.assertEqual(5, len(all_project_locks))
+        order_expected = [
+            lk_1['id'], lk_2['id'], lk_3['id'], lk_4['id'], lk_5['id']
+        ]
+        self.assertEqual(order_expected,
+                         [lock['id'] for lock in all_project_locks])
+        self.assertTrue(lk_5['project_id']
+                        not in [self.project_id, project_id_2])
+        self.assertIsNone(count)
+
+        filtered_locks, count = db_api.resource_lock_get_all(
+            self.ctxt, filters={'lock_reason~': 'xar'})
+        self.assertEqual(1, len(filtered_locks))
+        self.assertIsNone(count)
+        self.assertEqual(lk_2['id'], filtered_locks[0]['id'])
+
+    def test_resource_locks_get_all_time_filters(self):
+        now = timeutils.utcnow()
+        lock_1 = db_utils.create_lock(
+            lock_reason='folsom',
+            project_id=self.project_id,
+            created_at=now - datetime.timedelta(seconds=1),
+        )
+        lock_2 = db_utils.create_lock(
+            lock_reason='grizly',
+            project_id=self.project_id,
+            created_at=now + datetime.timedelta(seconds=1),
+        )
+        lock_3 = db_utils.create_lock(
+            lock_reason='havana',
+            project_id=self.project_id,
+            created_at=now + datetime.timedelta(seconds=2),
+        )
+
+        filters1 = {'created_before': now}
+        filters2 = {'created_since': now}
+
+        result1, count1 = db_api.resource_lock_get_all(
+            self.ctxt, filters=filters1)
+        result2, count2 = db_api.resource_lock_get_all(
+            self.ctxt, filters=filters2)
+
+        self.assertEqual(1, len(result1))
+        self.assertEqual(lock_1['id'], result1[0]['id'])
+        self.assertEqual(2, len(result2))
+        self.assertEqual([lock_3['id'], lock_2['id']],
+                         [lock['id'] for lock in result2])
+        self.assertIsNone(count1)
+        self.assertIsNone(count2)
+
+        filters1.update(filters2)
+        result3, count3 = db_api.resource_lock_get_all(
+            self.ctxt, filters=filters1, show_count=True)
+        self.assertEqual(0, len(result3))
+        self.assertEqual(0, count3)

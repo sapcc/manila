@@ -448,6 +448,16 @@ def _sync_share_groups(context, project_id, user_id, session,
     return {'share_groups': share_groups_count}
 
 
+def _sync_backups(context, project_id, user_id, share_type_id=None):
+    backups, _ = _backup_data_get_for_project(context, project_id, user_id)
+    return {'backups': backups}
+
+
+def _sync_backup_gigabytes(context, project_id, user_id, share_type_id=None):
+    _, backup_gigs = _backup_data_get_for_project(context, project_id, user_id)
+    return {'backup_gigabytes': backup_gigs}
+
+
 def _sync_share_group_snapshots(context, project_id, user_id, session,
                                 share_type_id=None):
     share_group_snapshots_count = count_share_group_snapshots(
@@ -480,6 +490,8 @@ QUOTA_SYNC_FUNCTIONS = {
     '_sync_share_group_snapshots': _sync_share_group_snapshots,
     '_sync_share_replicas': _sync_share_replicas,
     '_sync_replica_gigabytes': _sync_replica_gigabytes,
+    '_sync_backups': _sync_backups,
+    '_sync_backup_gigabytes': _sync_backup_gigabytes,
 }
 
 
@@ -2150,7 +2162,8 @@ def _process_share_filters(query, filters, project_id=None, is_public=False):
     if filters is None:
         filters = {}
 
-    share_filter_keys = ['share_group_id', 'snapshot_id', 'is_soft_deleted']
+    share_filter_keys = ['share_group_id', 'snapshot_id',
+                         'is_soft_deleted', 'source_backup_id']
     instance_filter_keys = ['share_server_id', 'status', 'share_type_id',
                             'host', 'share_network_id']
     share_filters = {}
@@ -3367,7 +3380,8 @@ def share_snapshot_get(context, snapshot_id, project_only=True, session=None):
 def _share_snapshot_get_all_with_filters(context, project_id=None,
                                          share_id=None, filters=None,
                                          limit=None, offset=None,
-                                         sort_key=None, sort_dir=None):
+                                         sort_key=None, sort_dir=None,
+                                         show_count=False):
     """Retrieves all snapshots.
 
     If no sorting parameters are specified then returned snapshots are sorted
@@ -3437,13 +3451,25 @@ def _share_snapshot_get_all_with_filters(context, project_id=None,
     query = exact_filter(query, models.ShareSnapshot,
                          filters, legal_filter_keys)
 
-    query = utils.paginate_query(query, models.ShareSnapshot, limit,
-                                 sort_key=sort_key,
-                                 sort_dir=sort_dir,
-                                 offset=offset)
+    query = apply_sorting(models.ShareSnapshot, query, sort_key, sort_dir)
 
-    # Returns list of shares that satisfy filters
-    return query.all()
+    count = None
+    if show_count:
+        count = query.count()
+
+    if limit is not None:
+        query = query.limit(limit)
+
+    if offset:
+        query = query.offset(offset)
+
+    # Returns list of share snapshots that satisfy filters
+    query = query.all()
+
+    if show_count:
+        return count, query
+
+    return query
 
 
 def share_snapshot_get_all(context, filters=None, limit=None, offset=None,
@@ -3451,6 +3477,17 @@ def share_snapshot_get_all(context, filters=None, limit=None, offset=None,
     return _share_snapshot_get_all_with_filters(
         context, filters=filters, limit=limit,
         offset=offset, sort_key=sort_key, sort_dir=sort_dir)
+
+
+@require_admin_context
+def share_snapshot_get_all_with_count(context, filters=None, limit=None,
+                                      offset=None, sort_key=None,
+                                      sort_dir=None):
+    count, query = _share_snapshot_get_all_with_filters(
+        context, filters=filters, limit=limit,
+        offset=offset, sort_key=sort_key, sort_dir=sort_dir,
+        show_count=True)
+    return count, query
 
 
 @require_context
@@ -3461,6 +3498,19 @@ def share_snapshot_get_all_by_project(context, project_id, filters=None,
     return _share_snapshot_get_all_with_filters(
         context, project_id=project_id, filters=filters, limit=limit,
         offset=offset, sort_key=sort_key, sort_dir=sort_dir)
+
+
+@require_context
+def share_snapshot_get_all_by_project_with_count(context, project_id,
+                                                 filters=None, limit=None,
+                                                 offset=None, sort_key=None,
+                                                 sort_dir=None):
+    authorize_project_context(context, project_id)
+    count, query = _share_snapshot_get_all_with_filters(
+        context, project_id=project_id, filters=filters, limit=limit,
+        offset=offset, sort_key=sort_key, sort_dir=sort_dir,
+        show_count=True)
+    return count, query
 
 
 @require_context
@@ -6928,3 +6978,233 @@ def async_operation_data_delete(context, entity_id, key=None, session=None):
         query = _async_operation_data_query(session, context,
                                             entity_id, key)
         query.update({"deleted": 1, "deleted_at": timeutils.utcnow()})
+
+
+@require_context
+def share_backup_create(context, share_id, values):
+    return _share_backup_create(context, share_id, values)
+
+
+@require_context
+@context_manager.writer
+def _share_backup_create(context, share_id, values):
+    if not values.get('id'):
+        values['id'] = uuidutils.generate_uuid()
+    values.update({'share_id': share_id})
+    _ensure_availability_zone_exists(context, values)
+
+    share_backup_ref = models.ShareBackup()
+    share_backup_ref.update(values)
+    share_backup_ref.save(session=context.session)
+    return share_backup_get(context, share_backup_ref['id'])
+
+
+@require_context
+@context_manager.reader
+def share_backup_get(context, share_backup_id):
+    result = model_query(
+        context, models.ShareBackup, project_only=True, read_deleted="no"
+    ).filter_by(
+        id=share_backup_id,
+    ).first()
+    if result is None:
+        raise exception.ShareBackupNotFound(backup_id=share_backup_id)
+
+    return result
+
+
+@require_context
+@context_manager.reader
+def share_backups_get_all(context, filters=None,
+                          limit=None, offset=None,
+                          sort_key=None, sort_dir=None):
+    project_id = filters.pop('project_id', None) if filters else None
+    query = _share_backups_get_with_filters(
+        context,
+        project_id=project_id,
+        filters=filters, limit=limit, offset=offset,
+        sort_key=sort_key, sort_dir=sort_dir)
+
+    return query
+
+
+def _share_backups_get_with_filters(context, project_id=None, filters=None,
+                                    limit=None, offset=None,
+                                    sort_key=None, sort_dir=None):
+    """Retrieves all backups.
+
+    If no sorting parameters are specified then returned backups are sorted
+    by the 'created_at' key and desc order.
+
+    :param context: context to query under
+    :param filters: dictionary of filters
+    :param limit: maximum number of items to return
+    :param sort_key: attribute by which results should be sorted,default is
+                     created_at
+    :param sort_dir: direction in which results should be sorted
+    :returns: list of matching backups
+    """
+    # Init data
+    sort_key = sort_key or 'created_at'
+    sort_dir = sort_dir or 'desc'
+    filters = copy.deepcopy(filters) if filters else {}
+    query = model_query(context, models.ShareBackup)
+
+    if project_id:
+        query = query.filter_by(project_id=project_id)
+
+    legal_filter_keys = ('display_name', 'display_name~',
+                         'display_description', 'display_description~',
+                         'id', 'share_id', 'host', 'topic', 'status')
+    query = exact_filter(query, models.ShareBackup,
+                         filters, legal_filter_keys)
+
+    query = apply_sorting(models.ShareBackup, query, sort_key, sort_dir)
+
+    if limit is not None:
+        query = query.limit(limit)
+
+    if offset:
+        query = query.offset(offset)
+
+    return query.all()
+
+
+@require_admin_context
+@context_manager.reader
+def _backup_data_get_for_project(context, project_id, user_id):
+    query = model_query(context, models.ShareBackup,
+                        func.count(models.ShareBackup.id),
+                        func.sum(models.ShareBackup.size),
+                        read_deleted="no").\
+        filter_by(project_id=project_id)
+
+    if user_id:
+        result = query.filter_by(user_id=user_id).first()
+    else:
+        result = query.first()
+
+    return (result[0] or 0, result[1] or 0)
+
+
+@require_context
+@oslo_db_api.wrap_db_retry(max_retries=5, retry_on_deadlock=True)
+@context_manager.writer
+def share_backup_update(context, backup_id, values):
+    _ensure_availability_zone_exists(context, values, strict=False)
+    backup_ref = share_backup_get(context, backup_id)
+    backup_ref.update(values)
+    backup_ref.save(session=context.session)
+    return backup_ref
+
+
+@require_context
+@context_manager.writer
+def share_backup_delete(context, backup_id):
+    backup_ref = share_backup_get(context, backup_id)
+    backup_ref.soft_delete(session=context.session, update_status=True)
+
+###############################
+
+
+@require_context
+def _resource_lock_get(context, lock_id):
+    query = model_query(context,
+                        models.ResourceLock,
+                        read_deleted="no",
+                        project_only="yes")
+    result = query.filter_by(id=lock_id).first()
+    if not result:
+        raise exception.ResourceLockNotFound(lock_id=lock_id)
+    return result
+
+
+@require_context
+@context_manager.writer
+def resource_lock_create(context, kwargs):
+    """Create a resource lock."""
+    values = copy.deepcopy(kwargs)
+    lock_ref = models.ResourceLock()
+    if not values.get('id'):
+        values['id'] = uuidutils.generate_uuid()
+    lock_ref.update(values)
+
+    context.session.add(lock_ref)
+
+    return _resource_lock_get(context, lock_ref['id'])
+
+
+@require_context
+@context_manager.writer
+def resource_lock_update(context, lock_id, kwargs):
+    """Update a resource lock."""
+    lock_ref = _resource_lock_get(context, lock_id)
+    lock_ref.update(kwargs)
+    lock_ref.save(session=context.session)
+    return lock_ref
+
+
+@require_context
+@context_manager.writer
+def resource_lock_delete(context, lock_id):
+    """Delete a resource lock."""
+    lock_ref = _resource_lock_get(context, lock_id)
+    lock_ref.soft_delete(session=context.session)
+
+
+@require_context
+@context_manager.reader
+def resource_lock_get(context, lock_id):
+    """Retrieve a resource lock."""
+    return _resource_lock_get(context, lock_id)
+
+
+@require_context
+@context_manager.reader
+def resource_lock_get_all(context, filters=None, limit=None, offset=None,
+                          sort_key='created_at', sort_dir='desc',
+                          show_count=False):
+    """Retrieve all resource locks.
+
+    If no sort parameters are specified then the returned locks are
+    sorted by the 'created_at' key in descending order.
+
+    :param context: context to query under
+    :param limit: maximum number of items to return
+    :param offset: the number of items to skip from the marker or from the
+                    first element.
+    :param sort_key: attributes by which results should be sorted.
+    :param sort_dir: directions in which results should be sorted.
+    :param filters: dictionary of filters; values that are in lists, tuples,
+                    or sets cause an 'IN' operation, while exact matching
+                    is used for other values, see exact_filter function for
+                    more information
+    :returns: list of matching resource locks
+    """
+    locks = models.ResourceLock
+
+    # add policy check to allow: all_projects, project_id filters
+    filters = filters or {}
+
+    query = model_query(context, locks, read_deleted="no")
+
+    project_id = filters.get('project_id')
+    all_projects = filters.get('all_projects') or filters.get('all_tenants')
+    if project_id is None and not all_projects:
+        filters['project_id'] = context.project_id
+
+    legal_filter_keys = ('id', 'user_id', 'resource_id', 'resource_type',
+                         'lock_context', 'resource_action', 'created_since',
+                         'created_before', 'lock_reason', 'lock_reason~',
+                         'project_id')
+
+    query = exact_filter(query, locks, filters, legal_filter_keys)
+
+    count = query.count() if show_count else None
+
+    query = utils.paginate_query(query, locks, limit,
+                                 sort_key=sort_key,
+                                 sort_dir=sort_dir,
+                                 offset=offset)
+
+    return query.all(), count

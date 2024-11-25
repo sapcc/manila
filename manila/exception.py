@@ -209,6 +209,10 @@ class MessageNotFound(NotFound):
     message = _("Message %(message_id)s could not be found.")
 
 
+class ResourceLockNotFound(NotFound):
+    message = _("Resource lock %(lock_id)s could not be found.")
+
+
 class Found(ManilaException):
     message = _("Resource was found.")
     code = 302
@@ -284,8 +288,7 @@ class ShareDataCopyFailed(ManilaException):
 
 
 class ShareDataCopyCancelled(ManilaException):
-    message = _("Copy of contents from share instance %(src_instance)s "
-                "to share instance %(dest_instance)s was cancelled.")
+    message = _("Copy of contents from source to destination was cancelled.")
 
 
 class ServiceIPNotFound(ManilaException):
@@ -1143,3 +1146,26 @@ class ZadaraServerNotFound(NotFound):
 # Macrosan Storage driver
 class MacrosanBackendExeption(ShareBackendException):
     message = _("Macrosan backend exception: %(reason)s")
+
+
+# Backup
+class BackupException(ManilaException):
+    message = _("Unable to perform a backup action: %(reason)s.")
+
+
+class InvalidBackup(Invalid):
+    message = _("Invalid backup: %(reason)s.")
+
+
+class BackupLimitExceeded(QuotaError):
+    message = _("Maximum number of backups allowed (%(allowed)d) exceeded.")
+
+
+class ShareBackupNotFound(NotFound):
+    message = _("Backup %(backup_id)s could not be found.")
+
+
+class ShareBackupSizeExceedsAvailableQuota(QuotaError):
+    message = _("Requested backup exceeds allowed Backup gigabytes "
+                "quota. Requested %(requested)sG, quota is %(quota)sG and "
+                "%(consumed)sG has been consumed.")
