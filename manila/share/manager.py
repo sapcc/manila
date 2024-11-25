@@ -3977,7 +3977,7 @@ class ShareManager(manager.SchedulerDependentManager):
                 else:
                     msg = ("Share server %s has source share server %s."
                            "Skipping deletion.")
-                    LOG.error(msg, server['id'], src_server_id)
+                    LOG.warning(msg, server['id'], src_server_id)
                     continue
 
             dest_servers = self.db.share_server_get_all_with_filters(ctxt, {
@@ -3987,10 +3987,15 @@ class ShareManager(manager.SchedulerDependentManager):
                 dest_server_id = dest_servers[0]['id']
                 msg = ("Share server %s has existing destination share "
                        "servers %s. Skipping deletion.")
-                LOG.error(msg, server['id'], dest_server_id)
+                LOG.warning(msg, server['id'], dest_server_id)
                 continue
 
-            self.delete_share_server(ctxt, server)
+            try:
+                self.delete_share_server(ctxt, server)
+            except Exception as e:
+                msg = ("Error during deletion of share server %s. "
+                       "Error: %s")
+                LOG.warning(msg, server['id'], e)
 
     @periodic_task.periodic_task(
         spacing=CONF.check_for_expired_shares_in_recycle_bin_interval)
