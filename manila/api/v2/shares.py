@@ -627,9 +627,9 @@ class ShareController(wsgi.Controller,
 
     def _validate_metadata_for_update(self, req, share_id, metadata,
                                       delete=True):
-        admin_metadata_ignore_keys = set(self._conf_admin_only_metadata_keys)
+        persistent_keys = set(self._conf_admin_only_metadata_keys)
         context = req.environ['manila.context']
-        if set(metadata).intersection(admin_metadata_ignore_keys):
+        if set(metadata).intersection(persistent_keys):
             try:
                 policy.check_policy(
                     context, 'share', 'update_admin_only_metadata')
@@ -637,17 +637,17 @@ class ShareController(wsgi.Controller,
                 msg = _("Cannot set or update admin only metadata.")
                 LOG.exception(msg)
                 raise exc.HTTPForbidden(explanation=msg)
-            admin_metadata_ignore_keys = []
+            persistent_keys = []
 
         current_share_metadata = db.share_metadata_get(context, share_id)
         if delete:
             _metadata = metadata
-            for key in admin_metadata_ignore_keys:
+            for key in persistent_keys:
                 if key in current_share_metadata:
                     _metadata[key] = current_share_metadata[key]
         else:
             metadata_copy = metadata.copy()
-            for key in admin_metadata_ignore_keys:
+            for key in persistent_keys:
                 metadata_copy.pop(key, None)
             _metadata = current_share_metadata.copy()
             _metadata.update(metadata_copy)
@@ -671,7 +671,12 @@ class ShareController(wsgi.Controller,
                                                        body['metadata'],
                                                        delete=False)
         body['metadata'] = _metadata
-        return self._create_metadata(req, resource_id, body)
+        metadata = self._create_metadata(req, resource_id, body)
+
+        context = req.environ['manila.context']
+        self.share_api.update_share_from_metadata(context, resource_id,
+                                                  metadata.get('metadata'))
+        return metadata
 
     @wsgi.Controller.api_version("2.0")
     @wsgi.Controller.authorize("update_share_metadata")
@@ -682,7 +687,12 @@ class ShareController(wsgi.Controller,
         _metadata = self._validate_metadata_for_update(req, resource_id,
                                                        body['metadata'])
         body['metadata'] = _metadata
-        return self._update_all_metadata(req, resource_id, body)
+        metadata = self._update_all_metadata(req, resource_id, body)
+
+        context = req.environ['manila.context']
+        self.share_api.update_share_from_metadata(context, resource_id,
+                                                  metadata.get('metadata'))
+        return metadata
 
     @wsgi.Controller.api_version("2.0")
     @wsgi.Controller.authorize("update_share_metadata")
@@ -694,7 +704,12 @@ class ShareController(wsgi.Controller,
                                                        body['metadata'],
                                                        delete=False)
         body['metadata'] = _metadata
-        return self._update_metadata_item(req, resource_id, body, key)
+        metadata = self._update_metadata_item(req, resource_id, body, key)
+
+        context = req.environ['manila.context']
+        self.share_api.update_share_from_metadata(context, resource_id,
+                                                  metadata.get('metadata'))
+        return metadata
 
     @wsgi.Controller.api_version("2.0")
     @wsgi.Controller.authorize("get_share_metadata")

@@ -115,6 +115,7 @@ FPOLICY_EXT_TO_EXCLUDE = 'jpg,mp3'
 FPOLICY_EXT_TO_EXCLUDE_LIST = ['jpg', 'mp3']
 BACKUP_TYPE = "fake_backup_type"
 MOUNT_POINT_NAME = 'fake_mp'
+VOLUME_EFFICIENCY_POLICY_NAME = 'fake_volume_efficiency_policy'
 
 JOB_ID = '123'
 JOB_STATE = 'success'
@@ -263,6 +264,12 @@ EXTRA_SPEC = {
     'netapp:tcp_max_xfer_size': 100,
     'netapp:udp_max_xfer_size': 100,
     'netapp:adaptive_qos_policy_group': None,
+    'netapp:snaplock_type': "compliance",
+    'netapp:snaplock_autocommit_period': '4months',
+    'netapp:snaplock_min_retention_period': '30minutes',
+    'netapp:snaplock_max_retention_period': '2years',
+    'netapp:snaplock_default_retention_period': '2months'
+
 }
 
 EXTRA_SPEC_WITH_REPLICATION = copy.copy(EXTRA_SPEC)
@@ -408,6 +415,12 @@ PROVISIONING_OPTIONS_STRING = {
     'fpolicy_extensions_to_exclude': None,
     'fpolicy_extensions_to_include': None,
     'fpolicy_file_operations': None,
+    'efficiency_policy': None,
+    'snaplock_type': None,
+    'snaplock_autocommit_period': None,
+    'snaplock_min_retention_period': None,
+    'snaplock_max_retention_period': None,
+    'snaplock_default_retention_period': None,
 }
 
 PROVISIONING_OPTIONS_STRING_MISSING_SPECS = {
@@ -418,6 +431,12 @@ PROVISIONING_OPTIONS_STRING_MISSING_SPECS = {
     'fpolicy_extensions_to_exclude': None,
     'fpolicy_extensions_to_include': None,
     'fpolicy_file_operations': None,
+    'efficiency_policy': None,
+    'snaplock_type': None,
+    'snaplock_autocommit_period': None,
+    'snaplock_min_retention_period': None,
+    'snaplock_max_retention_period': None,
+    'snaplock_default_retention_period': None,
 }
 
 PROVISIONING_OPTIONS_STRING_DEFAULT = {
@@ -428,6 +447,12 @@ PROVISIONING_OPTIONS_STRING_DEFAULT = {
     'fpolicy_extensions_to_exclude': None,
     'fpolicy_extensions_to_include': None,
     'fpolicy_file_operations': None,
+    'efficiency_policy': None,
+    'snaplock_type': None,
+    'snaplock_autocommit_period': None,
+    'snaplock_min_retention_period': None,
+    'snaplock_max_retention_period': None,
+    'snaplock_default_retention_period': None,
 }
 
 SHORT_BOOLEAN_EXTRA_SPEC = {
@@ -439,6 +464,7 @@ STRING_EXTRA_SPEC = {
     'netapp:language': 'en-US',
     'netapp:max_files': 5000,
     'netapp:adaptive_qos_policy_group': None,
+    'netapp:efficiency_policy': None,
 }
 
 SHORT_STRING_EXTRA_SPEC = {
@@ -965,6 +991,7 @@ FLEXGROUP_POOL = {
     'security_service_update_support': True,
     'netapp_flexgroup': True,
     'netapp_cluster_name': 'fake_cluster_name',
+    'netapp_snaplock_type': ['compliance', 'enterprise'],
 }
 
 FLEXGROUP_AGGR_SET = set(FLEXGROUP_POOL_OPT[FLEXGROUP_POOL_NAME])
@@ -985,6 +1012,7 @@ SSC_INFO = {
         'netapp_hybrid_aggregate': 'false',
         'netapp_aggregate': AGGREGATES[0],
         'netapp_flexgroup': False,
+        'netapp_snaplock_type': 'compliance',
     },
     AGGREGATES[1]: {
         'netapp_raid_type': 'raid_dp',
@@ -992,6 +1020,7 @@ SSC_INFO = {
         'netapp_hybrid_aggregate': 'true',
         'netapp_aggregate': AGGREGATES[1],
         'netapp_flexgroup': False,
+        'netapp_snaplock_type': 'enterprise',
     }
 }
 
@@ -1000,11 +1029,13 @@ SSC_INFO_MAP = {
         'netapp_raid_type': 'raid4',
         'netapp_disk_type': ['FCAL'],
         'netapp_hybrid_aggregate': 'false',
+        'netapp_snaplock_type': 'compliance',
     },
     AGGREGATES[1]: {
         'netapp_raid_type': 'raid_dp',
         'netapp_disk_type': ['SATA', 'SSD'],
         'netapp_hybrid_aggregate': 'true',
+        'netapp_snaplock_type': 'enterprise',
     }
 }
 
@@ -1049,6 +1080,7 @@ POOLS = [
         'share_server_multiple_subnet_support': True,
         'netapp_flexgroup': False,
         'netapp_cluster_name': 'fake_cluster_name',
+        'netapp_snaplock_type': 'compliance',
     },
     {
         'pool_name': AGGREGATES[1],
@@ -1078,6 +1110,7 @@ POOLS = [
         'share_server_multiple_subnet_support': True,
         'netapp_flexgroup': False,
         'netapp_cluster_name': 'fake_cluster_name',
+        'netapp_snaplock_type': 'compliance',
     },
 ]
 
@@ -1140,12 +1173,14 @@ SSC_AGGREGATES = [
         'raid-type': 'raid4',
         'is-hybrid': False,
         'is-home': False,
+        'snaplock-type': 'compliance',
     },
     {
         'name': AGGREGATES[1],
         'raid-type': 'raid_dp',
         'is-hybrid': True,
         'is-home': True,
+        'snaplock-type': 'enterprise',
     },
 ]
 

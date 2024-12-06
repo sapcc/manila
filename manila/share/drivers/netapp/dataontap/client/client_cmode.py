@@ -71,6 +71,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         ontapi_1_20 = ontapi_version >= (1, 20)
         ontapi_1_2x = (1, 20) <= ontapi_version < (1, 30)
         ontapi_1_30 = ontapi_version >= (1, 30)
+        ontapi_1_100 = ontapi_version >= (1, 100)
         ontapi_1_110 = ontapi_version >= (1, 110)
         ontapi_1_120 = ontapi_version >= (1, 120)
         ontapi_1_140 = ontapi_version >= (1, 140)
@@ -78,6 +79,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         ontapi_1_180 = ontapi_version >= (1, 180)
         ontapi_1_191 = ontapi_version >= (1, 191)
         ontap_9_10 = self.get_system_version()['version-tuple'] >= (9, 10, 0)
+        ontap_9_10_1 = self.get_system_version()['version-tuple'] >= (9, 10, 1)
 
         self.features.add_feature('SNAPMIRROR_V2', supported=ontapi_1_20)
         self.features.add_feature('SYSTEM_METRICS', supported=ontapi_1_2x)
@@ -102,6 +104,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         self.features.add_feature('FLEXGROUP', supported=ontapi_1_180)
         self.features.add_feature('FLEXGROUP_FAN_OUT', supported=ontapi_1_191)
         self.features.add_feature('SVM_MIGRATE', supported=ontap_9_10)
+        self.features.add_feature('SNAPLOCK', supported=ontapi_1_100)
+        self.features.add_feature('UNIFIED_AGGR', supported=ontap_9_10_1)
 
     def _invoke_vserver_api(self, na_element, vserver):
         server = copy.copy(self.connection)
@@ -1601,6 +1605,14 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 raise exception.NetAppException(msg % security_service['type'])
 
     @na_utils.trace
+    def update_showmount(self, showmount):
+        """Update show mount for vserver. """
+        nfs_service_modify_arg = {
+            'showmount': showmount
+        }
+        self.send_request('nfs-service-modify', nfs_service_modify_arg)
+
+    @na_utils.trace
     def enable_nfs(self, versions, nfs_config=None):
         """Enables NFS on Vserver."""
         self.send_request('nfs-enable')
@@ -2224,7 +2236,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                       compression_enabled=False, max_files=None,
                       snapshot_reserve=None, volume_type='rw',
                       qos_policy_group=None, adaptive_qos_policy_group=None,
-                      encrypt=False, mount_point_name=None, **options):
+                      encrypt=False, mount_point_name=None,
+                      snaplock_type=None, **options):
         """Creates a volume."""
         if adaptive_qos_policy_group and not self.features.ADAPTIVE_QOS:
             msg = 'Adaptive QoS not supported on this backend ONTAP version.'
@@ -2238,15 +2251,20 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         api_args.update(self._get_create_volume_api_args(
             volume_name, thin_provisioned, snapshot_policy, language,
             snapshot_reserve, volume_type, qos_policy_group, encrypt,
-            adaptive_qos_policy_group, mount_point_name))
+            adaptive_qos_policy_group, mount_point_name, snaplock_type))
 
         self.send_request('volume-create', api_args)
 
-        self.update_volume_efficiency_attributes(volume_name,
-                                                 dedup_enabled,
-                                                 compression_enabled)
+        efficiency_policy = options.get('efficiency_policy', None)
+        self.update_volume_efficiency_attributes(
+            volume_name, dedup_enabled, compression_enabled,
+            efficiency_policy=efficiency_policy
+        )
         if max_files is not None:
             self.set_volume_max_files(volume_name, max_files)
+
+        if snaplock_type is not None:
+            self.set_snaplock_attributes(volume_name, **options)
 
     @na_utils.trace
     def create_volume_async(self, aggregate_list, volume_name, size_gb,
@@ -2255,7 +2273,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                             volume_type='rw', qos_policy_group=None,
                             encrypt=False, adaptive_qos_policy_group=None,
                             auto_provisioned=False, mount_point_name=None,
-                            **options):
+                            snaplock_type=None, **options):
         """Creates a volume asynchronously."""
 
         if adaptive_qos_policy_group and not self.features.ADAPTIVE_QOS:
@@ -2274,7 +2292,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         api_args.update(self._get_create_volume_api_args(
             volume_name, thin_provisioned, snapshot_policy, language,
             snapshot_reserve, volume_type, qos_policy_group, encrypt,
-            adaptive_qos_policy_group, mount_point_name))
+            adaptive_qos_policy_group, mount_point_name, snaplock_type))
 
         result = self.send_request('volume-create-async', api_args)
         job_info = {
@@ -2282,7 +2300,6 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'error-code': result.get_child_content('result-error-code'),
             'error-message': result.get_child_content('result-error-message')
         }
-
         return job_info
 
     def _get_create_volume_api_args(self, volume_name, thin_provisioned,
@@ -2290,7 +2307,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                                     snapshot_reserve, volume_type,
                                     qos_policy_group, encrypt,
                                     adaptive_qos_policy_group,
-                                    mount_point_name=None):
+                                    mount_point_name=None,
+                                    snaplock_type=None):
         api_args = {
             'volume-type': volume_type,
             'space-reserve': ('none' if thin_provisioned else 'volume'),
@@ -2319,7 +2337,31 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         else:
             api_args['encrypt'] = 'false'
 
+        if snaplock_type is not None:
+            api_args['snaplock-type'] = snaplock_type
+
         return api_args
+
+    @na_utils.trace
+    def update_volume_snapshot_policy(self, volume_name, snapshot_policy):
+        """Set snapshot policy for the specified volume."""
+        api_args = {
+            'query': {
+                'volume-attributes': {
+                    'volume-id-attributes': {
+                        'name': volume_name,
+                    },
+                },
+            },
+            'attributes': {
+                'volume-attributes': {
+                    'volume-snapshot-attributes': {
+                        'snapshot-policy': snapshot_policy,
+                    },
+                },
+            },
+        }
+        self.send_request('volume-modify-iter', api_args)
 
     @na_utils.trace
     @manila_utils.retry(retry_param=exception.NetAppException,
@@ -2414,6 +2456,28 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'enable-compression': 'false'
         }
         self.connection.send_request('sis-set-config-async', api_args)
+
+    @na_utils.trace
+    def apply_volume_efficiency_policy(self, volume_name,
+                                       efficiency_policy=None):
+        """Apply efficiency policy to FlexVol/FlexGroup volume."""
+        if efficiency_policy:
+            api_args = {
+                'path': f'/vol/{volume_name}',
+                'policy-name': efficiency_policy
+            }
+            self.send_request('sis-set-config', api_args)
+
+    @na_utils.trace
+    def apply_volume_efficiency_policy_async(self, volume_name,
+                                             efficiency_policy=None):
+        """Apply efficiency policy to FlexVol volume asynchronously."""
+        if efficiency_policy:
+            api_args = {
+                'path': f'/vol/{volume_name}',
+                'policy-name': efficiency_policy
+            }
+            self.connection.send_request('sis-set-config-async', api_args)
 
     @na_utils.trace
     def get_volume_efficiency_status(self, volume_name):
@@ -2702,17 +2766,20 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 not hide_snapdir).lower()
 
         self.send_request('volume-modify-iter', api_args)
-
+        efficiency_policy = options.get('efficiency_policy', None)
         # Efficiency options must be handled separately
-        self.update_volume_efficiency_attributes(volume_name,
-                                                 dedup_enabled,
-                                                 compression_enabled,
-                                                 is_flexgroup=is_flexgroup)
+        self.update_volume_efficiency_attributes(
+            volume_name, dedup_enabled, compression_enabled,
+            is_flexgroup=is_flexgroup, efficiency_policy=efficiency_policy
+        )
+        if self._is_snaplock_enabled_volume(volume_name):
+            self.set_snaplock_attributes(volume_name, **options)
 
     @na_utils.trace
     def update_volume_efficiency_attributes(self, volume_name, dedup_enabled,
                                             compression_enabled,
-                                            is_flexgroup=False):
+                                            is_flexgroup=False,
+                                            efficiency_policy=None):
         """Update dedupe & compression attributes to match desired values."""
         efficiency_status = self.get_volume_efficiency_status(volume_name)
 
@@ -2742,6 +2809,13 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 self.disable_compression_async(volume_name)
             else:
                 self.disable_compression(volume_name)
+
+        if is_flexgroup:
+            self.apply_volume_efficiency_policy_async(
+                volume_name, efficiency_policy=efficiency_policy)
+        else:
+            self.apply_volume_efficiency_policy(
+                volume_name, efficiency_policy=efficiency_policy)
 
     @na_utils.trace
     def volume_exists(self, volume_name):
@@ -2947,6 +3021,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                         'size': None,
                         'size-used': None,
                     },
+                    'volume-snaplock-attributes': {
+                        'snaplock-type': None,
+                    },
                 },
             },
         }
@@ -2971,6 +3048,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'volume-qos-attributes') or netapp_api.NaElement('none')
         volume_space_attributes = volume_attributes.get_child_by_name(
             'volume-space-attributes') or netapp_api.NaElement('none')
+        volume_snaplock_attributes = volume_attributes.get_child_by_name(
+            'volume-snaplock-attributes') or netapp_api.NaElement('none')
 
         aggregate = volume_id_attributes.get_child_content(
             'containing-aggregate-name')
@@ -2998,7 +3077,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'qos-policy-group-name': volume_qos_attributes.get_child_content(
                 'policy-group-name'),
             'style-extended': volume_id_attributes.get_child_content(
-                'style-extended')
+                'style-extended'),
+            'snaplock-type': volume_snaplock_attributes.get_child_content(
+                'snaplock-type')
         }
         return volume
 
@@ -4081,9 +4162,15 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             },
         }
 
+        if self.features.SNAPLOCK:
+            snaplock_attributes = {'is-snaplock': None, 'snaplock-type': None}
+            desired_attributes['aggr-attributes'][
+                'aggr-snaplock-attributes'] = snaplock_attributes
         try:
-            aggrs = self._get_aggregates(aggregate_names=[aggregate_name],
-                                         desired_attributes=desired_attributes)
+            aggrs = self._get_aggregates(
+                aggregate_names=[aggregate_name],
+                desired_attributes=desired_attributes
+            )
         except netapp_api.NaApiError:
             msg = _('Failed to get info for aggregate %s.')
             LOG.exception(msg, aggregate_name)
@@ -4097,16 +4184,24 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'aggr-raid-attributes') or netapp_api.NaElement('none')
         aggr_owner_attrs = aggr_attributes.get_child_by_name(
             'aggr-ownership-attributes') or netapp_api.NaElement('none')
+        aggr_snaplock_attrs = aggr_attributes.get_child_by_name(
+            'aggr-snaplock-attributes') or netapp_api.NaElement('none')
 
         aggregate = {
             'name': aggr_attributes.get_child_content('aggregate-name'),
             'raid-type': aggr_raid_attrs.get_child_content('raid-type'),
             'is-hybrid': strutils.bool_from_string(
-                aggr_raid_attrs.get_child_content('is-hybrid')),
+                aggr_raid_attrs.get_child_content('is-hybrid')
+            ),
             'is-home': (aggr_owner_attrs.get_child_content('owner-id') ==
-                        aggr_owner_attrs.get_child_content('home-id'))
+                        aggr_owner_attrs.get_child_content('home-id')),
+            'is-snaplock': aggr_snaplock_attrs.get_child_content(
+                'is-snaplock',
+            ),
+            'snaplock-type': aggr_snaplock_attrs.get_child_content(
+                'snaplock-type',
+            ),
         }
-
         return aggregate
 
     @na_utils.trace
@@ -6334,3 +6429,90 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'attributes-list') or netapp_api.NaElement('none')
         return [snapshot_info.get_child_content('name')
                 for snapshot_info in attributes_list.get_children()]
+
+    @na_utils.trace
+    def is_snaplock_compliance_clock_configured(self, node_name):
+        """Get the Snaplock compliance is configured for each node"""
+        api_args = {'node': node_name}
+        result = self.send_request('snaplock-get-node-compliance-clock',
+                                   api_args)
+        node_compliance_clock = result.get_child_by_name(
+            "snaplock-node-compliance-clock"
+        )
+        if not node_compliance_clock:
+            raise exception.NetAppException(
+                "Compliance clock is not configured for node %s",
+                node_name,
+            )
+        clock_info = node_compliance_clock.get_child_by_name(
+            "compliance-clock-info")
+        clock_fmt_value = clock_info.get_child_content(
+            "formatted-snaplock-compliance-clock")
+        return 'not configured' not in clock_fmt_value.lower()
+
+    @na_utils.trace
+    def set_snaplock_attributes(self, volume_name, **options):
+        """Set the retention period for SnapLock enabled volume"""
+        api_args = {}
+        snaplock_attribute_mapping = {
+            'snaplock_autocommit_period': 'autocommit-period',
+            'snaplock_min_retention_period': 'minimum-retention-period',
+            'snaplock_max_retention_period': 'maximum-retention-period',
+            'snaplock_default_retention_period': 'default-retention-period',
+        }
+        for share_type_attr, na_api_attr in snaplock_attribute_mapping.items():
+            if options.get(share_type_attr):
+                api_args[na_api_attr] = options.get(share_type_attr)
+
+        if all(value is None for value in api_args.values()):
+            LOG.debug("All SnapLock attributes are None, doesn't"
+                      " updated SnapLock attributes")
+            return
+
+        api_args['volume'] = volume_name
+        default_retention_period = options.get(
+            'snaplock_default_retention_period'
+        )
+        if default_retention_period and default_retention_period == "max":
+            api_args['default-retention-period'] = (
+                api_args['maximum-retention-period']
+            )
+        elif default_retention_period and default_retention_period == "min":
+            api_args['default-retention-period'] = (
+                api_args['minimum-retention-period']
+            )
+        self.send_request('volume-set-snaplock-attrs', api_args)
+
+    @na_utils.trace
+    def _is_snaplock_enabled_volume(self, volume_name):
+        """Get whether volume is SnapLock enabled or disabled"""
+        vol_attr = self.get_volume(volume_name)
+        return vol_attr.get('snaplock-type') in ("compliance", "enterprise")
+
+    @na_utils.trace
+    def get_vserver_aggr_snaplock_type(self, aggr_name):
+        """Get SnapLock type for vserver aggregate"""
+        api_args = {
+            'query': {
+                'show-aggregates': {
+                    'aggregate-name': aggr_name,
+                },
+            },
+            'desired-attributes': {
+                'show-aggregates': {
+                    'snaplock-type': None,
+                },
+            },
+        }
+
+        if self.features.SNAPLOCK:
+            result = self.send_iter_request('vserver-show-aggr-get-iter',
+                                            api_args)
+        else:
+            return None
+        if result is not None and self._has_records(result):
+            attributes_list = result.get_child_by_name(
+                'attributes-list') or netapp_api.NaElement('none')
+            vs_aggr_attributes = attributes_list.get_child_by_name(
+                'show-aggregates') or netapp_api.NaElement('none')
+            return vs_aggr_attributes.get_child_content('snaplock-type')

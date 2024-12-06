@@ -141,6 +141,21 @@ global_opts = [
                 default=constants.AdminOnlyMetadata.SCHEDULER_FILTERS,
                 help='Metadata keys that should only be manipulated by '
                      'administrators.'),
+    cfg.ListOpt('driver_updatable_metadata',
+                default=[],
+                help='Metadata keys that will decide which share metadata '
+                     '(element of the list is <driver_updatable_key>, '
+                     'i.e max_files) can be passed to share drivers as part '
+                     'of metadata create/update operations.'),
+    cfg.BoolOpt('update_shares_status_on_ensure',
+                default=True,
+                help='Whether Manila should update the status of all shares '
+                     'within a backend during ongoing ensure_shares '
+                     'run.'),
+    cfg.ListOpt('admin_only_el_metadata',
+                default=constants.AdminOnlyMetadata.EXPORT_LOCATION_KEYS,
+                help='Metadata keys for export locations that should only be '
+                     'manipulated by administrators.'),
 ]
 
 CONF.register_opts(global_opts)

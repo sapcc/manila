@@ -458,3 +458,12 @@ user documentation.
 2.85
 ----
    Added ``backup_type`` field to share backup object.
+
+2.86
+----
+   Added ensure shares API.
+
+2.87
+----
+  Added Metadata API methods (GET, PUT, POST, DELETE)
+  to Share Export Locations.

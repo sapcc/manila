@@ -122,6 +122,7 @@ class NetAppRestClient(object):
         self.features.add_feature('FLEXGROUP', supported=True)
         self.features.add_feature('FLEXGROUP_FAN_OUT', supported=True)
         self.features.add_feature('SVM_MIGRATE', supported=True)
+        self.features.add_feature('UNIFIED_AGGR', supported=True)
 
     def __getattr__(self, name):
         """If method is not implemented for REST, try to call the ZAPI."""
@@ -549,7 +550,7 @@ class NetAppRestClient(object):
             return {}
 
         fields = ('name,block_storage.primary.raid_type,'
-                  'block_storage.storage_type')
+                  'block_storage.storage_type,snaplock_type')
 
         try:
             aggrs = self._get_aggregates(aggregate_names=[aggregate_name],
@@ -570,6 +571,9 @@ class NetAppRestClient(object):
                 aggr_attributes['block_storage']['primary']['raid_type'],
             'is-hybrid':
                 aggr_attributes['block_storage']['storage_type'] == 'hybrid',
+            'snaplock-type': aggr_attributes.get('snaplock_type'),
+            'is-snaplock': False if (aggr_attributes.get('snaplock_type')
+                                     == 'non_snaplock') else True
         }
 
         return aggregate
@@ -857,7 +861,7 @@ class NetAppRestClient(object):
         query = {
             'name': volume_name,
             'fields': 'aggregates.name,nas.path,name,svm.name,type,style,'
-                      'qos.policy.name,space.size,space.used'
+                      'qos.policy.name,space.size,space.used,snaplock.type'
         }
 
         result = self.send_request('/storage/volumes', 'get', query=query)
@@ -891,7 +895,8 @@ class NetAppRestClient(object):
             'size-used': volume_infos.get('space', {}).get('used'),
             'qos-policy-group-name': (
                 volume_infos.get('qos', {}).get('policy', {}).get('name')),
-            'style-extended': volume_infos.get('style')
+            'style-extended': volume_infos.get('style'),
+            'snaplock-type': volume_infos.get('snaplock', {}).get('type'),
         }
         return volume
 
@@ -953,7 +958,8 @@ class NetAppRestClient(object):
                       compression_enabled=False, max_files=None,
                       snapshot_reserve=None, volume_type='rw',
                       qos_policy_group=None, adaptive_qos_policy_group=None,
-                      encrypt=False, mount_point_name=None, **options):
+                      encrypt=False, mount_point_name=None,
+                      snaplock_type=None, **options):
         """Creates a FlexVol volume synchronously."""
 
         # NOTE(nahimsouza): In REST API, both FlexVol and FlexGroup volumes are
@@ -967,13 +973,19 @@ class NetAppRestClient(object):
             snapshot_reserve=snapshot_reserve, volume_type=volume_type,
             qos_policy_group=qos_policy_group, encrypt=encrypt,
             adaptive_qos_policy_group=adaptive_qos_policy_group,
-            mount_point_name=mount_point_name, **options)
+            mount_point_name=mount_point_name, snaplock_type=snaplock_type,
+            **options)
+        efficiency_policy = options.get('efficiency_policy', None)
+        self.update_volume_efficiency_attributes(
+            volume_name, dedup_enabled, compression_enabled,
+            efficiency_policy=efficiency_policy
+        )
 
-        self.update_volume_efficiency_attributes(volume_name,
-                                                 dedup_enabled,
-                                                 compression_enabled)
         if max_files is not None:
             self.set_volume_max_files(volume_name, max_files)
+
+        if snaplock_type is not None:
+            self.set_snaplock_attributes(volume_name, **options)
 
     @na_utils.trace
     def create_volume_async(self, aggregate_list, volume_name, size_gb,
@@ -983,7 +995,7 @@ class NetAppRestClient(object):
                             volume_type='rw', qos_policy_group=None,
                             encrypt=False, adaptive_qos_policy_group=None,
                             auto_provisioned=False, mount_point_name=None,
-                            **options):
+                            snaplock_type=None, **options):
         """Creates FlexGroup/FlexVol volumes.
 
         If the parameter `is_flexgroup` is False, the creation process is
@@ -1004,7 +1016,7 @@ class NetAppRestClient(object):
         body.update(self._get_create_volume_body(
             volume_name, thin_provisioned, snapshot_policy, language,
             snapshot_reserve, volume_type, qos_policy_group, encrypt,
-            adaptive_qos_policy_group, mount_point_name))
+            adaptive_qos_policy_group, mount_point_name, snaplock_type))
 
         # NOTE(nahimsouza): When a volume is not a FlexGroup, volume creation
         # is made synchronously to replicate old ZAPI behavior. When ZAPI is
@@ -1020,7 +1032,6 @@ class NetAppRestClient(object):
             'error-code': '',
             'error-message': ''
         }
-
         return job_info
 
     @na_utils.trace
@@ -1028,7 +1039,7 @@ class NetAppRestClient(object):
                                 snapshot_policy, language, snapshot_reserve,
                                 volume_type, qos_policy_group, encrypt,
                                 adaptive_qos_policy_group,
-                                mount_point_name=None):
+                                mount_point_name, snaplock_type):
         """Builds the body to volume creation request."""
 
         body = {
@@ -1058,6 +1069,9 @@ class NetAppRestClient(object):
                 body['encryption.enabled'] = 'true'
         else:
             body['encryption.enabled'] = 'false'
+
+        if snaplock_type is not None:
+            body['snaplock.type'] = snaplock_type
 
         return body
 
@@ -1111,9 +1125,22 @@ class NetAppRestClient(object):
         }
 
     @na_utils.trace
+    def update_volume_snapshot_policy(self, volume_name, snapshot_policy):
+        """Set snapshot policy for the specified volume."""
+        volume = self._get_volume_by_args(vol_name=volume_name)
+        uuid = volume['uuid']
+
+        body = {
+            'snapshot_policy.name': snapshot_policy
+        }
+        # update snapshot policy
+        self.send_request(f'/storage/volumes/{uuid}', 'patch', body=body)
+
+    @na_utils.trace
     def update_volume_efficiency_attributes(self, volume_name, dedup_enabled,
                                             compression_enabled,
-                                            is_flexgroup=None):
+                                            is_flexgroup=False,
+                                            efficiency_policy=None):
         """Update dedupe & compression attributes to match desired values."""
 
         efficiency_status = self.get_volume_efficiency_status(volume_name)
@@ -1129,6 +1156,9 @@ class NetAppRestClient(object):
             self.enable_compression_async(volume_name)
         elif not compression_enabled and efficiency_status['compression']:
             self.disable_compression_async(volume_name)
+
+        self.apply_volume_efficiency_policy(
+            volume_name, efficiency_policy=efficiency_policy)
 
     @na_utils.trace
     def enable_dedupe_async(self, volume_name):
@@ -1180,6 +1210,21 @@ class NetAppRestClient(object):
         }
         # update volume efficiency
         self.send_request(f'/storage/volumes/{uuid}', 'patch', body=body)
+
+    @na_utils.trace
+    def apply_volume_efficiency_policy(self, volume_name,
+                                       efficiency_policy=None):
+        if efficiency_policy:
+            """Apply volume efficiency policy to FlexVol"""
+            volume = self._get_volume_by_args(vol_name=volume_name)
+            uuid = volume['uuid']
+
+            body = {
+                'efficiency': {'policy': efficiency_policy}
+            }
+
+            # update volume efficiency policy only if policy_name is provided
+            self.send_request(f'/storage/volumes/{uuid}', 'patch', body=body)
 
     @na_utils.trace
     def set_volume_max_files(self, volume_name, max_files):
@@ -2494,12 +2539,15 @@ class NetAppRestClient(object):
 
         self.send_request('/storage/volumes/' + volume['uuid'],
                           'patch', body=body)
-
+        # Extract efficiency_policy from provisioning_options
+        efficiency_policy = options.get('efficiency_policy', None)
         # Efficiency options must be handled separately
-        self.update_volume_efficiency_attributes(volume_name,
-                                                 dedup_enabled,
-                                                 compression_enabled,
-                                                 is_flexgroup=is_flexgroup)
+        self.update_volume_efficiency_attributes(
+            volume_name, dedup_enabled, compression_enabled,
+            is_flexgroup=is_flexgroup, efficiency_policy=efficiency_policy
+        )
+        if self._is_snaplock_enabled_volume(volume_name):
+            self.set_snaplock_attributes(volume_name, **options)
 
     @na_utils.trace
     def start_volume_move(self, volume_name, vserver, destination_aggregate,
@@ -4668,6 +4716,26 @@ class NetAppRestClient(object):
                 raise exception.NetAppException(msg % msg_args)
 
     @na_utils.trace
+    def update_showmount(self, showmount):
+        """Update show mount for vserver. """
+        # Get SVM UUID.
+        query = {
+            'name': self.vserver,
+            'fields': 'uuid'
+        }
+        res = self.send_request('/svm/svms', 'get', query=query)
+        if not res.get('records'):
+            msg = _('Vserver %s not found.') % self.vserver
+            raise exception.NetAppException(msg)
+        svm_id = res.get('records')[0]['uuid']
+
+        body = {
+            'showmount_enabled': showmount,
+        }
+        self.send_request(f'/protocols/nfs/services/{svm_id}', 'patch',
+                          body=body)
+
+    @na_utils.trace
     def enable_nfs(self, versions, nfs_config=None):
         """Enables NFS on Vserver."""
         svm_id = self._get_unique_svm_by_name()
@@ -5455,3 +5523,65 @@ class NetAppRestClient(object):
 
         return [snapshot_info['name']
                 for snapshot_info in response['records']]
+
+    @na_utils.trace
+    def is_snaplock_compliance_clock_configured(self, node_name):
+        """Get the SnapLock compliance clock is configured for each node"""
+        node_uuid = self._get_cluster_node_uuid(node_name)
+        response = self.send_request(
+            f'/storage/snaplock/compliance-clocks/{node_uuid}',
+            'get'
+        )
+        clock_fmt_value = response.get('time')
+        return 'not configured' not in clock_fmt_value.lower()
+
+    @na_utils.trace
+    def set_snaplock_attributes(self, volume_name, **options):
+        """Set the retention period for SnapLock enabled volume"""
+        body = {}
+        snaplock_attribute_mapping = {
+            'snaplock_autocommit_period': 'snaplock.autocommit_period',
+            'snaplock_min_retention_period': 'snaplock.retention.minimum',
+            'snaplock_max_retention_period': 'snaplock.retention.maximum',
+            'snaplock_default_retention_period': 'snaplock.retention.default',
+        }
+        for share_type_attr, na_api_attr in snaplock_attribute_mapping.items():
+            if options.get(share_type_attr):
+                if share_type_attr == 'snaplock_default_retention_period':
+                    default_retention_period = options.get(
+                        'snaplock_default_retention_period'
+                    )
+                    if default_retention_period == "max":
+                        options[share_type_attr] =\
+                            options.get('snaplock_max_retention_period')
+                    elif default_retention_period == "min":
+                        options[share_type_attr] = \
+                            options.get('snaplock_min_retention_period')
+
+                body[na_api_attr] = utils.convert_time_duration_to_iso_format(
+                    options.get(share_type_attr))
+
+        if all(value is None for value in body.values()):
+            LOG.debug("All SnapLock attributes are None, doesn't"
+                      " updated SnapLock attributes")
+            return
+
+        volume = self._get_volume_by_args(vol_name=volume_name)
+        uuid = volume['uuid']
+        self.send_request(f'/storage/volumes/{uuid}',
+                          'patch', body=body)
+
+    @na_utils.trace
+    def _is_snaplock_enabled_volume(self, volume_name):
+        """Get whether volume is SnapLock enabled or disabled"""
+        vol_attr = self.get_volume(volume_name)
+        return vol_attr.get('snaplock-type') in ("compliance", "enterprise")
+
+    @na_utils.trace
+    def _get_cluster_node_uuid(self, node_name):
+        query = {
+            'name': node_name
+        }
+        response = self.send_request('/cluster/nodes',
+                                     'get', query=query)
+        return response.get('records')[0].get('uuid')

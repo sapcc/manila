@@ -53,6 +53,7 @@ STATUS_AWAITING_TRANSFER = 'awaiting_transfer'
 STATUS_BACKUP_CREATING = 'backup_creating'
 STATUS_BACKUP_RESTORING = 'backup_restoring'
 STATUS_BACKUP_RESTORING_ERROR = 'backup_restoring_error'
+STATUS_ENSURING = 'ensuring'
 
 # Transfer resource type
 SHARE_RESOURCE_TYPE = 'share'
@@ -144,6 +145,7 @@ TRANSITIONAL_STATUSES = (
     STATUS_RESTORING, STATUS_REVERTING,
     STATUS_SERVER_MIGRATING, STATUS_SERVER_MIGRATING_TO,
     STATUS_BACKUP_RESTORING, STATUS_BACKUP_CREATING,
+    STATUS_ENSURING,
 )
 
 INVALID_SHARE_INSTANCE_STATUSES_FOR_ACCESS_RULE_UPDATES = (
@@ -358,8 +360,13 @@ class ExtraSpecs(object):
 class AdminOnlyMetadata(object):
     AFFINITY_KEY = "__affinity_same_host"
     ANTI_AFFINITY_KEY = "__affinity_different_host"
+    PREFERRED_KEY = "preferred"
 
     SCHEDULER_FILTERS = [
         AFFINITY_KEY,
         ANTI_AFFINITY_KEY,
+    ]
+
+    EXPORT_LOCATION_KEYS = [
+        PREFERRED_KEY,
     ]

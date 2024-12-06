@@ -102,6 +102,13 @@ class APIRouter(manila.api.openstack.APIRouter):
         mapper.resource("service",
                         "services",
                         controller=self.resources["services"])
+        for path_prefix in ['/{project_id}', '']:
+            # project_id is optional
+            mapper.connect("services",
+                           "%s/services/ensure-shares" % path_prefix,
+                           controller=self.resources["services"],
+                           action="ensure_shares",
+                           conditions={"method": ["POST"]})
 
         self.resources["quota_sets_legacy"] = (
             quota_sets.create_resource_legacy())
@@ -252,6 +259,45 @@ class APIRouter(manila.api.openstack.APIRouter):
                            controller=self.resources["share_export_locations"],
                            action="show",
                            conditions={"method": ["GET"]})
+            mapper.connect("export_locations_metadata",
+                           "%s/shares/{share_id}/export_locations"
+                           "/{resource_id}/metadata" % path_prefix,
+                           controller=self.resources["share_export_locations"],
+                           action="create_metadata",
+                           conditions={"method": ["POST"]})
+            mapper.connect("export_locations_metadata",
+                           "%s/shares/{share_id}/export_locations"
+                           "/{resource_id}/metadata" % path_prefix,
+                           controller=self.resources["share_export_locations"],
+                           action="update_all_metadata",
+                           conditions={"method": ["PUT"]})
+            mapper.connect("export_locations_metadata",
+                           "%s/shares/{share_id}/export_locations/"
+                           "{resource_id}/metadata/{key}"
+                           % path_prefix,
+                           controller=self.resources["share_export_locations"],
+                           action="update_metadata_item",
+                           conditions={"method": ["POST"]})
+            mapper.connect("export_locations_metadata",
+                           "%s/shares/{share_id}/export_locations/"
+                           "{resource_id}/metadata" % path_prefix,
+                           controller=self.resources["share_export_locations"],
+                           action="index_metadata",
+                           conditions={"method": ["GET"]})
+            mapper.connect("export_locations_metadata",
+                           "%s/shares/{share_id}/export_locations/"
+                           "{resource_id}/metadata/{key}"
+                           % path_prefix,
+                           controller=self.resources["share_export_locations"],
+                           action="show_metadata",
+                           conditions={"method": ["GET"]})
+            mapper.connect("export_locations_metadata",
+                           "%s/shares/{share_id}/export_locations/"
+                           "{resource_id}/metadata/{key}"
+                           % path_prefix,
+                           controller=self.resources["share_export_locations"],
+                           action="delete_metadata",
+                           conditions={"method": ["DELETE"]})
 
         self.resources["snapshots"] = share_snapshots.create_resource()
         mapper.resource("snapshot", "snapshots",
