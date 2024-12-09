@@ -55,7 +55,12 @@ share_api_opts = [
                      'When enabling this option make sure that filter '
                      'CreateFromSnapshotFilter is enabled and to have hosts '
                      'reporting replication_domain option.'
-                )
+                ),
+    cfg.BoolOpt('allow_share_server_migration_with_replicas',
+                default=False,
+                help='If set to True, Manila will allow share server '
+                     'migration even though one or more shares in that share '
+                     'server has replicas.')
 ]
 
 CONF = cfg.CONF
@@ -2974,7 +2979,9 @@ class API(base.Base):
                             'share_status': share['status']}
                 raise exception.InvalidShareServer(reason=msg)
 
-            if share.has_replicas:
+            if (not share_server.get(
+                    'share_replicas_migration_support', False) and
+                    share.has_replicas):
                 msg = _('Share %s has replicas. Remove the replicas of all '
                         'shares in the share server before attempting to '
                         'migrate it.') % share['id']
