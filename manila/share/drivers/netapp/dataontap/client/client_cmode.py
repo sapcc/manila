@@ -4202,7 +4202,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                                     client.volume_clone_split_start(
                                         volume_name)
                                     LOG.debug('Starting clone split for '
-                                            'volume %s ', volume_name)
+                                              'volume %s ', volume_name)
                             except Exception:
                                 LOG.error("Volume clone split failed for "
                                           "volume %s", volume_name)
@@ -4223,14 +4223,15 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 else:
                     for clone in clones:
                         try:
-                            clone_status = client.volume_clone_split_status(clone)
+                            clone_status = client.volume_clone_split_status(
+                                clone)
                             if clone_status == 'unknown':
                                 client.volume_clone_split_start(clone)
                                 LOG.debug('Starting clone split for '
-                                        'volume %s ', clone)
+                                          'volume %s ', clone)
                         except Exception:
                             LOG.error("Volume clone split failed for "
-                                    "volume %s", clone)
+                                      "volume %s", clone)
 
     @na_utils.trace
     def create_snapshot(self, volume_name, snapshot_name):
