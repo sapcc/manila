@@ -4124,6 +4124,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 'volume-attributes': {
                     'volume-id-attributes': {
                         'name': DELETED_PREFIX + '*',
+                        'type': 'rw',
                     },
                 },
             },
@@ -4195,11 +4196,17 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                         LOG.error('Pruning soft-deleted '
                                   'volume %s failed', volume_name)
                         if e.code == netapp_api.EVOLDEL_NOT_ALLOW_BY_CLONE:
-                            if client.volume_clone_split_status(
-                                    volume_name) == 'unknown':
-                                client.volume_clone_split_start(volume_name)
-                                LOG.debug('Starting clone split for '
-                                          'volume %s ', volume_name)
+                            try:
+                                if client.volume_clone_split_status(
+                                        volume_name) == 'unknown':
+                                    client.volume_clone_split_start(
+                                        volume_name)
+                                    LOG.debug('Starting clone split for '
+                                              'volume %s ', volume_name)
+                            except Exception:
+                                LOG.error("Volume clone split failed for "
+                                          "volume %s", volume_name)
+
             elif volume_state == 'online':
                 # These must be parent volume which was brought online in
                 # previous callback. If no clones found means all splits are
@@ -4215,11 +4222,16 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                                   "volume %s", volume_name)
                 else:
                     for clone in clones:
-                        clone_status = client.volume_clone_split_status(clone)
-                        if clone_status == 'unknown':
-                            client.volume_clone_split_start(clone)
-                            LOG.debug('Starting clone split for '
-                                      'volume %s ', volume_name)
+                        try:
+                            clone_status = client.volume_clone_split_status(
+                                clone)
+                            if clone_status == 'unknown':
+                                client.volume_clone_split_start(clone)
+                                LOG.debug('Starting clone split for '
+                                          'volume %s ', clone)
+                        except Exception:
+                            LOG.error("Volume clone split failed for "
+                                      "volume %s", clone)
 
     @na_utils.trace
     def create_snapshot(self, volume_name, snapshot_name):
