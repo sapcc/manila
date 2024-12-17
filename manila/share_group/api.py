@@ -51,7 +51,8 @@ class API(base.Base):
     def create(self, context, name=None, description=None,
                share_type_ids=None, source_share_group_snapshot_id=None,
                share_network_id=None, share_group_type_id=None,
-               availability_zone_id=None, availability_zone=None):
+               share_affinity=None, availability_zone_id=None,
+               availability_zone=None):
         """Create new share group."""
 
         share_group_snapshot = None
@@ -123,35 +124,45 @@ class API(base.Base):
             # Check if share network is active, otherwise raise a BadRequest
             api_common.check_share_network_is_active(share_network)
 
-        if (driver_handles_share_servers and
-                not (source_share_group_snapshot_id or share_network_id)):
+        if (not share_affinity) and (
+            driver_handles_share_servers
+            and not (source_share_group_snapshot_id or share_network_id)
+        ):
             msg = _("When using a share type with the "
                     "driver_handles_share_servers extra spec as "
                     "True, a share_network_id must be provided.")
             raise exception.InvalidInput(reason=msg)
 
-        try:
-            share_group_type = self.db.share_group_type_get(
-                context, share_group_type_id)
-        except exception.ShareGroupTypeNotFound:
-            msg = _("The specified share group type %s does not exist.")
-            raise exception.InvalidInput(reason=msg % share_group_type_id)
+        share_group_type = {}
+        supported_share_type_objects = []
+        supported_share_types = None
+        if share_group_type_id:
+            try:
+                share_group_type = self.db.share_group_type_get(
+                    context, share_group_type_id)
+            except exception.ShareGroupTypeNotFound:
+                msg = _("The specified share group type %s does not exist.")
+                raise exception.InvalidInput(reason=msg % share_group_type_id)
 
-        supported_share_types = set(
-            [x['share_type_id'] for x in share_group_type['share_types']])
-        supported_share_type_objects = [
-            share_types.get_share_type(context, share_type_id) for
-            share_type_id in supported_share_types
-        ]
+            supported_share_types = set([
+                x['share_type_id']
+                for x in share_group_type.get('share_types', [])
+            ])
+            supported_share_type_objects = [
+                share_types.get_share_type(context, share_type_id)
+                for share_type_id in supported_share_types
+            ]
 
-        if not set(share_type_ids or []) <= supported_share_types:
-            msg = _("The specified share types must be a subset of the share "
-                    "types supported by the share group type.")
-            raise exception.InvalidInput(reason=msg)
+            if not set(share_type_ids or []) <= supported_share_types:
+                msg = _(
+                    "The specified share types must be a subset of the share "
+                    "types supported by the share group type."
+                )
+                raise exception.InvalidInput(reason=msg)
 
         # Grab share type AZs for scheduling
         share_types_of_new_group = (
-            share_type_objects or supported_share_type_objects
+            share_type_objects or supported_share_type_objects or []
         )
         stype_azs_of_new_group = []
         stypes_unsupported_in_az = []
@@ -212,7 +223,8 @@ class API(base.Base):
             'user_id': context.user_id,
             'project_id': context.project_id,
             'status': constants.STATUS_CREATING,
-            'share_types': share_type_ids or supported_share_types
+            'share_types': share_type_ids or supported_share_types,
+            'share_affinity': share_affinity,
         }
         if original_share_group:
             options['host'] = original_share_group['host']
@@ -258,7 +270,14 @@ class API(base.Base):
         request_spec['share_types'] = share_type_objects
         request_spec['resource_type'] = share_group_type
 
-        if share_group_snapshot and original_share_group:
+        if share_affinity:
+            self.db.share_group_update(
+                context,
+                share_group["id"],
+                {"status": constants.STATUS_AVAILABLE},
+            )
+            share_group['status'] = constants.STATUS_AVAILABLE
+        elif share_group_snapshot and original_share_group:
             self.share_rpcapi.create_share_group(
                 context, share_group, original_share_group['host'])
         else:
