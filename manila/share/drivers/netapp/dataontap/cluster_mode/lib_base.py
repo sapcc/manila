@@ -341,7 +341,9 @@ class NetAppCmodeFileStorageLibrary(object):
             housekeeping_periodic_task = loopingcall.FixedIntervalLoopingCall(
                 self._handle_housekeeping_tasks)
             housekeeping_periodic_task.start(
-                interval=self.HOUSEKEEPING_INTERVAL_SECONDS, initial_delay=0)
+                interval=self.HOUSEKEEPING_INTERVAL_SECONDS,
+                initial_delay=0,
+                stop_on_exception=False)
 
     def _get_backend_share_name(self, share_id):
         """Get share name according to share name template."""
