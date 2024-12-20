@@ -116,7 +116,19 @@ class CapacityFilter(base_host.BaseHostFilter):
                 # free and max_over_subscription_ratio.
                 adjusted_free_virtual = (
                     free * host_state.max_over_subscription_ratio)
-                return adjusted_free_virtual >= share_size
+                is_there_enough_afv = adjusted_free_virtual >= share_size
+                if is_there_enough_afv:
+                    return True
+                else:
+                    thin_msg_args = {"host": host_state.host,
+                                     "requested": share_size,
+                                     "available": adjusted_free_virtual}
+                    LOG.warning(
+                        "Insufficient adjusted free space for thin "
+                        "share creation on host %(host)s (requested / avail): "
+                        "%(requested)s/%(available)s", thin_msg_args)
+                    return False
+
         elif (use_thin_logic and thin_provisioning and
               host_state.max_over_subscription_ratio < 1):
             LOG.error("Invalid max_over_subscription_ratio: %(ratio)s. "
