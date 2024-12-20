@@ -1330,6 +1330,7 @@ def _set_request_id_header(req, headers):
     context = req.environ.get('manila.context')
     if context:
         headers['x-compute-request-id'] = context.request_id
+        headers['x-openstack-request-id'] = context.request_id
 
 
 class OverLimitFault(webob.exc.HTTPException):
