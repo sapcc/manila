@@ -2568,7 +2568,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                             thin_provisioned=False, snapshot_policy=None,
                             language=None, snapshot_reserve=None,
                             volume_type='rw', comment=None,
-                            qos_policy_group=None, encrypt=False,
+                            qos_policy_group=None, encrypt=None,
                             adaptive_qos_policy_group=None,
                             auto_provisioned=False,
                             logical_space_reporting=None, **options):
