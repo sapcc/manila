@@ -2009,6 +2009,10 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
     def test_delete_ipspace(self):
 
+        self.client.features.add_feature('IPSPACES')
+        mock_ipspace_has_data_vservers = self.mock_object(
+            self.client, 'ipspace_has_data_vservers',
+            mock.Mock(return_value=False))
         mock_delete_broadcast_domains_for_ipspace = self.mock_object(
             self.client, '_delete_broadcast_domains_for_ipspace')
         self.mock_object(self.client, 'send_request')
@@ -2016,6 +2020,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.client.delete_ipspace(fake.IPSPACE_NAME)
 
         net_ipspaces_destroy_args = {'ipspace': fake.IPSPACE_NAME}
+        mock_ipspace_has_data_vservers.assert_called_once_with(
+            fake.IPSPACE_NAME)
         mock_delete_broadcast_domains_for_ipspace.assert_called_once_with(
             fake.IPSPACE_NAME)
         self.client.send_request.assert_has_calls([
