@@ -70,8 +70,11 @@ class ShareServerController(wsgi.Controller):
             share_networks = db_api.share_network_get_all(context)
         share_network_map = {s["id"]: s for s in share_networks}
         for s in share_servers:
-            s.share_network_id = s.share_network_subnet['share_network_id']
-            sn = share_network_map.get(s.share_network_id)
+            if s.share_network_subnet:
+                s.share_network_id = s.share_network_subnet['share_network_id']
+                sn = share_network_map.get(s.share_network_id)
+            else:
+                sn = None
             if sn:
                 s.project_id = sn['project_id']
                 s.share_network_name = sn['name'] or sn['id']
