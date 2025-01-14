@@ -182,6 +182,9 @@ class API(object):
                 port_req_body['port'].update(kwargs)
             port = self.client.create_port(port_req_body).get('port', {})
             return port
+        except neutron_client_exc.IpAddressGenerationFailureClient as e:
+            LOG.warning('Neutron error no free IP\'s in neutron subnet')
+            raise exception.IpAddressGenerationFailureClient()
         except neutron_client_exc.NeutronClientException as e:
             LOG.warning('Neutron error creating port on network %s',
                         network_id)

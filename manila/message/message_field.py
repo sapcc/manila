@@ -150,7 +150,13 @@ class Detail(object):
           "due to port limit exceeded. You may increase quota of network "
           "ports and retry your request. If this doesn't work, contact your "
           "administrator to troubleshoot issues with your network."))
-
+    NEUTRON_SUBNET_CAPACITY_REACHED = (
+        '030',
+        _("Share Driver failed to create share server on share network "
+          "due no more free IP's in the neutorn subnet. You may free some "
+          "IP's in the subnet or create new subnet/share network. If this "
+          "doesn't work, contact your administrator to troubleshoot issues with your network."))
+    
     ALL = (
         UNKNOWN_ERROR,
         NO_VALID_HOST,
@@ -180,7 +186,8 @@ class Detail(object):
         DRIVER_FAILED_DELETE_SHARE_SNAPMIRROR,
         FILTER_AFFINITY,
         FILTER_ANTI_AFFINITY,
-        SHARE_NETWORK_PORT_QUOTA_LIMIT_EXCEEDED
+        SHARE_NETWORK_PORT_QUOTA_LIMIT_EXCEEDED,
+        NEUTRON_SUBNET_CAPACITY_REACHED
     )
 
     # Exception and detail mappings
