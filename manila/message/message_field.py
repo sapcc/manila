@@ -138,7 +138,7 @@ class Detail(object):
           "security service to the share network."))
     DRIVER_FAILED_DELETE_SHARE_SNAPMIRROR = (
         '026',
-        _("Share Driver failed to delete the share. The EC2 backup SnapMirror "
+        _("Share Driver failed to delete the share. A backup SnapMirror "
           "configuration exist in the backend that has to be removed first in "
           "order to delete the share. Please contact Storage Team via SNOW "
           "ticket."))

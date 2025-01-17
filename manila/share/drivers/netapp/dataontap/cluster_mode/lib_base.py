@@ -2664,7 +2664,10 @@ class NetAppCmodeFileStorageLibrary(object):
 
         snapshot_attributes = vserver_client.get_volume_snapshot_attributes(
             share_name)
-        if snapshot_attributes['snapshot-policy'].lower() == 'ec2_backups':
+        if (
+            snapshot_attributes['snapshot-policy'].lower()
+            in self.configuration.netapp_snapmirror_policy_exceptions
+        ):
             provisioning_options['snapshot_policy'] = \
                 snapshot_attributes['snapshot-policy']
             if snapshot_attributes['snapdir-access-enabled'].lower() == 'true':
