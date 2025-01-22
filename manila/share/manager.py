@@ -4726,11 +4726,17 @@ class ShareManager(manager.SchedulerDependentManager):
                 share_net = None
                 share_net_subnet = None
                 if subnet_id:
+                    # we request a copy of the current context
+                    # that can read soft-deleted entries
+                    # because the subnet and network may already have been
+                    # deleted in the API layer
+                    soft_deleted_context = context.elevated(read_deleted='yes')
                     try:
                         share_net_subnet = self.db.share_network_subnet_get(
-                            context, subnet_id)
+                            soft_deleted_context, subnet_id)
                         share_net = self.db.share_network_get(
-                            context, share_net_subnet['share_network_id'])
+                            soft_deleted_context,
+                            share_net_subnet['share_network_id'])
                     except Exception:
                         LOG.warning('Share network subnet not found during '
                                     'deletion of share server.')
