@@ -153,8 +153,8 @@ class Detail(object):
     NEUTRON_SUBNET_CAPACITY_REACHED = (
         '030',
         _("Share Driver failed to create share server on share network "
-          "due no more free IP's in the neutorn subnet. You may free some "
-          "IP's in the subnet or create new subnet/share network. If this "
+          "due no more free IP addresses in the neutron subnet. You may free some "
+          "IP addresses in the subnet or create a new subnet/share network. If this "
           "doesn't work, contact your administrator to troubleshoot issues with your network."))
     
     ALL = (
