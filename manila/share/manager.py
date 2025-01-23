@@ -2227,7 +2227,7 @@ class ShareManager(manager.SchedulerDependentManager):
                         share['project_id'],
                         resource_type=message_field.Resource.SHARE,
                         resource_id=share_id,
-                        detail=message_field.Detail.NEUTRON_SUBNET_CAPACITY_FULL)
+                        detail=message_field.Detail.NEUTRON_SUBNET_FULL)
             except Exception:
                 with excutils.save_and_reraise_exception():
                     error = ("Creation of share instance %s failed: "
