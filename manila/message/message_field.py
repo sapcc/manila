@@ -156,7 +156,7 @@ class Detail(object):
           "due no more free IP addresses in the neutron subnet."
           "You may free some IP addresses in the subnet "
           "or create a new subnet/share network. If this doesn't work, "
-          "contact your administrator to troubleshoot ",
+          "contact your administrator to troubleshoot "
           "issues with your network."))
     ALL = (
         UNKNOWN_ERROR,
