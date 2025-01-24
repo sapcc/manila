@@ -3257,6 +3257,7 @@ class NetAppRestClient(object):
                             parent_snapshot_name=None,
                             qos_policy_group=None,
                             adaptive_qos_policy_group=None,
+                            mount_point_name=None,
                             **options):
         """Create volume clone in the same aggregate as parent volume."""
 
@@ -3264,7 +3265,7 @@ class NetAppRestClient(object):
             'name': volume_name,
             'clone.parent_volume.name': parent_volume_name,
             'clone.parent_snapshot.name': parent_snapshot_name,
-            'nas.path': '/%s' % volume_name,
+            'nas.path': '/%s' % (mount_point_name or volume_name),
             'clone.is_flexclone': 'true',
             'svm.name': self.connection.get_vserver(),
         }
