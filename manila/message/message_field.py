@@ -78,6 +78,15 @@ class Detail(object):
     NO_ACTIVE_REPLICA = (
         '006', _("Share has no replica with 'replica_state' set to 'active'."))
 
+    NEUTRON_SUBNET_FULL = (
+        '997',
+        _("Share Driver failed to create share server on share network "
+          "due no more free IP addresses in the neutron subnet."
+          "You may free some IP addresses in the subnet "
+          "or create a new subnet/share network. If this doesn't work, "
+          "contact your administrator to troubleshoot "
+          "issues with your network."))
+
     FILTER_MSG = _("No storage could be allocated for this share request, "
                    "%s filter didn't succeed.")
     FILTER_AFFINITY = ('998', FILTER_MSG % 'AffinityFilter')
@@ -185,6 +194,7 @@ class Detail(object):
         NO_SHARE_SERVER,
         NO_ACTIVE_AVAILABLE_REPLICA,
         NO_ACTIVE_REPLICA,
+        NEUTRON_SUBNET_FULL,
         FILTER_AFFINITY,
         FILTER_ANTI_AFFINITY,
         FILTER_AVAILABILITY,
