@@ -171,6 +171,14 @@ class Detail(object):
           "it is not passed to share driver to perform required operation."))
 
     # ////////////////////////// SCI custom message //////////////////////////
+    NEUTRON_SUBNET_FULL = (
+        '996',
+        _("Share Driver failed to create share server on share network "
+          "due no more free IP addresses in the neutron subnet."
+          "You may free some IP addresses in the subnet "
+          "or create a new subnet/share network. If this doesn't work, "
+          "contact your administrator to troubleshoot "
+          "issues with your network."))
     DRIVER_FAILED_DELETE_SHARE_SNAPMIRROR = (
         '997',
         _("Share Driver failed to delete the share. A backup SnapMirror "
@@ -188,6 +196,7 @@ class Detail(object):
         NO_SHARE_SERVER,
         NO_ACTIVE_AVAILABLE_REPLICA,
         NO_ACTIVE_REPLICA,
+        NEUTRON_SUBNET_FULL,
         FILTER_AFFINITY,
         FILTER_ANTI_AFFINITY,
         FILTER_AVAILABILITY,
