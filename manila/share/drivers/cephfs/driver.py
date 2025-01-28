@@ -538,7 +538,7 @@ class CephFSDriver(driver.ExecuteMixin, driver.GaneshaMixin,
                       delete_rules, update_rules, share_server=None):
         return self.protocol_helper.update_access(
             context, share, access_rules, add_rules, delete_rules,
-            share_server=share_server)
+            update_rules, share_server=share_server)
 
     def ensure_share(self, context, share, share_server=None):
         try:
