@@ -1513,7 +1513,6 @@ class InStorageAssistantTestCase(test.TestCase):
                 proto,
                 [],
                 [],
-                [],
                 []
             )
             cat_mock.assert_not_called()
@@ -1525,7 +1524,6 @@ class InStorageAssistantTestCase(test.TestCase):
                 proto,
                 [],
                 [],
-                [],
                 []
             )
             cat_mock.assert_called_once()
@@ -1533,7 +1531,6 @@ class InStorageAssistantTestCase(test.TestCase):
             self.assistant.update_access(
                 'fs01',
                 proto,
-                [],
                 [],
                 [],
                 []
