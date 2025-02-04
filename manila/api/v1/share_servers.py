@@ -74,6 +74,7 @@ class ShareServerController(wsgi.Controller):
                 s.share_network_id = s.share_network_subnet['share_network_id']
                 sn = share_network_map.get(s.share_network_id)
             else:
+                s.share_network_id = None
                 sn = None
             if sn:
                 s.project_id = sn['project_id']
