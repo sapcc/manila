@@ -327,23 +327,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                     "subtype.")
             LOG.debug(msg)
 
-        # NOTE(lseki): If there's already an ipspace created for the same VLAN
-        # port, reuse it. It will be named after the previously created share
-        # server's neutron subnet id.
-        node_name = self._client.list_cluster_nodes()[0]
-        port = self._get_node_data_port(node_name)
-        # NOTE(sfernand): ONTAP driver currently supports multiple subnets
-        # only in a same network segment. A validation is performed in a
-        # earlier step to make sure all subnets have the same segmentation_id.
-        vlan = network_info[0]['segmentation_id']
-        ipspace_name = self._client.get_ipspace_name_for_vlan_port(
-            node_name, port, vlan)
-
-        if (
-            ipspace_name is None
-            or ipspace_name in client_cmode.CLUSTER_IPSPACES
-        ):
-            ipspace_name = self._create_ipspace(network_info[0])
+        ipspace_name = self._get_or_create_ipspace(network_info[0])
 
         aggregate_names = self._find_matching_aggregates()
         if is_dp_destination:
@@ -451,7 +435,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         return client_cmode.IPSPACE_PREFIX + network_id.replace('-', '_')
 
     @na_utils.trace
-    def _create_ipspace(self, network_info, client=None):
+    def _get_or_create_ipspace(self, network_info, client=None):
         """If supported, create an IPspace for a new Vserver."""
 
         desired_client = client if client else self._client
@@ -462,6 +446,17 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         if (network_info['network_allocations'][0]['network_type']
                 not in SEGMENTED_NETWORK_TYPES):
             return client_cmode.DEFAULT_IPSPACE
+
+        # NOTE(lseki): If there's already an ipspace created for the same VLAN
+        # port, reuse it. It will be named after the previously created share
+        # server's neutron subnet id.
+        node_name = desired_client.list_cluster_nodes()[0]
+        port = self._get_node_data_port(node_name)
+        vlan = network_info['network_allocations'][0]['segmentation_id']
+        ipspace_name = desired_client.get_ipspace_name_for_vlan_port(
+            node_name, port, vlan)
+        if ipspace_name and ipspace_name not in client_cmode.CLUSTER_IPSPACES:
+            return ipspace_name
 
         # NOTE(cknight): Neutron needs cDOT IP spaces because it can provide
         # overlapping IP address ranges for different subnets.  That is not
@@ -1355,13 +1350,11 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         if self.configuration.netapp_restrict_lif_creation_per_ha_pair:
             self._check_data_lif_count_limit_reached_for_ha_pair(dest_client)
 
-        # 2. Create new ipspace, port and broadcast domain.
-        node_name = self._client.list_cluster_nodes()[0]
-        port = self._get_node_data_port(node_name)
         vlan = network_info['network_allocations'][0]['segmentation_id']
-        destination_ipspace = self._client.get_ipspace_name_for_vlan_port(
-            node_name, port, vlan) or self._create_ipspace(
-            network_info, client=dest_client)
+
+        # 2. Create new ipspace, port and broadcast domain.
+        destination_ipspace = self._get_or_create_ipspace(network_info,
+                                                          client=dest_client)
         self._create_port_and_broadcast_domain(
             destination_ipspace, network_info)
 
@@ -1639,12 +1632,10 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         }
 
         # 2. Create new ipspace, port and broadcast domain.
-        node_name = self._client.list_cluster_nodes()[0]
-        port = self._get_node_data_port(node_name)
-        vlan = network_info['network_allocations'][0]['segmentation_id']
-        destination_ipspace = self._client.get_ipspace_name_for_vlan_port(
-            node_name, port, vlan) or self._create_ipspace(
-            network_info, client=dest_client)
+        # NOTE(carthaca): since we execute this always on the share service of
+        # the dest host: dest_client equals self._client
+        destination_ipspace = self._get_or_create_ipspace(network_info,
+                                                          client=dest_client)
         self._create_port_and_broadcast_domain(
             destination_ipspace, network_info)
 
