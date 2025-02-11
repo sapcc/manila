@@ -447,12 +447,13 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             mock.Mock(return_value=True))
         mock_get_min = self.mock_object(
             self.library, '_get_minimum_flexgroup_size',
-            mock.Mock(return_value=self.library.FLEXGROUP_MIN_SIZE_PER_AGGR))
+            mock.Mock(return_value=self.library.
+                      FLEXGROUP_MIN_SIZE_PER_AGGR_PER_MEMBER))
 
         result = self.library.get_default_filter_function(pool=fake.POOL_NAME)
 
         expected_filer = (self.library.DEFAULT_FLEXGROUP_FILTER_FUNCTION %
-                          self.library.FLEXGROUP_MIN_SIZE_PER_AGGR)
+                          self.library.FLEXGROUP_MIN_SIZE_PER_AGGR_PER_MEMBER)
         self.assertEqual(expected_filer, result)
         mock_is_flexgroup.assert_called_once_with(fake.POOL_NAME)
         mock_get_min.assert_called_once_with(fake.POOL_NAME)
@@ -7749,9 +7750,10 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                          mock.Mock(return_value=fake.AGGREGATES))
 
         result = self.library._get_minimum_flexgroup_size(fake.POOL_NAME)
-
         expected = (len(fake.AGGREGATES) *
-                    self.library.FLEXGROUP_MIN_SIZE_PER_AGGR)
+                    self.library.configuration.
+                    netapp_flexgroup_aggregate_multiplier *
+                    self.library.FLEXGROUP_MIN_SIZE_PER_AGGR_PER_MEMBER)
         self.assertEqual(expected, result)
         self.library._get_flexgroup_aggregate_list.assert_called_once_with(
             fake.POOL_NAME)

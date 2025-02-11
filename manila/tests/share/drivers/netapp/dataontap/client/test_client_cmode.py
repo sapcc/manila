@@ -3386,9 +3386,10 @@ class NetAppClientCmodeTestCase(test.TestCase):
             self.client, '_get_create_volume_api_args',
             mock.Mock(return_value={'size': 1}))
 
+        provisioning_options = {'aggr_list_multiplier': 4}
         result = self.client.create_volume_async(
             [fake.SHARE_AGGREGATE_NAME], fake.SHARE_NAME, 1,
-            auto_provisioned=auto_provisioned)
+            auto_provisioned=auto_provisioned, **provisioning_options)
 
         volume_create_args = {
             'volume-name': fake.SHARE_NAME,
@@ -3399,6 +3400,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
         else:
             volume_create_args['aggr-list'] = [
                 {'aggr-name': fake.SHARE_AGGREGATE_NAME}]
+            volume_create_args['aggr-list-multiplier'] = 4
 
         expected_result = {
             'jobid': '123',
