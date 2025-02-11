@@ -85,9 +85,8 @@ class NetAppCmodeFileStorageLibrary(object):
     DEFAULT_GOODNESS_FUNCTION = '100 - capabilities.utilization'
     DEFAULT_FLEXGROUP_FILTER_FUNCTION = 'share.size >= %s'
 
-    # ONTAP requires 100G per FlexGroup member, since the driver is deploying
-    # with default number of members (four), the min size is 400G.
-    FLEXGROUP_MIN_SIZE_PER_AGGR = 400
+    # ONTAP requires 100G per FlexGroup member
+    FLEXGROUP_MIN_SIZE_PER_AGGR_PER_MEMBER = 100
 
     # Internal states when dealing with data motion
     STATE_SPLITTING_VOLUME_CLONE = 'splitting_volume_clone'
@@ -1231,6 +1230,8 @@ class NetAppCmodeFileStorageLibrary(object):
                    'options': provisioning_options})
         if self._is_flexgroup_pool(pool_name):
             aggr_list = self._get_flexgroup_aggregate_list(pool_name)
+            provisioning_options['aggr_list_multiplier'] = (
+                self.configuration.netapp_flexgroup_aggregate_multiplier)
             self._create_flexgroup_share(
                 vserver_client, aggr_list, share_name,
                 share['size'],
@@ -4671,7 +4672,9 @@ class NetAppCmodeFileStorageLibrary(object):
         """Returns the minimum size for a FlexGroup share inside a pool."""
 
         aggr_list = set(self._get_flexgroup_aggregate_list(pool_name))
-        return self.FLEXGROUP_MIN_SIZE_PER_AGGR * len(aggr_list)
+        size_per_m = self.FLEXGROUP_MIN_SIZE_PER_AGGR_PER_MEMBER
+        m_per_aggr = self.configuration.netapp_flexgroup_aggregate_multiplier
+        return m_per_aggr * size_per_m * len(aggr_list)
 
     @na_utils.trace
     def is_flexgroup_destination_host(self, host, dm_session):
