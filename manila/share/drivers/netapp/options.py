@@ -155,6 +155,14 @@ netapp_provisioning_opts = [
                      'FlexGroup pools through netapp_flexgroup_pools option. '
                      'The FlexGroup placement is done either by ONTAP or '
                      'Manila, not both.'),
+    cfg.IntOpt('netapp_flexgroup_aggregate_multiplier',
+               min=1,
+               max=1000,
+               default=4,
+               help='Configure the number of flexgroup constituents per '
+                    'aggregate. Consider that the number of constituents '
+                    'created on a node contributes to the maximum volume '
+                    'limit per node.'),
     cfg.MultiOpt('netapp_flexgroup_pools',
                  item_type=types.Dict(value_type=types.String()),
                  default={},
