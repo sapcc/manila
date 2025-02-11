@@ -2689,6 +2689,8 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         else:
             api_args['aggr-list'] = [{'aggr-name': aggr}
                                      for aggr in aggregate_list]
+            api_args['aggr-list-multiplier'] = options.get(
+                'aggr_list_multiplier')
         api_args.update(self._get_create_volume_api_args(
             volume_name, thin_provisioned, snapshot_policy, language,
             snapshot_reserve, volume_type, comment, qos_policy_group, encrypt,
