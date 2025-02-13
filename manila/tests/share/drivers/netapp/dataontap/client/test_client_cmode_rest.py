@@ -4797,17 +4797,12 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
                                           method=method)
 
         body = {
-            'protocol.v3_enabled': 'true' if v3 else 'false',
-            'protocol.v41_enabled': 'true' if v41 else 'false',
-            'showmount_enabled': 'true',
             'windows.v3_ms_dos_client_enabled': 'true',
             'protocol.v3_features.connection_drop': 'false',
             'protocol.v3_features.ejukebox_enabled': 'false',
             'vstorage_enabled': 'true',
         }
 
-        if v40:
-            body['protocol.v40_enabled'] = 'true'
         if v41:
             nfs41_opts = {
                 'v41_features.acl_enabled': 'false',
@@ -4817,11 +4812,25 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             body.update(nfs41_opts)
 
         if method == 'create':
+            metadata_update_opts = {
+                'showmount_enabled': 'true',
+            }
+            if v41:
+                metadata_update_opts['v41_features.pnfs_enabled'] = 'false'  # default false  # noqa: E501
+            body.update(metadata_update_opts)
+
             flexgroup_opts = {
                 'protocol.v3_64bit_identifiers_enabled': 'true',
                 'protocol.v4_64bit_identifiers_enabled': 'true',
             }
             body.update(flexgroup_opts)
+
+            version_opts = {
+                'protocol.v3_enabled': 'true' if v3 else 'false',
+                'protocol.v40_enabled': 'true' if v40 else 'false',
+                'protocol.v41_enabled': 'true' if v41 else 'false',
+            }
+            body.update(version_opts)
 
         self.client.send_request.assert_called_once_with(
             f'/protocols/nfs/services/{fake.FAKE_UUID}',

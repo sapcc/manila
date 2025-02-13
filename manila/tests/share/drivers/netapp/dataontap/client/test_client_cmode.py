@@ -2642,17 +2642,12 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.client._enable_nfs_protocols(versions, method, extra)
 
         nfs_service_modify_args = {
-            'is-nfsv3-enabled': 'true' if v3 else 'false',
-            'is-nfsv41-enabled': 'true' if v41 else 'false',
-            'showmount': 'true',
             'is-v3-ms-dos-client-enabled': 'true',
             'is-nfsv3-connection-drop-enabled': 'false',
             'enable-ejukebox': 'false',
             'is-vstorage-enabled': 'true',
         }
 
-        if v40:
-            nfs_service_modify_args['is-nfsv40-enabled'] = 'true'
         if v41:
             nfs41_opts = {
                 'is-nfsv41-acl-enabled': 'false',
@@ -2668,6 +2663,15 @@ class NetAppClientCmodeTestCase(test.TestCase):
                 'is-nfsv4-64bit-identifiers-enabled': 'true',
             }
             nfs_service_modify_args.update(flexgroup_opts)
+            version_opts = {
+                'is-nfsv3-enabled': 'true' if v3 else 'false',
+                'is-nfsv40-enabled': 'true' if v40 else 'false',
+                'is-nfsv41-enabled': 'true' if v41 else 'false',
+                'showmount': 'true',
+            }
+            nfs_service_modify_args.update(version_opts)
+            if v41:
+                nfs_service_modify_args['is-nfsv41-pnfs-enabled'] = 'false'
 
         if extra:
             nfs_service_modify_args.update(extra)
