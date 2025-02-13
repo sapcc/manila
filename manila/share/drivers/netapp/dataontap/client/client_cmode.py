@@ -1800,37 +1800,45 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                               extra_config=None):
         """Set the enabled NFS protocol versions."""
         nfs3 = 'true' if 'nfs3' in versions else 'false'
-        # SAPCC absence of 'nfs4.0' should not equal 'false'
-        # instead it should mean:
-        #   don't touch existing value for existing vservers
-        #   and set the default value ('false' for ONTAP 9.7 and newer)
-        #   for new vservers
-        # Change back to upstream once all vservers have nfs4.0 disabled!
-        # nfs40 = 'true' if 'nfs4.0' in versions else 'false'
+        nfs40 = 'true' if 'nfs4.0' in versions else 'false'
         nfs41 = 'true' if 'nfs4.1' in versions else 'false'
 
         nfs_service_modify_args = {
-            'is-nfsv3-enabled': nfs3,
-            'is-nfsv41-enabled': nfs41,
-            'showmount': 'true',
             'is-v3-ms-dos-client-enabled': 'true',
             'is-nfsv3-connection-drop-enabled': 'false',
             'enable-ejukebox': 'false',
             'is-vstorage-enabled': 'true',
         }
+        # below options are dangerous to change on existing vservers:
+        # e.g. clients may lose connections or remount is required.
+        # absence of those options on method 'update' means to not touch them
+        # e.g. during ensure runs
         if method == 'create':
+            # those can be updated via setting metadata at subnet
+            metadata_update_opts = {
+                'showmount': 'true',
+            }
+            if 'nfs4.1' in versions:
+                metadata_update_opts['is-nfsv41-pnfs-enabled'] = 'false' # default false  # noqa: E501
+            nfs_service_modify_args.update(metadata_update_opts)
+
             flexgroup_opts = {
                 'is-nfsv3-64bit-identifiers-enabled': 'true',   # default false
                 'is-nfsv4-64bit-identifiers-enabled': 'true',   # default true
             }
             nfs_service_modify_args.update(flexgroup_opts)
 
-        if 'nfs4.0' in versions:
-            nfs_service_modify_args['is-nfsv40-enabled'] = 'true'
+            version_opts = {
+                'is-nfsv3-enabled': nfs3,
+                'is-nfsv40-enabled': nfs40,
+                'is-nfsv41-enabled': nfs41,
+
+            }
+            nfs_service_modify_args.update(version_opts)
+
         if 'nfs4.1' in versions:
             nfs41_opts = {
-                # 'is-nfsv41-pnfs-enabled': 'false',               # default false, use default on new vservers, don't touch old vservers  # noqa: E501
-                # 'nfsv4-lease-seconds': 30                        # default 30, HANA multiple host systems would like 10 better  # noqa: E501
+                # 'nfsv4-lease-seconds': 30                     # default 30, HANA multiple host systems would like 10 better  # noqa: E501
                 'is-nfsv41-acl-enabled': 'false',               # default false
                 'is-nfsv41-read-delegation-enabled': 'false',   # default false
                 'is-nfsv41-write-delegation-enabled': 'false',  # default false

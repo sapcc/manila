@@ -2665,8 +2665,6 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'is-vstorage-enabled': 'true',
         }
 
-        if v40:
-            nfs_service_modify_args['is-nfsv40-enabled'] = 'true'
         if v41:
             nfs41_opts = {
                 'is-nfsv41-acl-enabled': 'false',
@@ -2682,6 +2680,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
                 'is-nfsv4-64bit-identifiers-enabled': 'true',
             }
             nfs_service_modify_args.update(flexgroup_opts)
+            v40_enabled = 'true' if v40 else 'false'
+            nfs_service_modify_args['is-nfsv40-enabled'] = v40_enabled
 
         if extra:
             nfs_service_modify_args.update(extra)
