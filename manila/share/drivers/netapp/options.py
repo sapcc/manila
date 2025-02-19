@@ -211,6 +211,14 @@ netapp_provisioning_opts = [
                default=60,  # Default to one minutes
                help='Sets maximum amount of time in seconds to wait for a '
                     'synchronous ONTAP REST API operation to be completed.'),
+    cfg.BoolOpt('netapp_restrict_lif_creation_per_ha_pair',
+                default=False,
+                help='Prevent the creation of a share server if total number'
+                     ' of data LIFs on one node of HA pair, including those'
+                     ' that can be migrated in case of failure, exceeds the '
+                     'maximum data LIFs supported by the node. This option '
+                     'guarantees that, in the event of a node failure, the'
+                     ' partner node will be able to takeover all data LIFs.')
 ]
 
 netapp_cluster_opts = [
