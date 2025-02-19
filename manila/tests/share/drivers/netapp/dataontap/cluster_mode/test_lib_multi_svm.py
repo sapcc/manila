@@ -511,6 +511,13 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             self.library,
             '_check_nfs_config_extra_specs_validity',
             mock.Mock())
+        self.library.configuration.netapp_restrict_lif_creation_per_ha_pair = (
+            True
+        )
+        check_lif_limit = self.mock_object(
+            self.library,
+            '_check_data_lif_count_limit_reached_for_ha_pair',
+        )
         mock_get_nfs_config = self.mock_object(
             self.library,
             "_get_nfs_config_provisioning_options",
@@ -530,6 +537,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.assertTrue(mock_validate_share_network_subnets.called)
         self.assertTrue(mock_get_vserver_name.called)
         self.assertTrue(mock_create_vserver.called)
+        self.assertTrue(check_lif_limit.called)
         if nfs_config_support:
             mock_get_extra_spec.assert_called_once_with(
                 fake.SERVER_METADATA['share_type_id'])
@@ -2370,6 +2378,13 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
         dest_ipspace = 'ipspace_' + network_info['neutron_subnet_id']
 
+        self.library.configuration.netapp_restrict_lif_creation_per_ha_pair = (
+            True
+        )
+        check_lif_limit = self.mock_object(
+            self.library,
+            '_check_data_lif_count_limit_reached_for_ha_pair',
+        )
         self.mock_object(self.library, '_get_node_data_port',
                          mock.Mock(return_value=fake.NODE_DATA_PORT))
         self.mock_object(
@@ -2403,6 +2418,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             fake.CLUSTER_NODES[0])
         self.library._create_port_and_broadcast_domain.assert_called_once_with(
             dest_ipspace, network_info)
+        self.assertTrue(check_lif_limit.called)
 
     def test__check_compatibility_for_svm_migrate_check_failure(self):
         network_info = {
@@ -4056,3 +4072,56 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.library._build_model_update.assert_called_once_with(
             fake_current_network_allocations, fake_new_network_allocations,
             export_locations=None)
+
+    def test__check_data_lif_count_limit_reached_for_ha_pair_false(self):
+        nodes = ["node1", "node2"]
+        lif_detail = [{'node': "node1",
+                       'count-for-node': '44',
+                       'limit-for-node': '512'},
+                      {'node': "node2",
+                       'count-for-node': '50',
+                       'limit-for-node': '512'}]
+
+        self.mock_object(self.client,
+                         'get_storage_failover_partner',
+                         mock.Mock(return_value="node2"))
+        self.mock_object(self.client,
+                         'list_cluster_nodes',
+                         mock.Mock(return_value=nodes))
+
+        self.mock_object(self.client,
+                         'get_data_lif_details_for_nodes',
+                         mock.Mock(return_value=lif_detail))
+        self.mock_object(self.client,
+                         'get_migratable_data_lif_for_node',
+                         mock.Mock(return_value=["data_lif_1", "data_lif_2"]))
+        self.library._check_data_lif_count_limit_reached_for_ha_pair(
+            self.client)
+
+    def test__check_data_lif_count_limit_reached_for_ha_pair_true(self):
+        nodes = ["node1", "node2"]
+        lif_detail = [{'node': "node1",
+                       'count-for-node': '511',
+                       'limit-for-node': '512'},
+                      {'node': "node2",
+                       'count-for-node': '250',
+                       'limit-for-node': '512'}]
+        self.mock_object(self.client,
+                         'get_storage_failover_partner',
+                         mock.Mock(return_value="node2"))
+        self.mock_object(self.client,
+                         'list_cluster_nodes',
+                         mock.Mock(return_value=nodes))
+
+        self.mock_object(self.client,
+                         'get_data_lif_details_for_nodes',
+                         mock.Mock(return_value=lif_detail))
+        self.mock_object(self.client,
+                         'get_migratable_data_lif_for_node',
+                         mock.Mock(return_value=["data_lif_1", "data_lif_2"]))
+
+        self.assertRaises(
+            exception.NetAppException,
+            self.library._check_data_lif_count_limit_reached_for_ha_pair,
+            self.client,
+        )
