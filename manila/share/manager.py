@@ -5718,10 +5718,11 @@ class ShareManager(manager.SchedulerDependentManager):
                 context, constants.STATUS_AVAILABLE,
                 share_instance_ids=share_instance_ids,
                 snapshot_instance_ids=snapshot_instance_ids)
-            # Rollback port bindings on destination host
+            # Rollback port bindings on destination host,
+            # those are still associated to source share server in this phase
             if extended_allocs:
                 self.driver.network_api.delete_extended_allocations(
-                    context, source_share_server, dest_share_server)
+                    context, source_share_server)
             # Rollback read only access rules
             self._reset_read_only_access_rules_for_server(
                 context, share_instances, source_share_server,
