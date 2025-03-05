@@ -553,7 +553,7 @@ class CephFSDriver(driver.ExecuteMixin, driver.GaneshaMixin,
                       delete_rules, update_rules, share_server=None):
         return self.protocol_helper.update_access(
             context, share, access_rules, add_rules, delete_rules,
-            share_server=share_server)
+            update_rules, share_server=share_server)
 
     def get_backend_info(self, context):
         return self.protocol_helper.get_backend_info(context)

@@ -467,3 +467,13 @@ user documentation.
 ----
   Added Metadata API methods (GET, PUT, POST, DELETE)
   to Share Export Locations.
+
+2.88
+----
+  Allows updating the access rule's access type.
+
+
+2.89
+----
+  Added support for passing share network subnet metadata updates to share
+  backend driver.

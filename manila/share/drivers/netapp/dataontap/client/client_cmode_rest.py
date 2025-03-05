@@ -4736,6 +4736,26 @@ class NetAppRestClient(object):
                           body=body)
 
     @na_utils.trace
+    def update_pnfs(self, pnfs):
+        """Update pNFS for vserver. """
+        # Get SVM UUID.
+        query = {
+            'name': self.vserver,
+            'fields': 'uuid'
+        }
+        res = self.send_request('/svm/svms', 'get', query=query)
+        if not res.get('records'):
+            msg = _('Vserver %s not found.') % self.vserver
+            raise exception.NetAppException(msg)
+        svm_id = res.get('records')[0]['uuid']
+
+        body = {
+            'protocol.v41_features.pnfs_enabled': pnfs,
+        }
+        self.send_request(f'/protocols/nfs/services/{svm_id}', 'patch',
+                          body=body)
+
+    @na_utils.trace
     def enable_nfs(self, versions, nfs_config=None):
         """Enables NFS on Vserver."""
         svm_id = self._get_unique_svm_by_name()
@@ -5585,3 +5605,33 @@ class NetAppRestClient(object):
         response = self.send_request('/cluster/nodes',
                                      'get', query=query)
         return response.get('records')[0].get('uuid')
+
+    @na_utils.trace
+    def get_storage_failover_partner(self, node_name):
+        """Get the partner node of HA pair"""
+        node_uuid = self._get_cluster_node_uuid(node_name)
+        node_details = self.send_request(f'/cluster/nodes/{node_uuid}', 'get')
+        return node_details['ha']['partners'][0]['name']
+
+    @na_utils.trace
+    def get_migratable_data_lif_for_node(self, node):
+        """Get available LIFs that can be migrated to another node."""
+        protocols = ['data_nfs', 'data_cifs']
+        query = {
+            'services': '|'.join(protocols),
+            'location.home_node.name': node,
+            'fields': 'name',
+        }
+        result = self.send_request('/network/ip/interfaces', 'get',
+                                   query=query)
+        migratable_lif = []
+        if self._has_records(result):
+            result = result.get('records', [])
+            for lif in result:
+                lif_result = self.send_request(
+                    f'/network/ip/interfaces/{lif.get("uuid")}', 'get'
+                )
+                failover_policy = lif_result['location']['failover']
+                if failover_policy in ('default', 'sfo_partners_only'):
+                    migratable_lif.append(lif["name"])
+        return migratable_lif
