@@ -1208,6 +1208,7 @@ class NetAppCmodeFileStorageLibrary(object):
                 vserver_client, aggr_list, share_name,
                 share['size'],
                 self.configuration.netapp_volume_snapshot_reserve_percent,
+                comment=share_comment,
                 **provisioning_options)
         else:
             vserver_client.create_volume(
@@ -1241,6 +1242,7 @@ class NetAppCmodeFileStorageLibrary(object):
     def _create_flexgroup_share(self, vserver_client, aggr_list, share_name,
                                 size, snapshot_reserve, dedup_enabled=False,
                                 compression_enabled=False, max_files=None,
+                                comment=None,
                                 **provisioning_options):
         """Create a FlexGroup share using async API with job."""
 
@@ -1248,7 +1250,7 @@ class NetAppCmodeFileStorageLibrary(object):
             self.configuration.netapp_flexgroup_aggregate_not_busy_timeout)
         job_info = self.wait_for_start_create_flexgroup(
             start_timeout, vserver_client, aggr_list, share_name, size,
-            snapshot_reserve, **provisioning_options)
+            snapshot_reserve, comment=comment, **provisioning_options)
 
         if not job_info['jobid'] or job_info['error-code']:
             msg = "Error creating FlexGroup share: %s."
@@ -1275,6 +1277,7 @@ class NetAppCmodeFileStorageLibrary(object):
     def wait_for_start_create_flexgroup(self, start_timeout, vserver_client,
                                         aggr_list, share_name, size,
                                         snapshot_reserve,
+                                        comment=None,
                                         **provisioning_options):
         """Wait for starting create FlexGroup volume succeed.
 
@@ -1302,6 +1305,7 @@ class NetAppCmodeFileStorageLibrary(object):
                     aggr_list, share_name, size,
                     snapshot_reserve=snapshot_reserve,
                     auto_provisioned=self._is_flexgroup_auto,
+                    comment=comment,
                     **provisioning_options)
             except netapp_api.NaApiError as e:
                 with excutils.save_and_reraise_exception() as raise_ctxt:
