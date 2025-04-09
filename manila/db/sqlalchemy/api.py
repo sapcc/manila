@@ -448,14 +448,17 @@ def _sync_share_groups(context, project_id, user_id, session,
     return {'share_groups': share_groups_count}
 
 
-def _sync_backups(context, project_id, user_id, share_type_id=None):
-    backups, _ = _backup_data_get_for_project(context, project_id, user_id)
-    return {'backups': backups}
+def _sync_backups(context, project_id, user_id, session, share_type_id=None):
+    backups, _ = _backup_data_get_for_project(
+        context, project_id, user_id, session)
+    return {"backups": backups}
 
 
-def _sync_backup_gigabytes(context, project_id, user_id, share_type_id=None):
-    _, backup_gigs = _backup_data_get_for_project(context, project_id, user_id)
-    return {'backup_gigabytes': backup_gigs}
+def _sync_backup_gigabytes(context, project_id, user_id, session,
+                           share_type_id=None):
+    _, backup_gigs = _backup_data_get_for_project(
+        context, project_id, user_id, session)
+    return {"backup_gigabytes": backup_gigs}
 
 
 def _sync_share_group_snapshots(context, project_id, user_id, session,
@@ -7117,11 +7120,12 @@ def _share_backups_get_with_filters(context, project_id=None, filters=None,
 
 @require_admin_context
 @context_manager.reader
-def _backup_data_get_for_project(context, project_id, user_id):
+def _backup_data_get_for_project(context, project_id, user_id, session):
     query = model_query(context, models.ShareBackup,
                         func.count(models.ShareBackup.id),
                         func.sum(models.ShareBackup.size),
-                        read_deleted="no").\
+                        read_deleted="no",
+                        session=session).\
         filter_by(project_id=project_id)
 
     if user_id:
