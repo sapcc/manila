@@ -4043,13 +4043,22 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         return volume_list
 
     @na_utils.trace
-    def get_volume_junction_path(self, volume_name, is_style_cifs=False):
+    def get_volume_junction_path(self, volume_name, is_style_cifs=False,
+                                 raise_on_not_found=True):
         """Gets a volume junction path."""
         api_args = {
             'volume': volume_name,
             'is-style-cifs': str(is_style_cifs).lower(),
         }
-        result = self.send_request('volume-get-volume-path', api_args)
+        try:
+            result = self.send_request('volume-get-volume-path', api_args)
+        except netapp_api.NaApiError as e:
+            p = re.compile(".*entry doesn't exist.*", re.IGNORECASE)
+            if (e.code == netapp_api.EAPIERROR and re.match(p, e.message)):
+                if not raise_on_not_found:
+                    return None
+            raise
+
         return result.get_child_content('junction')
 
     @na_utils.trace
