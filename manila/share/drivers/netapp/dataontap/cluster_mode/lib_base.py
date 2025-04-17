@@ -2710,11 +2710,14 @@ class NetAppCmodeFileStorageLibrary(object):
         # TODO(carthaca): change to 'is_readable' condition
         # non-active (i.e. 'dr') replicas do not have export locations
         # and cannot have their max files modified
+        is_readable_replica = self._is_readable_replica(share)
         replica_state = share.get('replica_state')
         if (replica_state is not None and
-                replica_state != constants.REPLICA_STATE_ACTIVE):
+                replica_state != constants.REPLICA_STATE_ACTIVE and
+                not is_readable_replica):
             return []
-        else:
+
+        if not is_readable_replica:
             if provisioning_options.get('max_files_multiplier') is not None:
                 max_files_multiplier = provisioning_options.pop(
                     'max_files_multiplier')
@@ -2722,10 +2725,22 @@ class NetAppCmodeFileStorageLibrary(object):
                                                          max_files_multiplier)
                 vserver_client.set_volume_max_files(share_name, max_files)
 
-            return self._create_export(share, share_server, vserver,
-                                       vserver_client,
-                                       clear_current_export_policy=False,
-                                       ensure_share_already_exists=True)
+        else:
+            # we do not build a different vserver client for the
+            # readable replicas (here and for _create_export() below),
+            # because we trust that we only operate on share instances local
+            # to the current host
+            existing_mount = vserver_client.get_volume_junction_path(
+                share_name, raise_on_not_found=False)
+
+            if not existing_mount:
+                vserver_client.mount_volume(share_name)
+
+        return self._create_export(share, share_server, vserver,
+                                   vserver_client,
+                                   clear_current_export_policy=False,
+                                   ensure_share_already_exists=True,
+                                   replica=is_readable_replica)
 
     def setup_server(self, network_info, metadata=None):
         raise NotImplementedError()
