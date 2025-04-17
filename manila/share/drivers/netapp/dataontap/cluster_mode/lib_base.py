@@ -391,10 +391,10 @@ class NetAppCmodeFileStorageLibrary(object):
             raise exception.NetAppException(err_msg)
 
     @na_utils.trace
-    def _get_aggregate_node(self, aggregate_name, vserver_client=None):
+    def _get_aggregate_node(self, aggregate_name, cluster_client=None):
         """Get home node for the specified aggregate, or None."""
-        if vserver_client:
-            return vserver_client.get_node_for_aggregate(aggregate_name)
+        if cluster_client:
+            return cluster_client.get_node_for_aggregate(aggregate_name)
         elif self._have_cluster_creds:
             return self._client.get_node_for_aggregate(aggregate_name)
         else:
@@ -1833,6 +1833,7 @@ class NetAppCmodeFileStorageLibrary(object):
 
     @na_utils.trace
     def _create_export(self, share, share_server, vserver, vserver_client,
+                       cluster_client=None,
                        clear_current_export_policy=True,
                        ensure_share_already_exists=False, replica=False,
                        share_host=None):
@@ -1858,7 +1859,7 @@ class NetAppCmodeFileStorageLibrary(object):
 
         # Get LIF addresses with metadata
         export_addresses = self._get_export_addresses_with_metadata(
-            share, share_server, interfaces, host, vserver_client)
+            share, share_server, interfaces, host, cluster_client)
 
         # Create the share and get a callback for generating export locations
         pool = share_utils.extract_host(share['host'], level='pool')
@@ -1894,7 +1895,7 @@ class NetAppCmodeFileStorageLibrary(object):
     @na_utils.trace
     def _get_export_addresses_with_metadata(self, share, share_server,
                                             interfaces, share_host,
-                                            vserver_client=None):
+                                            cluster_client=None):
         """Return interface addresses with locality and other metadata."""
 
         # Get home nodes so we can identify preferred paths
@@ -1903,11 +1904,11 @@ class NetAppCmodeFileStorageLibrary(object):
         if self._is_flexgroup_pool(pool):
             for aggregate_name in self._get_flexgroup_aggregate_list(pool):
                 home_node = self._get_aggregate_node(
-                    aggregate_name, vserver_client)
+                    aggregate_name, cluster_client)
                 if home_node:
                     home_node_set.add(home_node)
         else:
-            home_node = self._get_aggregate_node(pool, vserver_client)
+            home_node = self._get_aggregate_node(pool, cluster_client)
             if home_node:
                 home_node_set.add(home_node)
 
@@ -3468,8 +3469,11 @@ class NetAppCmodeFileStorageLibrary(object):
             return replica
 
         try:
+            replica_cluster_client = data_motion.get_client_for_backend(
+                replica_backend)
             replica['export_locations'] = self._create_export(
                 replica, share_server, replica_vserver, replica_client,
+                cluster_client=replica_cluster_client,
                 replica=True)
         except netapp_api.NaApiError:
             replica['status'] = constants.STATUS_ERROR
