@@ -2298,6 +2298,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.mock_object(self.library,
                          '_is_flexgroup_pool', mock.Mock(return_value=False))
         vserver_client = mock.Mock()
+        cluster_client = mock.Mock()
         vserver_client.get_network_interfaces.return_value = fake.LIFS
         fake_interface_addresses_with_metadata = copy.deepcopy(
             fake.INTERFACE_ADDRESSES_WITH_METADATA)
@@ -2309,12 +2310,13 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                                              fake.SHARE_SERVER,
                                              fake.VSERVER1,
                                              vserver_client,
+                                             cluster_client=cluster_client,
                                              share_host=share_host)
 
         self.assertEqual(fake.NFS_EXPORTS, result)
         mock_get_export_addresses_with_metadata.assert_called_once_with(
             fake.SHARE, fake.SHARE_SERVER, fake.LIFS, expected_host,
-            vserver_client)
+            cluster_client)
         protocol_helper.create_share.assert_called_once_with(
             fake.SHARE, fake.SHARE_NAME, clear_current_export_policy=True,
             ensure_share_already_exists=False, replica=False,
@@ -2382,8 +2384,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             value['preferred'] = False
 
         self.assertEqual(expected, result)
-        mock_get_aggregate_node.assert_called_once_with(
-            fake.POOL_NAME, None)
+        mock_get_aggregate_node.assert_called_once_with(fake.POOL_NAME, None)
         mock_get_admin_addresses_for_share_server.assert_called_once_with(
             fake.SHARE_SERVER)
 
