@@ -1537,7 +1537,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             mock_get_aggr_flexgroup.assert_called_once_with(fake.POOL_NAME)
             mock_create_flexgroup.assert_called_once_with(
                 vserver_client, [fake.AGGREGATE], fake.SHARE_NAME,
-                fake.SHARE['size'], 8, **provisioning_options)
+                fake.SHARE['size'], 8, comment=fake.VOLUME_COMMENT,
+                **provisioning_options)
         else:
             mock_get_aggr_flexgroup.assert_not_called()
             vserver_client.create_volume.assert_called_once_with(
@@ -1634,7 +1635,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         start_timeout = (self.library.configuration.
                          netapp_flexgroup_aggregate_not_busy_timeout)
         mock_wait_for_start.assert_called_once_with(
-            start_timeout, vserver_client, aggr_list, fake.SHARE_NAME, 100, 10)
+            start_timeout, vserver_client, aggr_list, fake.SHARE_NAME, 100,
+            10, comment=None)
         mock_wait_for_flexgroup_deployment.assert_called_once_with(
             vserver_client, fake.JOB_ID, 2)
         (vserver_client.update_volume_efficiency_attributes.
@@ -1671,7 +1673,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.assertEqual(job, result)
         vserver_client.create_volume_async.assert_called_once_with(
             aggr_list, fake.SHARE_NAME, 1, snapshot_reserve=10,
-            auto_provisioned=self.library._is_flexgroup_auto)
+            auto_provisioned=self.library._is_flexgroup_auto,
+            comment=None)
 
     def test_wait_for_start_create_flexgroup_timeout(self):
         vserver_client = mock.Mock()
