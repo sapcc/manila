@@ -96,6 +96,9 @@ class ManilaKeystoneContext(base_wsgi.Middleware):
             LOG.debug("Neither X_USER_ID nor X_USER found in request")
             return webob.exc.HTTPUnauthorized()
 
+        if req.headers.get('X-Openstack-Request-ID'):
+            ctx.request_id = req.headers.get('X-Openstack-Request-ID')
+
         if req.environ.get('X_PROJECT_DOMAIN_ID'):
             ctx.project_domain_id = req.environ['X_PROJECT_DOMAIN_ID']
 
