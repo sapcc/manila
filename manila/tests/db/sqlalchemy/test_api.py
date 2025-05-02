@@ -650,6 +650,7 @@ class ShareDatabaseAPITestCase(test.TestCase):
         # create one more share instance
         db_utils.create_share_instance(share_id=c_shares[0]['id'])
         db_utils.create_share_instance(share_id=c_shares[1]['id'])
+        db_utils.create_share_instance(share_id=c_shares[2]['id'])
 
         # make sure we return shares count and not share instances.
         count, shares = db_api.share_get_all_with_count(
