@@ -592,6 +592,8 @@ class ShareManager(manager.SchedulerDependentManager):
                 ctxt, share_instance['id'], with_share_data=True)
             share_instance_dict = self._get_share_instance_dict(
                 ctxt, share_instance)
+            if metadata:
+                share_instance_dict.update({'metadata': metadata})
             update_share_instances.append(share_instance_dict)
 
         if update_share_instances:
