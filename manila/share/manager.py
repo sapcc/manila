@@ -600,6 +600,8 @@ class ShareManager(manager.SchedulerDependentManager):
                 continue
             share_instance_dict = self._get_share_instance_dict(
                 ctxt, share_instance)
+            if metadata:
+                share_instance_dict.update({'metadata': metadata})
             update_share_instances.append(share_instance_dict)
 
         do_service_status_update = False
