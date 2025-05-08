@@ -2672,6 +2672,12 @@ class NetAppCmodeFileStorageLibrary(object):
             else:
                 provisioning_options['hide_snapdir'] = True
 
+        metadata = share.get('metadata')
+        if metadata:
+            snapshot_policy = metadata.get('snapshot_policy')
+            if snapshot_policy:
+                provisioning_options['snapshot_policy'] = snapshot_policy
+
         modify_args = {
             'share': share_name,
             'aggr': aggregate_name,
