@@ -185,12 +185,30 @@ class ShareGroupController(wsgi.Controller, wsgi.AdminActionsMixin):
             'source_share_group_snapshot_id',
             'share_network_id',
             'availability_zone',
+            'share_affinity',
         }
         invalid_fields = set(share_group.keys()) - valid_fields
         if invalid_fields:
             msg = _("The fields %s are invalid.") % invalid_fields
             raise exc.HTTPBadRequest(explanation=msg)
 
+        if 'share_affinity' in share_group:
+            kwargs = self._create_options_with_affinity(context, share_group)
+        else:
+            kwargs = self._create_options(context, share_group)
+
+        try:
+            new_share_group = self.share_group_api.create(context, **kwargs)
+        except exception.InvalidShareGroupSnapshot as e:
+            raise exc.HTTPConflict(explanation=six.text_type(e))
+        except (exception.ShareGroupSnapshotNotFound,
+                exception.InvalidInput) as e:
+            raise exc.HTTPBadRequest(explanation=six.text_type(e))
+
+        return self._view_builder.detail(
+            req, {k: v for k, v in new_share_group.items()})
+
+    def _create_options(self, context, share_group):
         if ('share_types' in share_group and
                 'source_share_group_snapshot_id' in share_group):
             msg = _("Cannot supply both 'share_types' and "
@@ -273,17 +291,56 @@ class ShareGroupController(wsgi.Controller, wsgi.AdminActionsMixin):
                 msg = _("Must specify a share group type as a default "
                         "share group type has not been configured.")
                 raise exc.HTTPBadRequest(explanation=msg)
+        return kwargs
 
-        try:
-            new_share_group = self.share_group_api.create(context, **kwargs)
-        except exception.InvalidShareGroupSnapshot as e:
-            raise exc.HTTPConflict(explanation=six.text_type(e))
-        except (exception.ShareGroupSnapshotNotFound,
-                exception.InvalidInput) as e:
-            raise exc.HTTPBadRequest(explanation=six.text_type(e))
+    def _create_options_with_affinity(self, context, share_group):
+        msg = ""
+        if "share_group_type_id" in share_group:
+            msg = _(
+                "Cannot supply both 'share_affinity' and "
+                "'share_group_type_id' attributes."
+            )
+        if "source_share_group_snapshot_id" in share_group:
+            msg = _(
+                "Cannot supply both 'share_affinity' and "
+                "'source_share_group_snapshot_id' attributes."
+            )
+        if "share_network_id" in share_group:
+            msg = _(
+                "Cannot supply both 'share_affinity' and "
+                "'share_network_id' attributes."
+            )
+        if "share_types" in share_group:
+            for st in share_group["share_types"]:
+                if not uuidutils.is_uuid_like(st):
+                    msg = _(
+                        "The 'share_types' attribute must be a list of uuids"
+                    )
+        if msg != "":
+            raise exc.HTTPBadRequest(explanation=msg)
 
-        return self._view_builder.detail(
-            req, {k: v for k, v in new_share_group.items()})
+        kwargs = {'share_affinity': share_group['share_affinity']}
+
+        if 'name' in share_group:
+            kwargs['name'] = share_group['name']
+        if 'description' in share_group:
+            kwargs['description'] = share_group['description']
+        if 'share_types' in share_group:
+            kwargs['share_type_ids'] = share_group['share_types']
+        else:
+            default_share_type = share_types.get_default_share_type()
+            if default_share_type:
+                kwargs['share_type_ids'] = [default_share_type['id']]
+        if 'availability_zone' in share_group:
+            try:
+                az = db.availability_zone_get(
+                    context, share_group["availability_zone"]
+                )
+                kwargs["availability_zone_id"] = az.id
+                kwargs["availability_zone"] = az.name
+            except exception.AvailabilityZoneNotFound as e:
+                raise exc.HTTPNotFound(explanation=six.text_type(e))
+        return kwargs
 
     @wsgi.Controller.api_version('2.31', '2.54', experimental=True)
     @wsgi.response(202)

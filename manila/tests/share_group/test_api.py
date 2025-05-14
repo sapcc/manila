@@ -51,6 +51,7 @@ def fake_share_group(id, **kwargs):
         'share_network_id': None,
         'share_server_id': None,
         'share_types': mock.ANY,
+        'share_affinity': None,
         'created_at': datetime.datetime(1, 1, 1, 1, 1, 1),
     }
 
