@@ -248,6 +248,7 @@ QOS_POLICY_GROUP = {
     'policy-group': QOS_POLICY_GROUP_NAME,
     'vserver': VSERVER1,
     'max-throughput': '3000iops',
+    'min-throughput': '20iops',
     'num-workloads': 1,
 }
 
