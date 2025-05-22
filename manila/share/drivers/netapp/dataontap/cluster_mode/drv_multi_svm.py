@@ -165,11 +165,14 @@ class NetAppCmodeMultiSvmShareDriver(driver.ShareDriver):
 
     def update_replica_state(self, context, replica_list, replica,
                              access_rules, replica_snapshots,
-                             share_server=None):
-        return self.library.update_replica_state(context, replica_list,
-                                                 replica, access_rules,
-                                                 replica_snapshots,
-                                                 share_server)
+                             share_server=None,
+                             skip_conf_snapmirror_schedule=False):
+        return self.library.update_replica_state(
+            context, replica_list,
+            replica, access_rules,
+            replica_snapshots,
+            share_server,
+            skip_conf_snapmirror_schedule=skip_conf_snapmirror_schedule)
 
     def create_replicated_snapshot(self, context, replica_list,
                                    replica_snapshots, share_server=None):
