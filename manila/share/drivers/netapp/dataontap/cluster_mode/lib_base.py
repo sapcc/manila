@@ -1122,6 +1122,7 @@ class NetAppCmodeFileStorageLibrary(object):
                 [],  # access_rules
                 [],  # snapshot list
                 share_server,
+                skip_conf_snapmirror_schedule=False,
                 replication=False)
             if replica_state in [None, constants.STATUS_ERROR]:
                 msg = _("Destination share has failed on replicating data "
@@ -3009,6 +3010,7 @@ class NetAppCmodeFileStorageLibrary(object):
 
     def update_replica_state(self, context, replica_list, replica,
                              access_rules, share_snapshots, share_server=None,
+                             skip_conf_snapmirror_schedule=False,
                              replication=True):
         """Returns the status of the given replica on this backend."""
         active_replica = self.find_active_replica(replica_list)
@@ -3081,16 +3083,18 @@ class NetAppCmodeFileStorageLibrary(object):
                 LOG.exception("Could not resync snapmirror.")
                 return constants.STATUS_ERROR
 
-        current_schedule = snapmirror.get('schedule')
-        new_schedule = self.configuration.netapp_snapmirror_schedule
-        if current_schedule != new_schedule:
-            dm_session.modify_snapmirror(active_replica, replica,
-                                         schedule=new_schedule)
-            LOG.debug('Modify snapmirror schedule for replica:'
-                      '%(replica)s from %(from)s to %(to)s',
-                      {'replica': replica['id'],
-                       'from': current_schedule,
-                       'to': new_schedule})
+        if skip_conf_snapmirror_schedule is False:
+            # Enforce the SnapMirror schedule to match the configuration
+            current_schedule = snapmirror.get('schedule')
+            new_schedule = self.configuration.netapp_snapmirror_schedule
+            if current_schedule != new_schedule:
+                dm_session.modify_snapmirror(active_replica, replica,
+                                            schedule=new_schedule)
+                LOG.debug('Modify snapmirror schedule for replica:'
+                        '%(replica)s from %(from)s to %(to)s',
+                        {'replica': replica['id'],
+                        'from': current_schedule,
+                        'to': new_schedule})
 
         last_update_timestamp = float(
             snapmirror.get('last-transfer-end-timestamp', 0))

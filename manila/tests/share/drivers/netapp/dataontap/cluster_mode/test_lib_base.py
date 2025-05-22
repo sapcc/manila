@@ -1452,6 +1452,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
         self.mock_update_rep_state.assert_called_once_with(
             None, [self.fake_src_share], fake.SHARE, [], [], fake.SHARE_SERVER,
+            skip_conf_snapmirror_schedule=False,
             replication=False
         )
         self.assertEqual(is_flexgroup,
