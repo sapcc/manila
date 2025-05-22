@@ -2173,7 +2173,8 @@ class ShareDriver(object):
 
     def update_replica_state(self, context, replica_list, replica,
                              access_rules, replica_snapshots,
-                             share_server=None):
+                             share_server=None,
+                             skip_conf_snapmirror_schedule=False):
         """Update the replica_state of a replica.
 
         .. note::
@@ -2300,6 +2301,9 @@ class ShareDriver(object):
              ]
 
         :param share_server: <models.ShareServer> or None
+        :param: skip_conf_snapmirror_schedule: True or False
+            Default to False, Setting to True, the driver will skip the
+            snapmirror schedule defined in conf file.
         :return: replica_state: a str value denoting the replica_state.
             Valid values are 'in_sync' and 'out_of_sync' or None (to leave the
             current replica_state unchanged).
