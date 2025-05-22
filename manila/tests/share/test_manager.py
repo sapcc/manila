@@ -1801,6 +1801,7 @@ class ShareManagerTestCase(test.TestCase):
                          mock.Mock(return_value=[replica, active_replica]))
         self.mock_object(db, 'share_server_get',
                          mock.Mock(return_value=fakes.fake_share_server_get()))
+        self.mock_object(db, 'share_metadata_get', mock.Mock(return_value=[]))
         mock_db_update_calls = []
         self.mock_object(self.share_manager.db, 'share_replica_get',
                          mock.Mock(return_value=replica))

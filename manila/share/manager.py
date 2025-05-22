@@ -3017,9 +3017,15 @@ class ShareManager(manager.SchedulerDependentManager):
         share_replica = self._get_share_instance_dict(context, share_replica)
 
         try:
+            metadata = self.db.share_metadata_get(
+                context, share_replica['share_id'])
+            skip_conf_snapmirror_schedule = False
+            if 'snapmirror_schedule' in metadata:
+                skip_conf_snapmirror_schedule = True
             replica_state = self.driver.update_replica_state(
                 context, replica_list, share_replica, access_rules,
-                available_share_snapshots, share_server=share_server)
+                available_share_snapshots, share_server=share_server,
+                skip_conf_snapmirror_schedule=skip_conf_snapmirror_schedule)
         except Exception as excep:
             msg = ("Driver error when updating replica "
                    "state for replica %s.")
