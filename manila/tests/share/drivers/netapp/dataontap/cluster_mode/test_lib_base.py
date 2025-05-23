@@ -2001,7 +2001,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         expected_policy_name = 'qos_share_' + fake.SHARE['id'].replace(
             '-', '_')
         mock_qos_policy_create.assert_called_once_with(
-            expected_policy_name, fake.VSERVER1, max_throughput='3000iops')
+            expected_policy_name, fake.VSERVER1, max_throughput='3000iops',
+            min_throughput=None)
 
     def test_check_if_max_files_is_valid_with_negative_integer(self):
         self.assertRaises(exception.NetAppException,
@@ -3496,7 +3497,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         share_types.get_extra_specs_from_share.assert_called_once_with(
             fake.SHARE)
         self.library._client.qos_policy_group_modify.assert_called_once_with(
-            fake.QOS_POLICY_GROUP_NAME, expected_max_throughput)
+            fake.QOS_POLICY_GROUP_NAME, expected_max_throughput, None)
 
     def test_extend_share(self):
 
@@ -4843,7 +4844,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             (self.mock_dm_session.remove_qos_on_old_active_replica.
                 assert_not_called())
         self.library._client.qos_policy_group_modify.assert_called_once_with(
-            'qos_' + volume_name_on_backend, '3000iops')
+            'qos_' + volume_name_on_backend, '3000iops', None)
         vserver_client.set_qos_policy_group_for_volume.assert_called_once_with(
             volume_name_on_backend, 'qos_' + volume_name_on_backend)
         self.library._create_qos_policy_group.assert_not_called()
@@ -6927,11 +6928,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.assertEqual(new_qos_policy_name, retval)
         if num_workloads == 1:
             mock_create_qos_policy.assert_not_called()
-            if qos_iops_change:
-                mock_qos_policy_modify.assert_called_once_with(
-                    fake.QOS_POLICY_GROUP_NAME, expected_iops + 'iops')
-            else:
-                mock_qos_policy_modify.assert_not_called()
+            mock_qos_policy_modify.assert_called_once_with(
+                fake.QOS_POLICY_GROUP_NAME, expected_iops + 'iops', None)
 
             mock_qos_policy_rename.assert_called_once_with(
                 fake.QOS_POLICY_GROUP_NAME, new_qos_policy_name)

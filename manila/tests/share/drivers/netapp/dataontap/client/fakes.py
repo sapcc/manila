@@ -87,9 +87,13 @@ DELETED_EXPORT_POLICIES = {
 }
 QOS_POLICY_GROUP_NAME = 'fake_qos_policy_group_name'
 QOS_MAX_THROUGHPUT = '5000B/s'
+QOS_MIN_THROUGHPUT = '50B/s'
 QOS_MAX_THROUGHPUT_IOPS = '5000iops'
+QOS_MIN_THROUGHPUT_IOPS = '50iops'
 QOS_MAX_THROUGHPUT_NO_UNIT = 5000
+QOS_MIX_THROUGHPUT_NO_UNIT = 50
 QOS_MAX_THROUGHPUT_IOPS_NO_UNIT = 5000
+QOS_MIN_THROUGHPUT_IOPS_NO_UNIT = 50
 ADAPTIVE_QOS_POLICY_GROUP_NAME = 'fake_adaptive_qos_policy_group_name'
 VSERVER_TYPE_DEFAULT = 'default'
 VSERVER_TYPE_DP_DEST = 'dp_destination'
@@ -207,6 +211,7 @@ QOS_POLICY_GROUP = {
     'policy-group': QOS_POLICY_GROUP_NAME,
     'vserver': VSERVER_NAME,
     'max-throughput': QOS_MAX_THROUGHPUT,
+    'min-throughput': QOS_MIN_THROUGHPUT,
     'num-workloads': 1,
 }
 
@@ -2900,6 +2905,7 @@ QOS_POLICY_GROUP_GET_ITER_RESPONSE = etree.XML("""
     <attributes-list>
       <qos-policy-group-info>
         <max-throughput>%(max_throughput)s</max-throughput>
+        <min-throughput>%(min_throughput)s</min-throughput>
         <num-workloads>1</num-workloads>
         <policy-group>%(qos_policy_group_name)s</policy-group>
         <vserver>%(vserver)s</vserver>
@@ -2910,6 +2916,7 @@ QOS_POLICY_GROUP_GET_ITER_RESPONSE = etree.XML("""
     'qos_policy_group_name': QOS_POLICY_GROUP_NAME,
     'vserver': VSERVER_NAME,
     'max_throughput': QOS_MAX_THROUGHPUT,
+    'min_throughput': QOS_MIN_THROUGHPUT,
 })
 
 SNAPMIRROR_POLICY_GET_ITER_RESPONSE = etree.XML("""

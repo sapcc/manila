@@ -1587,18 +1587,22 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
         qos_policy = qos_policy_group.get('records')[0]
         max_throughput = qos_policy.get('fixed',
                                         {}).get('max_throughput_iops')
+        min_throughput = qos_policy.get('fixed',
+                                        {}).get('min_throughput_iops')
 
         expected = {
             'policy-group': qos_policy.get('name'),
             'vserver': qos_policy.get('svm', {}).get('name'),
             'max-throughput': max_throughput if max_throughput else None,
+            'min-throughput': min_throughput if min_throughput else None,
             'num-workloads': int(qos_policy.get('object_count')),
         }
 
         query = {
             'name': qos_policy_group_name,
             'fields': 'name,object_count,fixed.max_throughput_iops,' +
-                      'fixed.max_throughput_mbps,svm.name'
+                      'fixed.max_throughput_mbps,svm.name,' +
+                      'fixed.min_throughput_iops,fixed.min_throughput_mbps'
         }
 
         mock_sr = self.mock_object(self.client, 'send_request',
