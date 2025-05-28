@@ -2484,7 +2484,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         self.client.setup_security_services([fake.LDAP_LINUX_SECURITY_SERVICE],
                                             self.vserver_client,
-                                            fake.VSERVER_NAME)
+                                            fake.VSERVER_NAME,
+                                            False)
 
         vserver_modify_args = {
             'name-mapping-switch': [
@@ -2510,7 +2511,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         self.client.setup_security_services([fake.CIFS_SECURITY_SERVICE],
                                             self.vserver_client,
-                                            fake.VSERVER_NAME)
+                                            fake.VSERVER_NAME,
+                                            False)
 
         vserver_modify_args = {
             'name-mapping-switch': [
@@ -2526,7 +2528,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.client.send_request.assert_has_calls([
             mock.call('vserver-modify', vserver_modify_args)])
         self.vserver_client.configure_active_directory.assert_has_calls([
-            mock.call(fake.CIFS_SECURITY_SERVICE, fake.VSERVER_NAME)])
+            mock.call(fake.CIFS_SECURITY_SERVICE, fake.VSERVER_NAME, False)])
         self.vserver_client.configure_cifs_options.assert_has_calls([
             mock.call(fake.CIFS_SECURITY_SERVICE)])
 
@@ -2538,7 +2540,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         self.client.setup_security_services([fake.KERBEROS_SECURITY_SERVICE],
                                             self.vserver_client,
-                                            fake.VSERVER_NAME)
+                                            fake.VSERVER_NAME,
+                                            False)
 
         vserver_modify_args = {
             'name-mapping-switch': [
@@ -2566,7 +2569,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
                           self.client.setup_security_services,
                           [fake.INVALID_SECURITY_SERVICE],
                           self.vserver_client,
-                          fake.VSERVER_NAME)
+                          fake.VSERVER_NAME,
+                          False)
 
         vserver_modify_args = {
             'name-mapping-switch': [
@@ -2754,10 +2758,12 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         self.mock_object(self.client, 'send_request')
         self.mock_object(self.client, 'configure_dns')
+        self.mock_object(self.client, 'configure_cifs_aes_encryption')
         self.mock_object(self.client, 'set_preferred_dc')
 
         self.client.configure_active_directory(fake.CIFS_SECURITY_SERVICE,
-                                               fake.VSERVER_NAME)
+                                               fake.VSERVER_NAME,
+                                               False)
 
         cifs_server = (fake.VSERVER_NAME[0:8] +
                        '-' +
@@ -2774,6 +2780,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         self.client.configure_dns.assert_called_with(
             fake.CIFS_SECURITY_SERVICE)
+        self.client.configure_cifs_aes_encryption.assert_called_with(False)
         self.client.set_preferred_dc.assert_called_with(
             fake.CIFS_SECURITY_SERVICE)
         self.client.send_request.assert_has_calls([
@@ -2783,10 +2790,11 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         self.mock_object(self.client, 'send_request')
         self.mock_object(self.client, 'configure_dns')
+        self.mock_object(self.client, 'configure_cifs_aes_encryption')
         self.mock_object(self.client, 'set_preferred_dc')
 
         self.client.configure_active_directory(fake.CIFS_SECURITY_SERVICE_3,
-                                               fake.VSERVER_NAME)
+                                               fake.VSERVER_NAME, False)
 
         cifs_server = (fake.VSERVER_NAME[0:8] +
                        '-' +
@@ -2804,6 +2812,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         self.client.configure_dns.assert_called_with(
             fake.CIFS_SECURITY_SERVICE_3)
+        self.client.configure_cifs_aes_encryption.assert_called_with(False)
         self.client.set_preferred_dc.assert_called_with(
             fake.CIFS_SECURITY_SERVICE_3)
         self.client.send_request.assert_has_calls([
@@ -2817,7 +2826,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.assertRaises(exception.NetAppException,
                           self.client.configure_active_directory,
                           fake.CIFS_SECURITY_SERVICE,
-                          fake.VSERVER_NAME)
+                          fake.VSERVER_NAME,
+                          False)
 
     def test_create_kerberos_realm(self):
         self.client.features.add_feature('KERBEROS_VSERVER')
@@ -3257,6 +3267,46 @@ class NetAppClientCmodeTestCase(test.TestCase):
         }
         self.assertEqual(expected_result, result)
         self.client.send_request.assert_called_once_with('net-dns-get', {})
+
+    @ddt.data(True, False)
+    def test_configure_cifs_aes_encryption_enable(self, specify_types):
+        self.client.features.add_feature(
+            'AES_ENCRYPTION_TYPES', supported=specify_types)
+        self.mock_object(self.client, 'send_request')
+
+        self.client.configure_cifs_aes_encryption(True)
+
+        if specify_types:
+            configure_cifs_aes_encryption_args = {
+                'advertised-enc-types': [{'cifskrbenctypes': 'aes_128'},
+                                         {'cifskrbenctypes': 'aes_256'}]
+            }
+        else:
+            configure_cifs_aes_encryption_args = {
+                'is-aes-encryption-enabled': 'true',
+            }
+        self.client.send_request.assert_called_with(
+            'cifs-security-modify', configure_cifs_aes_encryption_args)
+
+    @ddt.data(True, False)
+    def test_configure_cifs_aes_encryption_disable(self, specify_types):
+        self.client.features.add_feature(
+            'AES_ENCRYPTION_TYPES', supported=specify_types)
+        self.mock_object(self.client, 'send_request')
+
+        self.client.configure_cifs_aes_encryption(False)
+
+        if specify_types:
+            configure_cifs_aes_encryption_args = {
+                'advertised-enc-types': [{'cifskrbenctypes': 'des'},
+                                         {'cifskrbenctypes': 'rc4'}]
+            }
+        else:
+            configure_cifs_aes_encryption_args = {
+                'is-aes-encryption-enabled': 'false',
+            }
+        self.client.send_request.assert_called_with(
+            'cifs-security-modify', configure_cifs_aes_encryption_args)
 
     @ddt.data(
         {
@@ -9523,12 +9573,14 @@ class NetAppClientCmodeTestCase(test.TestCase):
                          self._mock_api_error(code=netapp_api.EAPIERROR,
                                               message=msg))
         self.mock_object(self.client, 'configure_dns')
+        self.mock_object(self.client, 'configure_cifs_aes_encryption')
         self.mock_object(self.client, 'set_preferred_dc')
         self.mock_object(self.client, '_get_cifs_server_name')
         self.assertRaises(exception.SecurityServiceFailedAuth,
                           self.client.configure_active_directory,
                           fake.CIFS_SECURITY_SERVICE,
-                          fake.VSERVER_NAME)
+                          fake.VSERVER_NAME,
+                          False)
 
     def test_configure_active_directory_user_privilege_error(self):
         msg = "insufficient access"
@@ -9536,12 +9588,14 @@ class NetAppClientCmodeTestCase(test.TestCase):
                          self._mock_api_error(code=netapp_api.EAPIERROR,
                                               message=msg))
         self.mock_object(self.client, 'configure_dns')
+        self.mock_object(self.client, 'configure_cifs_aes_encryption')
         self.mock_object(self.client, 'set_preferred_dc')
         self.mock_object(self.client, '_get_cifs_server_name')
         self.assertRaises(exception.SecurityServiceFailedAuth,
                           self.client.configure_active_directory,
                           fake.CIFS_SECURITY_SERVICE,
-                          fake.VSERVER_NAME)
+                          fake.VSERVER_NAME,
+                          False)
 
     def test_snapmirror_restore_vol(self):
         self.mock_object(self.client, 'send_request')
