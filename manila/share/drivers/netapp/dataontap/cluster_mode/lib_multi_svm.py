@@ -413,9 +413,11 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                 nfs_config=nfs_config)
 
         if security_services:
-            self._client.setup_security_services(security_services,
-                                                 vserver_client,
-                                                 vserver_name)
+            self._client.setup_security_services(
+                security_services,
+                vserver_client,
+                vserver_name,
+                self.configuration.netapp_cifs_aes_encryption)
 
     def _get_valid_ipspace_name(self, network_id):
         """Get IPspace name according to network id."""
@@ -2251,9 +2253,11 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             raise exception.NetAppException(msg)
 
         if current_security_service is None:
-            self._client.setup_security_services([new_security_service],
-                                                 vserver_client,
-                                                 vserver_name)
+            self._client.setup_security_services(
+                [new_security_service],
+                vserver_client,
+                vserver_name,
+                self.configuration.netapp_cifs_aes_encryption)
             LOG.info("A new security service configuration was added to share "
                      "server '%(share_server_id)s'",
                      {'share_server_id': share_server['id']})
