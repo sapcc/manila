@@ -103,12 +103,7 @@ def call_external_scheduler_api(context, weighed_hosts, spec_dict):
         # Also pass previous weights from the Manila weigher pipeline.
         # The external scheduler api is expected to take these weights
         # into account if provided.
-        "weights": [
-            {
-                "host": h.obj.host,
-                "weight": h.weight,
-            } for h in weighed_hosts
-        ],
+        "weights": {h.obj.host: h.weight for h in weighed_hosts},
     }
     LOG.debug("Calling external scheduler API with %s", json_data)
     try:

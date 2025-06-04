@@ -44,17 +44,7 @@ REQUEST_SCHEMA = {
                 "required": ["host"],
             },
         },
-        "weights": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "host": {"type": "string"},
-                    "weight": {"type": "number"},
-                },
-                "required": ["host", "weight"],
-            },
-        },
+        "weights": {"type": "object"},
     },
     "required": ["spec", "context", "hosts", "weights"],
     "additionalProperties": False,
