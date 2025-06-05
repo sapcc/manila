@@ -2088,12 +2088,6 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
     def validate_provisioning_options_for_share(self, provisioning_options,
                                                 extra_specs=None,
                                                 qos_specs=None):
-        if provisioning_options.get('adaptive_qos_policy_group') is not None:
-            msg = _("The extra spec 'adaptive_qos_policy_group' is not "
-                    "supported by backends configured with "
-                    "'driver_handles_share_server' == True mode.")
-            raise exception.NetAppException(msg)
-
         if (self.configuration.netapp_enable_logical_space_reporting and
                 not provisioning_options.get('thin_provisioned')):
             msg = _("Logical space reporting is only available if thin "
