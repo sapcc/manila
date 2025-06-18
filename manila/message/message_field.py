@@ -86,6 +86,9 @@ class Detail(object):
           "or create a new subnet/share network. If this doesn't work, "
           "contact your administrator to troubleshoot "
           "issues with your network."))
+    EXTERNAL_SCHEDULER_FILTERED_ALL_HOSTS = (
+        '996',
+        _("External scheduler API has filtered out all hosts."))
 
     FILTER_MSG = _("No storage could be allocated for this share request, "
                    "%s filter didn't succeed.")
@@ -195,6 +198,7 @@ class Detail(object):
         NO_ACTIVE_AVAILABLE_REPLICA,
         NO_ACTIVE_REPLICA,
         NEUTRON_SUBNET_FULL,
+        EXTERNAL_SCHEDULER_FILTERED_ALL_HOSTS,
         FILTER_AFFINITY,
         FILTER_ANTI_AFFINITY,
         FILTER_AVAILABILITY,
@@ -235,6 +239,7 @@ class Detail(object):
     FILTER_DETAIL_MAPPINGS = {
         'AffinityFilter': FILTER_AFFINITY,
         'AntiAffinityFilter': FILTER_ANTI_AFFINITY,
+        'call_external_scheduler_api': EXTERNAL_SCHEDULER_FILTERED_ALL_HOSTS,
         'AvailabilityZoneFilter': FILTER_AVAILABILITY,
         'CapabilitiesFilter': FILTER_CAPABILITIES,
         'CapacityFilter': FILTER_CAPACITY,
