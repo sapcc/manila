@@ -4336,6 +4336,21 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                                   "volume %s", volume_name)
                 else:
                     for clone in clones:
+                        """TODO:
+                            if clone.type == DEL:
+                                recovery_queue.purge(clone)
+
+                            reasoning: we have a soft deleted volume that
+                            is going to be deleted, but it can't because it
+                            non-split child is still in the recovery queue.
+                            Let's remove the child for good (alternative would
+                            be to recover, split, delete the child again)
+                            We don't promise restore for complex parent-child
+                            relationships. And anyhow this is only a problem
+                            if clone split was not fast enough, which means
+                            the volume is short-lived
+                            (aka qualifies for force delete).
+                        """
                         try:
                             clone_status = client.volume_clone_split_status(
                                 clone)
