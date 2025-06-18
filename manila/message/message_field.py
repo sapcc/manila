@@ -158,6 +158,9 @@ class Detail(object):
           "or create a new subnet/share network. If this doesn't work, "
           "contact your administrator to troubleshoot "
           "issues with your network."))
+    EXTERNAL_SCHEDULER_FILTERED_ALL_HOSTS = (
+        '031',
+        _("External scheduler API has filtered out all hosts."))
     ALL = (
         UNKNOWN_ERROR,
         NO_VALID_HOST,
@@ -188,7 +191,8 @@ class Detail(object):
         FILTER_AFFINITY,
         FILTER_ANTI_AFFINITY,
         SHARE_NETWORK_PORT_QUOTA_LIMIT_EXCEEDED,
-        NEUTRON_SUBNET_FULL
+        NEUTRON_SUBNET_FULL,
+        EXTERNAL_SCHEDULER_FILTERED_ALL_HOSTS,
     )
 
     # Exception and detail mappings
@@ -210,6 +214,7 @@ class Detail(object):
         'CreateFromSnapshotFilter': FILTER_CREATE_FROM_SNAPSHOT,
         'AffinityFilter': FILTER_AFFINITY,
         'AntiAffinityFilter': FILTER_ANTI_AFFINITY,
+        'call_external_scheduler_api': EXTERNAL_SCHEDULER_FILTERED_ALL_HOSTS,
     }
 
 
