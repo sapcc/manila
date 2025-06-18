@@ -113,8 +113,16 @@ class ExternalSchedulerAPITestCase(test_base.SchedulerTestCase):
             'global_request_id', kwargs['json']['context'],
             'Global request ID should be included in the context'
         )
+        # The auth_token should be excluded from the context
+        self.assertNotIn(
+            'auth_token', kwargs['json']['context'],
+            'Auth token should not be included in the context'
+        )
+        expected_dict = self.example_ctx.to_dict()
+        del expected_dict['auth_token']
+        # Check that the context is serialized correctly
         self.assertEqual(
-            self.example_ctx.to_dict(),
+            expected_dict,
             kwargs['json']['context'],
             'Context should be serialized correctly'
         )
