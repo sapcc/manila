@@ -28,6 +28,7 @@ from manila.message import message_field
 from manila.scheduler.drivers import base
 from manila.scheduler.drivers import filter
 from manila.scheduler import host_manager
+from manila.scheduler.weighers.base import WeighedObject
 from manila.tests.scheduler.drivers import test_base
 from manila.tests.scheduler import fakes
 
@@ -182,6 +183,35 @@ class FilterSchedulerTestCase(test_base.SchedulerTestCase):
         self.assertRaises(exception.NoValidHost, sched.schedule_create_share,
                           fake_context, request_spec, {})
         self.assertTrue(self.was_admin)
+
+    @mock.patch('requests.post')
+    def test__schedule_share_external_scheduler_disabled(self, mock_post):
+        """Tests that the external scheduler is not called when disabled."""
+        sched = fakes.FakeFilterScheduler()
+        h1 = fakes.FakeHostState('host1', {})
+        h2 = fakes.FakeHostState('host2', {})
+        for h in (h1, h2):
+            m = mock.Mock(return_value=None)
+            self.mock_object(h, 'consume_from_share', m)
+        self.mock_object(
+            sched.host_manager, 'get_filtered_hosts',
+            mock.Mock(return_value=[h1, h2]),
+        )
+        wh1 = WeighedObject(h1, 1.0)
+        wh2 = WeighedObject(h2, 1.0)
+        self.mock_object(
+            sched.host_manager, 'get_weighed_hosts',
+            mock.Mock(return_value=[wh1, wh2]),
+        )
+        ctx = context.RequestContext('user', 'project', is_admin=True)
+        spec = {
+            'share_type': {'name': 'NFS'},
+            'share_properties': {'project_id': 1, 'size': 1},
+            'share_instance_properties': {},
+        }
+        self.flags(external_scheduler_api_url='')
+        _ = sched._schedule_share(ctx, spec, {})
+        mock_post.assert_not_called()
 
     @ddt.data(
         {'name': 'foo'},

@@ -29,6 +29,7 @@ from manila.i18n import _
 from manila.message import api as message_api
 from manila.message import message_field
 from manila.scheduler.drivers import base
+from manila.scheduler.drivers.external import call_external_scheduler_api
 from manila.scheduler import scheduler_options
 from manila.share import share_types
 
@@ -259,6 +260,16 @@ class FilterScheduler(base.Scheduler):
         # host for the job.
         weighed_hosts = self.host_manager.get_weighed_hosts(hosts,
                                                             filter_properties)
+
+        # Call an external service that can modify `weighed_hosts` once more.
+        # This service may filter out some hosts, or it may re-order them.
+        weighed_hosts = call_external_scheduler_api(
+            context, weighed_hosts, request_spec)
+        if not weighed_hosts:
+            msg = "No valid hosts found after calling external scheduler API."
+            detail_data = {'last_filter': 'call_external_scheduler_api'}
+            raise exception.NoValidHost(reason=msg, detail_data=detail_data)
+
         best_host = weighed_hosts[0]
         LOG.debug("Choosing for share: %(best_host)s",
                   {"best_host": best_host})
