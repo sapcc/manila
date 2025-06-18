@@ -179,6 +179,10 @@ class Detail(object):
           "issues with your network."))
 
     # ////////////////////////// SCI custom message //////////////////////////
+    EXTERNAL_SCHEDULER_FILTERED_ALL_HOSTS = (
+        '995',
+        _("External scheduler API has filtered out all hosts."))
+
     DRIVER_FAILED_DELETE_SHARE_SNAPMIRROR = (
         '997',
         _("Share Driver failed to delete the share. A backup SnapMirror "
@@ -196,6 +200,7 @@ class Detail(object):
         NO_SHARE_SERVER,
         NO_ACTIVE_AVAILABLE_REPLICA,
         NO_ACTIVE_REPLICA,
+        EXTERNAL_SCHEDULER_FILTERED_ALL_HOSTS,
         FILTER_AFFINITY,
         FILTER_ANTI_AFFINITY,
         FILTER_AVAILABILITY,
@@ -237,6 +242,7 @@ class Detail(object):
     FILTER_DETAIL_MAPPINGS = {
         'AffinityFilter': FILTER_AFFINITY,
         'AntiAffinityFilter': FILTER_ANTI_AFFINITY,
+        'call_external_scheduler_api': EXTERNAL_SCHEDULER_FILTERED_ALL_HOSTS,
         'AvailabilityZoneFilter': FILTER_AVAILABILITY,
         'CapabilitiesFilter': FILTER_CAPABILITIES,
         'CapacityFilter': FILTER_CAPACITY,
