@@ -171,6 +171,9 @@ class Detail(object):
           "it is not passed to share driver to perform required operation."))
 
     # ////////////////////////// SCI custom message //////////////////////////
+    EXTERNAL_SCHEDULER_FILTERED_ALL_HOSTS = (
+        '995',
+        _("External scheduler API has filtered out all hosts."))
     NEUTRON_SUBNET_FULL = (
         '996',
         _("Share Driver failed to create share server on share network "
@@ -197,6 +200,7 @@ class Detail(object):
         NO_ACTIVE_AVAILABLE_REPLICA,
         NO_ACTIVE_REPLICA,
         NEUTRON_SUBNET_FULL,
+        EXTERNAL_SCHEDULER_FILTERED_ALL_HOSTS,
         FILTER_AFFINITY,
         FILTER_ANTI_AFFINITY,
         FILTER_AVAILABILITY,
@@ -237,6 +241,7 @@ class Detail(object):
     FILTER_DETAIL_MAPPINGS = {
         'AffinityFilter': FILTER_AFFINITY,
         'AntiAffinityFilter': FILTER_ANTI_AFFINITY,
+        'call_external_scheduler_api': EXTERNAL_SCHEDULER_FILTERED_ALL_HOSTS,
         'AvailabilityZoneFilter': FILTER_AVAILABILITY,
         'CapabilitiesFilter': FILTER_CAPABILITIES,
         'CapacityFilter': FILTER_CAPACITY,
