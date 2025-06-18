@@ -188,8 +188,8 @@ class FilterSchedulerTestCase(test_base.SchedulerTestCase):
     def test__schedule_share_external_scheduler_disabled(self, mock_post):
         """Tests that the external scheduler is not called when disabled."""
         sched = fakes.FakeFilterScheduler()
-        h1 = fakes.FakeHostState('host1', {'cell_uuid': 'i-dont-matter'})
-        h2 = fakes.FakeHostState('host2', {'cell_uuid': 'i-dont-matter'})
+        h1 = fakes.FakeHostState('host1', {})
+        h2 = fakes.FakeHostState('host2', {})
         for h in (h1, h2):
             m = mock.Mock(return_value=None)
             self.mock_object(h, 'consume_from_share', m)

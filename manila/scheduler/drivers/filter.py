@@ -267,7 +267,8 @@ class FilterScheduler(base.Scheduler):
             context, weighed_hosts, request_spec)
         if not weighed_hosts:
             msg = "No valid hosts found after calling external scheduler API."
-            raise exception.NoValidHost(reason=msg)
+            detail_data = {'last_filter': 'call_external_scheduler_api'}
+            raise exception.NoValidHost(reason=msg, detail_data=detail_data)
 
         best_host = weighed_hosts[0]
         LOG.debug("Choosing for share: %(best_host)s",

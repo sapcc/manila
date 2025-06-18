@@ -43,7 +43,7 @@ If not provided, this step will be skipped.
 """),
     cfg.IntOpt(
         "external_scheduler_timeout",
-        default=10,
+        default=5,
         min=1,
         help="""
 The timeout in seconds for the external scheduler.
@@ -77,7 +77,7 @@ def call_external_scheduler_api(context, weighed_hosts, spec_dict):
 
     :param context: The RequestContext object containing request id, user, etc.
     :param weighed_hosts: List of w. hosts to send to the external scheduler.
-    :param spec_dict: The RequestSpec object with the vm specification.
+    :param spec_dict: The RequestSpec object with the share specification.
     """
     if not weighed_hosts:
         return weighed_hosts
@@ -85,12 +85,15 @@ def call_external_scheduler_api(context, weighed_hosts, spec_dict):
         LOG.debug("External scheduler API is not enabled.")
         return weighed_hosts
     timeout = CONF.external_scheduler_timeout
-
+    # We shouldn't pass and log the auth token. Thus, we delete it here.
+    ctx_dict = context.to_dict()
+    if "auth_token" in ctx_dict:
+        del ctx_dict["auth_token"]
     json_data = {
         "spec": spec_dict,
         # Also serialize the request context, which contains the global request
         # id and other information helpful for logging and request tracing.
-        "context": context.to_dict(),
+        "context": ctx_dict,
         # Only provide basic information for the hosts for now.
         # The external scheduler is expected to fetch statistics
         # about the hosts separately, so we don't need to pass

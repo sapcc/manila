@@ -55,10 +55,10 @@ class ExternalSchedulerAPITestCase(test_base.SchedulerTestCase):
     def setUp(self):
         super(ExternalSchedulerAPITestCase, self).setUp()
         self.flags(external_scheduler_api_url='http://127.0.0.1:1234')
-        self.flags(external_scheduler_timeout=10)
-        self.h1 = fakes.FakeHostState('host1', {'cell_uuid': 'i-dont-matter'})
-        self.h2 = fakes.FakeHostState('host2', {'cell_uuid': 'i-dont-matter'})
-        self.h3 = fakes.FakeHostState('host3', {'cell_uuid': 'i-dont-matter'})
+        self.flags(external_scheduler_timeout=5)
+        self.h1 = fakes.FakeHostState('host1', {})
+        self.h2 = fakes.FakeHostState('host2', {})
+        self.h3 = fakes.FakeHostState('host3', {})
         self.example_weighed_hosts = [
             WeighedObject(self.h1, 1.0),
             WeighedObject(self.h2, 0.5),
@@ -80,7 +80,7 @@ class ExternalSchedulerAPITestCase(test_base.SchedulerTestCase):
     def _check_request(self, response=None):
         """Utility to check the request for validity."""
         def wrapped(url, json, timeout):
-            self.assertEqual(timeout, 10)  # should be the default timeout
+            self.assertEqual(timeout, 5)  # should be the default timeout
             self.assertEqual(url, 'http://127.0.0.1:1234')
             try:
                 jsonschema.validate(json, REQUEST_SCHEMA)
