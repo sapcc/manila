@@ -325,7 +325,8 @@ class API(base.Base):
                             "(%(group)s).") % params
                     raise exception.InvalidParameterValue(msg)
 
-            if not share_group.get('share_network_id') == share_network_id:
+            sg_share_network_id = share_group.get('share_network_id')
+            if sg_share_network_id and sg_share_network_id != share_network_id:
                 params = {
                     'net': share_network_id,
                     'group': share_group_id
@@ -508,6 +509,27 @@ class API(base.Base):
             # NOTE(ameade): Do not cast to driver if creating from share group
             # snapshot
             return
+
+        if share_group and share_group["share_affinity"]:
+            scheduler_hints = scheduler_hints or {}
+            if ((AFFINITY_HINT in scheduler_hints)
+                    or (ANTI_AFFINITY_HINT in scheduler_hints)):
+                msg = _("Share group and scheduler hint %s/%s are mutually "
+                        "exclusive. Please remove the scheduler hint or share "
+                        "group affinity setting." %
+                        (AFFINITY_HINT, ANTI_AFFINITY_HINT))
+                raise exception.InvalidInput(message=msg)
+            share_instances_in_group = (
+                self.db.share_instances_get_all_by_share_group_id(
+                    context, share_group["id"]))
+            shares_in_group = set([
+                share_instance['share_id']
+                for share_instance in share_instances_in_group
+            ])
+            if share_group['share_affinity'] == 'affinity':
+                scheduler_hints[AFFINITY_HINT] = shares_in_group
+            if share_group['share_affinity'] == 'anti-affinity':
+                scheduler_hints[ANTI_AFFINITY_HINT] = shares_in_group
 
         if host:
             self.share_rpcapi.create_share_instance(
