@@ -737,8 +737,6 @@ class Resource(wsgi.Application):
     def __call__(self, request):
         """WSGI method that controls (de)serialization and method dispatch."""
 
-        LOG.info("%(method)s %(url)s", {"method": request.method,
-                                        "url": request.url})
         if self.support_api_request_version:
             # Set the version of the API requested based on the header
             try:
@@ -749,6 +747,15 @@ class Resource(wsgi.Application):
             except exception.InvalidGlobalAPIVersion as e:
                 return Fault(webob.exc.HTTPNotAcceptable(
                     explanation=six.text_type(e)))
+
+        log_msg = "%(method)s %(url)s"
+        log_data = {"method": request.method, "url": request.url}
+        api_version = request.api_version_request
+        if api_version and not api_version.is_null():
+            log_msg = "API Version: %(api_version)s | " + log_msg
+            log_data["api_version"] = api_version.get_string()
+
+        LOG.info(log_msg, log_data)
 
         # Identify the action, its arguments, and the requested
         # content type
