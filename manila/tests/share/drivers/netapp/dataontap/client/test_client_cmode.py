@@ -20,6 +20,7 @@ import time
 from unittest import mock
 
 import ddt
+from oslo_config import cfg
 from oslo_log import log
 import six
 
@@ -31,6 +32,7 @@ from manila.share.drivers.netapp import utils as na_utils
 from manila import test
 from manila.tests.share.drivers.netapp.dataontap.client import fakes as fake
 
+CONF = cfg.CONF
 
 @ddt.ddt
 class NetAppClientCmodeTestCase(test.TestCase):
@@ -2699,12 +2701,17 @@ class NetAppClientCmodeTestCase(test.TestCase):
             mock.call('export-rule-create', export_rule_create_args),
             mock.call('export-rule-create', export_rule_create_args2)])
 
-    def test_configure_certificates(self):
+    @ddt.data(
+        (CONF.cifs_cert_pem_paths, 60), # fail if expiring in 60 days
+        (CONF.cifs_cert_pem_paths_expiring_soon, -30) # fail if exp 30 days ago
+    )
+    @ddt.unpack
+    def test_configure_certificates(self, cert_pem_paths, expiry_threshold):
         from cryptography import x509
         import datetime
         import os
 
-        for cert_pem_path in self.client._cert_pem_paths:
+        for cert_pem_path in cert_pem_paths:
             self.assertTrue(os.path.exists(cert_pem_path),
                             f'{cert_pem_path} not found')
 
@@ -2725,7 +2732,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
             until_expiry = cert_will_expire_at - datetime.datetime.utcnow()
 
             self.assertTrue(
-                until_expiry > datetime.timedelta(days=60),
+                until_expiry > datetime.timedelta(days=expiry_threshold),
                 f'cert {cert_pem_path} will expire in {until_expiry} '
                 f'at {cert_will_expire_at}')
 
