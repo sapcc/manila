@@ -107,6 +107,14 @@ share_manager_opts = [
                help='This value, specified in seconds, determines how often '
                     'the share manager will poll for the health '
                     '(replica_state) of each replica instance.'),
+    cfg.IntOpt('replica_snapshot_state_update_interval',
+               default=59,
+               help="This value, specified in seconds, determines how often "
+                    "the share manager will poll for the transition statuses "
+                    "of each replica's snapshot instances. It is most likely "
+                    "a good idea to choose an interval different from "
+                    "'replica_state_update_interval' with a big least common "
+                    "multiple."),
     cfg.IntOpt('migration_driver_continue_update_interval',
                default=60,
                help='This value, specified in seconds, determines how often '
@@ -4339,7 +4347,8 @@ class ShareManager(manager.SchedulerDependentManager):
             self.db.share_snapshot_instance_update(
                 context, instance['id'], instance)
 
-    @periodic_task.periodic_task(spacing=CONF.replica_state_update_interval)
+    @periodic_task.periodic_task(
+        spacing=CONF.replica_snapshot_state_update_interval)
     @utils.require_driver_initialized
     def periodic_share_replica_snapshot_update(self, context):
         LOG.debug("Updating status of share replica snapshots.")
