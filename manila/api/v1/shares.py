@@ -300,8 +300,9 @@ class ShareMixin(object):
                         "share group's one (%(sg_az)s).") % {
                             's_az': availability_zone_id, 'sg_az': sg_az_id}
                 raise exception.InvalidInput(msg)
-            availability_zone = db.availability_zone_get(
-                context, sg_az_id).name
+            if sg_az_id:
+                availability_zone = db.availability_zone_get(
+                    context, sg_az_id).name
 
         kwargs = {
             'availability_zone': availability_zone,

@@ -1203,6 +1203,7 @@ class ShareGroup(BASE, ManilaBase):
     availability_zone_id = Column(
         String(36), ForeignKey('availability_zones.id'), nullable=True)
     consistent_snapshot_support = Column(Enum('pool', 'host'), default=None)
+    share_affinity = Column(Enum('affinity', 'anti-affinity'), default=None)
 
     share_group_type = orm.relationship(
         ShareGroupTypes,
