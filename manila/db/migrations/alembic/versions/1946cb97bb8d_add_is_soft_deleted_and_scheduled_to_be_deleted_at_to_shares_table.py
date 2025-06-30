@@ -13,14 +13,15 @@
 """add is_soft_deleted and scheduled_to_be_deleted_at to shares table
 
 Revision ID: 1946cb97bb8d
-Revises: fbdfabcba377
+Revises: 636ecb8f3939 (was upstream fbdfabcba377)
 Create Date: 2021-07-14 14:41:58.615439
 
 """
 
 # revision identifiers, used by Alembic.
 revision = '1946cb97bb8d'
-down_revision = 'fbdfabcba377'
+# adjusted for SCI, because we had an intermediate revision in xena
+down_revision = '636ecb8f3939' # 'fbdfabcba377'
 
 from alembic import op
 from oslo_log import log

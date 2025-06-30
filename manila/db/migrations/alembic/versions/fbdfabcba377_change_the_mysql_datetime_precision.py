@@ -12,14 +12,15 @@
 
 """Change the datetime precision for all objects (MySQL and derivatives)
 
-Revision ID: fbdfabcba377
+Revision ID: 636ecb8f3939 (was upstream fbdfabcba377)
 Revises: 478c445d8d3e
 Create Date: 2020-04-20 15:32:59.365323
 
 """
 
 # revision identifiers, used by Alembic.
-revision = 'fbdfabcba377'
+# adjusted for SCI, because we had an intermediate revision in xena
+revision = '636ecb8f3939' # 'fbdfabcba377'
 down_revision = '478c445d8d3e'
 
 from alembic import op
