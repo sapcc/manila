@@ -119,6 +119,9 @@ def upgrade():
                 alloc['share_server_id'] == (
                     share_servers_table.c.id))).first()
 
+        if not server:
+            continue
+
         # pylint: disable=no-value-for-parameter
         op.execute(network_allocation_table.update().where(
             alloc['id'] == network_allocation_table.c.id).values(
