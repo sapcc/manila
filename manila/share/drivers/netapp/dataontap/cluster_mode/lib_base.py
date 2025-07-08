@@ -3088,12 +3088,12 @@ class NetAppCmodeFileStorageLibrary(object):
             new_schedule = self.configuration.netapp_snapmirror_schedule
             if current_schedule != new_schedule:
                 dm_session.modify_snapmirror(active_replica, replica,
-                                            schedule=new_schedule)
+                                             schedule=new_schedule)
                 LOG.debug('Modify snapmirror schedule for replica:'
-                        '%(replica)s from %(from)s to %(to)s',
-                        {'replica': replica['id'],
-                        'from': current_schedule,
-                        'to': new_schedule})
+                          '%(replica)s from %(from)s to %(to)s',
+                          {'replica': replica['id'],
+                           'from': current_schedule,
+                           'to': new_schedule})
 
         last_update_timestamp = float(
             snapmirror.get('last-transfer-end-timestamp', 0))

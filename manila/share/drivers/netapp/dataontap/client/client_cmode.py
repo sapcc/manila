@@ -1819,7 +1819,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 'showmount': 'true',
             }
             if 'nfs4.1' in versions:
-                metadata_update_opts['is-nfsv41-pnfs-enabled'] = 'false' # default false  # noqa: E501
+                metadata_update_opts['is-nfsv41-pnfs-enabled'] = 'false'  # default false  # noqa: E501
             nfs_service_modify_args.update(metadata_update_opts)
 
             flexgroup_opts = {

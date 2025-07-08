@@ -42,8 +42,8 @@ from webob import exc
 
 
 from manila.common import constants
-from manila.db import api as db_api
 from manila import context
+from manila.db import api as db_api
 from manila import exception
 from manila.i18n import _
 

@@ -20,7 +20,7 @@ Create Date: 2020-04-20 15:32:59.365323
 
 # revision identifiers, used by Alembic.
 # adjusted for SCI, because we had an intermediate revision in xena
-revision = '636ecb8f3939' # 'fbdfabcba377'
+revision = '636ecb8f3939'  # 'fbdfabcba377'
 down_revision = '478c445d8d3e'
 
 from alembic import op
