@@ -347,6 +347,12 @@ class ShareInstanceAccess(ShareInstanceAccessDatabaseMixin):
             update_rules = []
 
         try:
+            share_ref = self.db.share_get(context, share_instance['share_id'])
+            metadata = share_ref.get('share_metadata')
+            if metadata:
+                metadata = {item['key']: item['value'] for item in metadata}
+                share_instance.update({'metadata': metadata})
+
             driver_rule_updates = self._update_rules_through_share_driver(
                 context, share_instance, access_rules_on_share,
                 add_rules, delete_rules, update_rules,
