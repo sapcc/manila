@@ -213,9 +213,11 @@ class ShareManagerTestCase(test.TestCase):
         mock_share_get_all_by_host = self.mock_object(
             self.share_manager.db, 'share_instances_get_all_by_host',
             mock.Mock(return_value=instances))
+        # instances 0/2 are reloaded
         self.mock_object(self.share_manager.db, 'share_instance_get',
                          mock.Mock(side_effect=[instances[0], instances[2],
-                                                instances[4]]))
+                                                instances[4], instances[0],
+                                                instances[2]]))
         self.mock_object(self.share_manager.db,
                          'share_export_locations_update')
         mock_ensure_shares = self.mock_object(
@@ -249,14 +251,22 @@ class ShareManagerTestCase(test.TestCase):
             utils.IsAMatcher(context.RequestContext),
             self.share_manager.host)
         exports_update.assert_has_calls([
-            mock.call(mock.ANY, instances[0]['id'], fake_export_locations),
-            mock.call(mock.ANY, instances[2]['id'], fake_export_locations),
+            mock.call(mock.ANY, instances[0]['id'], fake_export_locations,
+                      reexport=True),
+            mock.call(mock.ANY, instances[2]['id'], fake_export_locations,
+                      reexport=True),
         ])
         self.share_manager._ensure_share_instance_has_pool.assert_has_calls([
             mock.call(utils.IsAMatcher(context.RequestContext),
                       instances[0]),
             mock.call(utils.IsAMatcher(context.RequestContext),
+                      instances[1]),
+            mock.call(utils.IsAMatcher(context.RequestContext),
                       instances[2]),
+            mock.call(utils.IsAMatcher(context.RequestContext),
+                      instances[4]),
+            mock.call(utils.IsAMatcher(context.RequestContext),
+                      instances[6]),
         ])
         self.share_manager._get_share_server.assert_has_calls([
             mock.call(utils.IsAMatcher(context.RequestContext),
