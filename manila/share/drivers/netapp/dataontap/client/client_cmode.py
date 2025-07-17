@@ -6290,14 +6290,14 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'cutover-action': CUTOVER_ACTION_MAP[cutover_action],
         }
 
-        if self.features.FLEXVOL_ENCRYPTION:
+        if encrypt_destination is not None:
             if encrypt_destination:
+                if not self.features.FLEXVOL_ENCRYPTION:
+                    s = 'Flexvol encryption is not supported on this backend.'
+                    raise exception.NetAppException(s)
                 api_args['encrypt-destination'] = 'true'
             else:
                 api_args['encrypt-destination'] = 'false'
-        elif encrypt_destination:
-            msg = 'Flexvol encryption is not supported on this backend.'
-            raise exception.NetAppException(msg)
 
         if validation_only:
             api_args['perform-validation-only'] = 'true'

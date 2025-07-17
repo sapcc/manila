@@ -7968,7 +7968,6 @@ class NetAppClientCmodeTestCase(test.TestCase):
         }
 
         if ontapi_version >= (1, 110):
-            expected_api_args['encrypt-destination'] = 'false'
             self.assertTrue(self.client.features.FLEXVOL_ENCRYPTION)
         else:
             self.assertFalse(self.client.features.FLEXVOL_ENCRYPTION)
