@@ -7950,19 +7950,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
         expected = [fake.SNAPSHOT_NAME]
         self.assertEqual(expected, result)
 
-    @ddt.data(
-        {'method_name': 'start_volume_move', 'ontapi_version': (1, 20)},
-        {'method_name': 'start_volume_move', 'ontapi_version': (1, 110)},
-        {'method_name': 'check_volume_move', 'ontapi_version': (1, 20)},
-        {'method_name': 'check_volume_move', 'ontapi_version': (1, 110)}
-    )
-    @ddt.unpack
-    def test_volume_move_method(self, method_name, ontapi_version):
-        self.mock_object(client_base.NetAppBaseClient,
-                         'get_ontapi_version',
-                         mock.Mock(return_value=ontapi_version))
-
-        self.client._init_features()
+    @ddt.data('start_volume_move', 'check_volume_move')
+    def test_volume_move_method(self, method_name):
 
         method = getattr(self.client, method_name)
         self.mock_object(self.client, 'send_request')
@@ -7976,12 +7965,6 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'dest-aggr': fake.SHARE_AGGREGATE_NAME,
             'cutover-action': 'wait',
         }
-
-        if ontapi_version >= (1, 110):
-            expected_api_args['encrypt-destination'] = 'false'
-            self.assertTrue(self.client.features.FLEXVOL_ENCRYPTION)
-        else:
-            self.assertFalse(self.client.features.FLEXVOL_ENCRYPTION)
 
         if method_name.startswith('check'):
             expected_api_args['perform-validation-only'] = 'true'
