@@ -7580,7 +7580,6 @@ class NetAppClientCmodeTestCase(test.TestCase):
             'vserver': fake.VSERVER_NAME,
             'dest-aggr': fake.SHARE_AGGREGATE_NAME,
             'cutover-action': 'wait',
-            'encrypt-destination': 'false'
         }
         if method_name.startswith('check'):
             expected_api_args['perform-validation-only'] = 'true'
