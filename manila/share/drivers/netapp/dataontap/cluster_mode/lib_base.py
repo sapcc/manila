@@ -3244,6 +3244,9 @@ class NetAppCmodeFileStorageLibrary(object):
                                                is_dr,
                                                share_server=share_server)
 
+        self._update_autosize_attributes_after_promote_replica(
+            orig_active_replica, new_active_replica, dm_session)
+
         extra_specs = share_types.get_extra_specs_from_share(
             new_active_replica)
         provisioning_options = self._get_provisioning_options(extra_specs)
@@ -3288,8 +3291,6 @@ class NetAppCmodeFileStorageLibrary(object):
                     f"With efficiency options '{effi_opts}'"
                     f"could not apply cross_dedup_disabled to the promoted "
                     f"replica. {e}")
-        self._update_autosize_attributes_after_promote_replica(
-            orig_active_replica, new_active_replica, dm_session)
 
         return new_replica_list
 
@@ -3362,36 +3363,16 @@ class NetAppCmodeFileStorageLibrary(object):
             new_active_replica, dm_session)
 
         # 3. Set autosize attributes for orig_active_replica
-
-        # Reset the autosize attributes according to the volume type (RW or DP)
-        orig_active_replica_autosize_attributes = {'reset': 'true'}
-
-        orig_provisioning_opts = (
-            orig_active_replica_info['provisioning_options'])
-
-        orig_provisioning_opts['autosize_attributes'] = (
-            orig_active_replica_autosize_attributes)
-
-        orig_active_replica_info['client'].modify_volume(
+        orig_active_replica_info['client'].reset_autosize_attributes(
             orig_active_replica_info['aggregate'],
             orig_active_replica_info['name'],
-            **orig_provisioning_opts)
+        )
 
         # 4. Set autosize attributes for new_active_replica
-
-        # Reset the autosize attributes according to the volume type (RW or DP)
-        new_active_replica_autosize_attributes = {'reset': 'true'}
-
-        new_provisioning_opts = (
-            new_active_replica_info['provisioning_options'])
-
-        new_provisioning_opts['autosize_attributes'] = (
-            new_active_replica_autosize_attributes)
-
-        new_active_replica_info['client'].modify_volume(
+        new_active_replica_info['client'].reset_autosize_attributes(
             new_active_replica_info['aggregate'],
             new_active_replica_info['name'],
-            **new_provisioning_opts)
+        )
 
     def _handle_qos_on_replication_change(self, dm_session, new_active_replica,
                                           orig_active_replica, is_dr,
