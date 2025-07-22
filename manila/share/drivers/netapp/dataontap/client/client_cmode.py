@@ -3351,6 +3351,42 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             self.set_snaplock_attributes(volume_name, **options)
 
     @na_utils.trace
+    def reset_autosize_attributes(self, aggr, volume):
+        '''Reset autosize attributes according to Volume type (RW or DP)
+
+        :param aggr: aggregate name where FlexVol volume is.
+        :param volume: name of the modified volume.
+        '''
+        api_args = {
+            'query': {
+                'volume-attributes': {
+                    'volume-id-attributes': {
+                        'containing-aggregate-name': aggr,
+                        'name': volume,
+                    },
+                },
+            },
+            'attributes': {
+                'volume-attributes': {
+                    'volume-autosize-attributes': {
+                        'reset': 'true',
+                    },
+                },
+            },
+        }
+
+        result = self.send_request('volume-modify-iter', api_args)
+        failures = result.get_child_content('num-failed')
+        if failures and int(failures) > 0:
+            failure_list = result.get_child_by_name(
+                'failure-list') or netapp_api.NaElement('none')
+            errors = failure_list.get_children()
+            if errors:
+                raise netapp_api.NaApiError(
+                    errors[0].get_child_content('error-code'),
+                    errors[0].get_child_content('error-message'))
+
+    @na_utils.trace
     def update_volume_efficiency_attributes(self, volume_name, dedup_enabled,
                                             compression_enabled,
                                             cross_dedup_disabled=False,
