@@ -520,14 +520,14 @@ class ShareManager(manager.SchedulerDependentManager):
                     continue
 
             share_network = self.db.share_network_get(
-                context, share_server.share_network_id)
+                ctxt, share_server.share_network_id)
 
             share_network_subnets = (
                 self.db.share_network_subnet_get_all_by_share_server_id(
-                    context, share_server['id']))
+                    ctxt, share_server['id']))
 
             network_info_list = self._form_server_setup_info(
-                context, share_server, share_network, share_network_subnets,
+                ctxt, share_server, share_network, share_network_subnets,
                 add_gateways=True)
 
             server_info = self.driver.ensure_share_server(
