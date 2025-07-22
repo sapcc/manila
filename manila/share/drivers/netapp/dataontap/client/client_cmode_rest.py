@@ -1169,6 +1169,23 @@ class NetAppRestClient(object):
         self.send_request(f'/storage/volumes/{uuid}', 'patch', body=body)
 
     @na_utils.trace
+    def reset_autosize_attributes(self, aggr, volume_name):
+        '''Reset autosize attributes according to Volume type (RW or DP)
+
+        :param aggr: aggregate name where FlexVol volume is.
+        :param volume_name: name of the modified volume.
+        '''
+        volume = self._get_volume_by_args(vol_name=volume_name)
+        uuid = volume['uuid']
+
+        body = {
+            'aggregates': [{'name': aggr}],
+        }
+
+        # reset autosize attributes
+        self.send_request(f'/storage/volumes/{uuid}', 'patch', body=body)
+
+    @na_utils.trace
     def update_volume_efficiency_attributes(self, volume_name, dedup_enabled,
                                             compression_enabled,
                                             is_flexgroup=False,
