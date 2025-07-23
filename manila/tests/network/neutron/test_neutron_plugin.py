@@ -1149,6 +1149,11 @@ class NeutronBindNetworkPluginTest(test.TestCase):
             "network_allocations_get_for_share_server",
             mock.Mock(side_effect=get_nalloc_side_effect),
         )
+        self.mock_object(
+            self.bind_plugin.db,
+            'share_network_subnet_get',
+            mock.Mock(return_value=fake_share_network_subnet),
+        )
 
         # calling the extend_network_allocations method
         self.bind_plugin.extend_network_allocations(self.fake_context, fake_ss)
