@@ -701,14 +701,12 @@ class NeutronBindNetworkPlugin(NeutronNetworkPlugin):
         return ports
 
     @utils.retry(retry_param=exception.NetworkException, retries=20)
-    def _wait_for_network_segment(self, share_server, host):
-        network_id = share_server['share_network_subnet']['neutron_net_id']
+    def _wait_for_network_segment(self, network_id, physnet):
         network = self.neutron_api.get_network(network_id)
         for segment in network['segments']:
-            if segment['provider:physical_network'] == (
-                    self.config.neutron_physical_net_name):
+            if segment['provider:physical_network'] == physnet:
                 return segment['provider:segmentation_id']
-        msg = _('Network segment not found on host %s') % host
+        msg = _('Network segment not found on physical network %s') % physnet
         raise exception.NetworkException(msg)
 
     def extend_network_allocations(self, context, share_server):
@@ -737,7 +735,11 @@ class NeutronBindNetworkPlugin(NeutronNetworkPlugin):
                                                vnic_type)
 
         # Wait for network segment to be created on destination host.
-        vlan = self._wait_for_network_segment(share_server, host_id)
+        share_subnet = self.db.share_network_subnet_get(
+            context, active_port_bindings[0]['share_network_subnet_id'])
+        network_id = share_subnet['neutron_net_id']
+        physnet = self.config.neutron_physical_net_name
+        vlan = self._wait_for_network_segment(network_id, physnet)
         for port in active_port_bindings:
             port['segmentation_id'] = vlan
 
