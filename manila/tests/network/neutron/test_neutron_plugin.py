@@ -1198,6 +1198,11 @@ class NeutronBindNetworkPluginTest(test.TestCase):
             self.bind_plugin.db,
             "network_allocations_get_for_share_server",
             mock.Mock(return_value=[old_network_allocation]))
+        self.mock_object(
+            self.bind_plugin.db,
+            'share_network_subnet_get',
+            mock.Mock(return_value=fake_share_network_subnet),
+        )
 
         # calling the extend_network_allocations method
         self.bind_plugin.extend_network_allocations(self.fake_context, fake_ss)
