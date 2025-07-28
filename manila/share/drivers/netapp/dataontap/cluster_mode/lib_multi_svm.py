@@ -650,8 +650,8 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         self._client.modify_vserver(
             vserver_name=vserver,
             aggregate_names=self._find_matching_aggregates(),
-            retention_hours=self.configuration.netapp_delete_retention_hours
-            )
+            retention_hours=self.configuration.netapp_delete_retention_hours,
+        )
         vserver_client = self._get_api_client(vserver=vserver)
         vserver_client.enable_nfs(
             self.configuration.netapp_enabled_share_protocols,
@@ -660,15 +660,15 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         for network in network_info:
             self._create_vserver_routes(vserver_client, network)
 
-            security_services = network_info.get('security_services')
-            if security_services:
-                for security_service in security_services:
-                    if security_service['type'].lower() == 'active_directory':
-                        try:
-                            vserver_client.configure_certificates()
-                            # vserver_client.configure_cifs_signing()
-                        except exception.NetAppException as e:
-                            LOG.warning(e.message)
+        security_services = network_info[0].get('security_services')
+        if security_services:
+            for security_service in security_services:
+                if security_service['type'].lower() == 'active_directory':
+                    try:
+                        vserver_client.configure_certificates()
+                        # vserver_client.configure_cifs_signing()
+                    except exception.NetAppException as e:
+                        LOG.warning(e.message)
 
     @na_utils.trace
     def teardown_server(self, server_details, security_services=None):
