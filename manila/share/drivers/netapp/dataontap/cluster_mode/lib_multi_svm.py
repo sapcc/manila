@@ -662,7 +662,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         for network in network_info:
             self._create_vserver_routes(vserver_client, network)
 
-        security_services = network_info.get('security_services')
+        security_services = network_info[0].get('security_services')
         if security_services:
             for security_service in security_services:
                 if security_service['type'].lower() == 'active_directory':
