@@ -24,7 +24,6 @@ down_revision = '0d8c8f6d54a4'
 
 from alembic import op
 from oslo_log import log
-import sqlalchemy as sa
 
 from manila.db.migrations import utils
 
@@ -35,18 +34,15 @@ ss_table_name = 'security_services'
 def upgrade():
     try:
         connection = op.get_bind()
-
         ss_table = utils.load_table(ss_table_name, connection)
-        for record in connection.execute(ss_table.select()):
+
+        records = connection.execute(ss_table.select())
+
+        for record in records:
             op.execute(
                 ss_table.update().where(
-                    sa.and_(
-                        ss_table.c.id == record.id,
-                        ss_table.c.defaultadsite is not None
-                    )
-                ).values({
-                    'default_ad_site': str(ss_table.c.defaultadsite)
-                })
+                    ss_table.c.id == record['id']
+                ).values({'default_ad_site': record['defaultadsite']})
             )
 
         op.drop_column(ss_table_name, 'defaultadsite')
