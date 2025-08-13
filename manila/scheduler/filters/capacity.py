@@ -98,6 +98,12 @@ class CapacityFilter(base_host.BaseHostFilter):
         # otherwise, it could result in infinite provisioning.
         if (use_thin_logic and thin_provisioning and
                 host_state.max_over_subscription_ratio >= 1):
+            # NOTE(chuan): If provisioned_capacity_gb is None, provisioned
+            # ratio cannot be calculated, so skip it.
+            if host_state.provisioned_capacity_gb is None:
+                LOG.warning('Provisioned capacity not set, skipping %s.',
+                            host_state.host)
+                return False
             provisioned_ratio = ((host_state.provisioned_capacity_gb +
                                   share_size) / total)
             if provisioned_ratio > host_state.max_over_subscription_ratio:
