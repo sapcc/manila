@@ -304,7 +304,8 @@ class API(base.Base):
                share_group_id=None, share_group_snapshot_member=None,
                availability_zones=None, scheduler_hints=None,
                az_request_multiple_subnet_support_map=None,
-               mount_point_name=None, encryption_key_ref=None):
+               mount_point_name=None, encryption_key_ref=None,
+               qos_type=None):
         """Create new share."""
 
         api_common.check_metadata_properties(metadata)
@@ -475,6 +476,7 @@ class API(base.Base):
             metadata = self.update_metadata_from_share_type_extra_specs(
                 context, share_type, metadata)
 
+        qos_type_id = qos_type['id'] if qos_type else None
         options = {
             'size': size,
             'user_id': context.user_id,
@@ -486,6 +488,7 @@ class API(base.Base):
             'share_proto': share_proto,
             'is_public': is_public,
             'share_group_id': share_group_id,
+            'qos_type_id': qos_type_id,
         }
         options.update(share_type_attributes)
 
@@ -558,6 +561,7 @@ class API(base.Base):
                 az_request_multiple_subnet_support_map),
             mount_point_name=mount_point_name,
             encryption_key_ref=encryption_key_ref,
+            qos_type_id=qos_type_id,
             )
 
         # Retrieve the share with instance details
@@ -719,7 +723,8 @@ class API(base.Base):
                         share_type_id=None, availability_zones=None,
                         snapshot_host=None, scheduler_hints=None,
                         az_request_multiple_subnet_support_map=None,
-                        mount_point_name=None, encryption_key_ref=None):
+                        mount_point_name=None, encryption_key_ref=None,
+                        qos_type_id=None):
         request_spec, share_instance = (
             self.create_share_instance_and_get_request_spec(
                 context, share, availability_zone=availability_zone,
@@ -731,7 +736,8 @@ class API(base.Base):
                 az_request_multiple_subnet_support_map=(
                     az_request_multiple_subnet_support_map),
                 mount_point_name=mount_point_name,
-                encryption_key_ref=encryption_key_ref))
+                encryption_key_ref=encryption_key_ref,
+                qos_type_id=qos_type_id))
 
         # SAPCC add project_domain_name in request_spec and pass to driver
         request_spec['project_domain_name'] = context.project_domain_name
@@ -779,7 +785,7 @@ class API(base.Base):
             availability_zones=None, snapshot_host=None,
             az_request_multiple_subnet_support_map=None,
             mount_point_name=None, share_instance_id=None,
-            encryption_key_ref=None):
+            encryption_key_ref=None, qos_type_id=None):
 
         availability_zone_id = None
         if availability_zone:
@@ -802,6 +808,7 @@ class API(base.Base):
                 'cast_rules_to_readonly': cast_rules_to_readonly,
                 'mount_point_name': mount_point_name,
                 'encryption_key_ref': encryption_key_ref,
+                'qos_type_id': qos_type_id,
             }
         )
 
@@ -837,6 +844,7 @@ class API(base.Base):
             'replica_state': share_instance['replica_state'],
             'share_type_id': share_instance['share_type_id'],
             'encryption_key_ref': share_instance['encryption_key_ref'],
+            'qos_type_id': share_instance['qos_type_id'],
         }
 
         share_type = None
@@ -919,6 +927,19 @@ class API(base.Base):
                        'az': availability_zone}
             raise exception.InvalidShare(message=msg % payload)
 
+        qos_type_id = None
+        qos_type = share_type.get('extra_specs', {}).get(
+            constants.ExtraSpecs.DEFAULT_QOS_TYPE)
+        if qos_type:
+            qos_db = self.db.qos_type_get_by_name_or_id(context, qos_type)
+            if qos_db:
+                qos_type_id = qos_db['id']
+            else:
+                msg = _("Share type %(type)s extra-specs 'default_qos_type' "
+                        "specified qos_type does not exist.")
+                payload = {'type': share_type}
+                raise exception.InvalidInput(reason=msg % payload)
+
         try:
             reservations = QUOTAS.reserve(
                 context, share_replicas=1, replica_gigabytes=share['size'],
@@ -988,7 +1009,8 @@ class API(base.Base):
                     cast_rules_to_readonly=cast_rules_to_readonly,
                     availability_zones=type_azs,
                     az_request_multiple_subnet_support_map=(
-                        az_request_multiple_subnet_support_map))
+                        az_request_multiple_subnet_support_map),
+                    qos_type_id=qos_type_id)
             )
             QUOTAS.commit(
                 context, reservations, project_id=share['project_id'],
@@ -1141,6 +1163,19 @@ class API(base.Base):
             'driver_handles_share_servers',
             share_type['extra_specs']['driver_handles_share_servers'])
 
+        qos_type_id = None
+        qos_type = share_type.get('extra_specs', {}).get(
+            constants.ExtraSpecs.DEFAULT_QOS_TYPE)
+        if qos_type:
+            qos_db = self.db.qos_type_get_by_name_or_id(context, qos_type)
+            if qos_db:
+                qos_type_id = qos_db['id']
+            else:
+                msg = _("Share type %(type)s extra-specs 'default_qos_type' "
+                        "specified qos_type does not exist.")
+                payload = {'type': share_type}
+                raise exception.InvalidInput(reason=msg % payload)
+
         if dhss and not share_server_id:
             msg = _("Share Server ID parameter is required when managing a "
                     "share using a share type with "
@@ -1181,6 +1216,7 @@ class API(base.Base):
             'project_id': context.project_id,
             'status': constants.STATUS_MANAGING,
             'scheduled_at': timeutils.utcnow(),
+            'qos_type_id': qos_type_id,
         })
         share_data.update(
             self.get_share_attributes_from_share_type(share_type))
@@ -1276,6 +1312,8 @@ class API(base.Base):
             'share_id': kwargs.get('share_id', share_instance.get('share_id')),
             'host': kwargs.get('host', share_instance.get('host')),
             'status': kwargs.get('status', share_instance.get('status')),
+            'qos_type_id': kwargs.get(
+                'qos_type_id', share_instance.get('qos_type_id')),
         }
 
         request_spec = {
@@ -2017,6 +2055,16 @@ class API(base.Base):
                 raise exception.InvalidInput(reason=msg)
             self._modify_quotas_for_share_migration(context, share,
                                                     new_share_type)
+            qos_type = share_type.get('extra_specs').get(
+                constants.ExtraSpecs.DEFAULT_QOS_TYPE)
+            if qos_type:
+                qos_db = self.db.qos_type_get_by_name_or_id(context, qos_type)
+                if not qos_db:
+                    msg = _("Share type %(type)s extra-specs "
+                            "'default_qos_type' specified qos_type does not "
+                            "exist.")
+                    payload = {'type': share_type}
+                    raise exception.InvalidInput(reason=msg % payload)
         else:
             share_type = {}
             share_type_id = share_instance['share_type_id']
@@ -4370,3 +4418,12 @@ class API(base.Base):
 
     def update_share_backup(self, context, backup, fields):
         return self.db.share_backup_update(context, backup['id'], fields)
+
+    def create_qos_type(self, context, values):
+        return self.db.qos_type_create(context, values)
+
+    def update_qos_type(self, context, qos_type, values):
+        return self.db.qos_type_update(context, qos_type['id'], values)
+
+    def delete_qos_type(self, context, qos_type):
+        self.db.qos_type_delete(context, qos_type['id'])
