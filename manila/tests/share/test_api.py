@@ -3513,7 +3513,7 @@ class ShareAPITestCase(test.TestCase):
     def test_extend_invalid_task_state(self):
         share = db_utils.create_share(
             status=constants.STATUS_AVAILABLE,
-            task_state=constants.TASK_STATE_MIGRATION_IN_PROGRESS)
+            task_state=constants.TASK_STATE_DATA_COPYING_IN_PROGRESS)
         new_size = 123
 
         self.assertRaises(exception.ShareBusyException,
@@ -3689,7 +3689,7 @@ class ShareAPITestCase(test.TestCase):
     def test_shrink_invalid_task_state(self):
         share = db_utils.create_share(
             status=constants.STATUS_AVAILABLE,
-            task_state=constants.TASK_STATE_MIGRATION_IN_PROGRESS)
+            task_state=constants.TASK_STATE_DATA_COPYING_IN_PROGRESS)
 
         self.assertRaises(exception.ShareBusyException,
                           self.api.shrink, self.context, share, 123)

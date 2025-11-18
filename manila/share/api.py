@@ -2774,6 +2774,18 @@ class API(base.Base):
             }
             raise exception.ShareBusyException(reason=msg)
 
+    def _is_share_in_migration(self, share):
+        if share.task_state in [
+            constants.TASK_STATE_MIGRATION_STARTING,
+            constants.TASK_STATE_MIGRATION_IN_PROGRESS,
+            constants.TASK_STATE_MIGRATION_COMPLETING,
+            constants.TASK_STATE_MIGRATION_DRIVER_STARTING,
+            constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS,
+            constants.TASK_STATE_MIGRATION_DRIVER_PHASE1_DONE,
+        ]:
+            return True
+        return False
+
     @staticmethod
     def check_is_share_size_within_per_share_quota_limit(context, size):
         """Raises an exception if share size above per share quota limit."""
@@ -2810,6 +2822,8 @@ class API(base.Base):
 
         if force:
             valid_statuses.append(constants.STATUS_EXTENDING_ERROR)
+            valid_statuses.append(constants.STATUS_MIGRATING)
+            valid_statuses.append(constants.STATUS_SERVER_MIGRATING)
 
         if share['status'] not in valid_statuses:
             msg_params = {
@@ -2822,7 +2836,8 @@ class API(base.Base):
                     "%(status)s.") % msg_params
             raise exception.InvalidShare(reason=msg)
 
-        self._check_is_share_busy(share)
+        if not self._is_share_in_migration(share):
+            self._check_is_share_busy(share)
 
         size_increase = int(new_size) - share['size']
         if size_increase <= 0:
@@ -2944,7 +2959,8 @@ class API(base.Base):
                     "%(status)s.") % msg_params
             raise exception.InvalidShare(reason=msg)
 
-        self._check_is_share_busy(share)
+        if not self._is_share_in_migration(share):
+            self._check_is_share_busy(share)
 
         size_decrease = int(share['size']) - int(new_size)
         if size_decrease <= 0 or new_size <= 0:
