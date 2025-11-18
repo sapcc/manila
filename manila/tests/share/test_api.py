@@ -949,6 +949,7 @@ class ShareAPITestCase(test.TestCase):
             snapshot_host=None,
             scheduler_hints=None, mount_point_name=None,
             encryption_key_ref=None,
+            qos_type_id=None,
         )
         db_api.share_get.assert_called_once()
 
@@ -1280,7 +1281,8 @@ class ShareAPITestCase(test.TestCase):
                 'share_type_id': 'fake_share_type',
                 'cast_rules_to_readonly': False,
                 'mount_point_name': None,
-                'encryption_key_ref': None
+                'encryption_key_ref': None,
+                'qos_type_id': None,
             }
         )
         db_api.share_type_get.assert_called_once_with(
@@ -1316,7 +1318,8 @@ class ShareAPITestCase(test.TestCase):
                 'share_type_id': 'fake_share_type',
                 'cast_rules_to_readonly': False,
                 'mount_point_name': 'fake_mp',
-                'encryption_key_ref': None
+                'encryption_key_ref': None,
+                'qos_type_id': None,
             }
         )
 
@@ -1455,9 +1458,15 @@ class ShareAPITestCase(test.TestCase):
             'id': 'fakeid',
             'status': constants.STATUS_CREATING,
         }
+        fake_qos_type = {
+            'id': 'fake_qos_type_id',
+            'name': 'fake_qos_type_name',
+            'specs': {}
+        }
         fake_type = {
             'id': 'fake_type_id',
             'extra_specs': {
+                'default_qos_type': 'fake_qos_type_id',
                 'snapshot_support': False,
                 'replication_type': replication_type,
                 'create_share_from_snapshot_support': False,
@@ -1484,6 +1493,8 @@ class ShareAPITestCase(test.TestCase):
                          mock.Mock(return_value=[]))
         self.mock_object(db_api, 'share_network_get',
                          mock.Mock(return_value=share_network))
+        self.mock_object(db_api, 'qos_type_get_by_name_or_id',
+                         mock.Mock(return_value=fake_qos_type))
 
         self.api.manage(self.context, copy.deepcopy(share_data),
                         driver_options)
@@ -1493,6 +1504,7 @@ class ShareAPITestCase(test.TestCase):
             'project_id': self.context.project_id,
             'status': constants.STATUS_MANAGING,
             'scheduled_at': date,
+            'qos_type_id': 'fake_qos_type_id',
             'snapshot_support': fake_type['extra_specs']['snapshot_support'],
             'create_share_from_snapshot_support':
                 fake_type['extra_specs']['create_share_from_snapshot_support'],
@@ -1765,6 +1777,8 @@ class ShareAPITestCase(test.TestCase):
             'share_id': kwargs.get('share_id', share_instance.get('share_id')),
             'host': kwargs.get('host', share_instance.get('host')),
             'status': kwargs.get('status', share_instance.get('status')),
+            'qos_type_id': kwargs.get(
+                'qos_type_id', share_instance.get('qos_type_id')),
         }
 
         request_spec = {
@@ -2727,7 +2741,7 @@ class ShareAPITestCase(test.TestCase):
             az_request_multiple_subnet_support_map=None,
             snapshot_host=snapshot['share']['instance']['host'],
             scheduler_hints=None, mount_point_name=None,
-            encryption_key_ref=None)
+            encryption_key_ref=None, qos_type_id=None)
         share_api.policy.check_policy.assert_called_once_with(
             self.context, 'share_snapshot', 'get_snapshot',
             snapshot, do_raise=False)
@@ -4503,6 +4517,38 @@ class ShareAPITestCase(test.TestCase):
         self.assertFalse(mock_db_update_call.called)
         self.assertFalse(mock_scheduler_rpcapi_call.called)
 
+    def test_create_share_replica_missing_qos_type(self):
+        share_type = fakes.fake_share_type(
+            name='fake_share_type',
+            extra_specs={'default_qos_type': 'fake_qos_type'})
+        share = fakes.fake_share(
+            id='FAKE_SHARE_ID', replication_type='dr',)
+        share['instance'].update({
+            'share_type': share_type,
+            'share_type_id': '359b9851-2bd5-4404-89a9-5cd22bbc5fb9',
+        })
+        mock_request_spec_call = self.mock_object(
+            self.api, 'create_share_instance_and_get_request_spec')
+        mock_db_update_call = self.mock_object(db_api, 'share_replica_update')
+        mock_scheduler_rpcapi_call = self.mock_object(
+            self.api.scheduler_rpcapi, 'create_share_replica')
+        self.mock_object(share_types, 'get_share_type',
+                         mock.Mock(return_value=share_type))
+        self.mock_object(db_api, 'share_replicas_get_available_active_replica',
+                         mock.Mock(return_value=mock.Mock(
+                             return_value={'host': 'fake_ar_host'})))
+        self.mock_object(db_api, 'qos_type_get_by_name_or_id',
+                         mock.Mock(return_value=None))
+
+        self.assertRaises(exception.InvalidInput,
+                          self.api.create_share_replica,
+                          self.context, share)
+        share_types.get_share_type.assert_called_once_with(
+            self.context, '359b9851-2bd5-4404-89a9-5cd22bbc5fb9')
+        self.assertFalse(mock_request_spec_call.called)
+        self.assertFalse(mock_db_update_call.called)
+        self.assertFalse(mock_scheduler_rpcapi_call.called)
+
     def test_create_share_replica_subnet_not_found(self):
         request_spec = fakes.fake_replica_request_spec()
         replica = request_spec['share_instance_properties']
@@ -4643,7 +4689,8 @@ class ShareAPITestCase(test.TestCase):
              share_network_id=share_network_id, share_type_id=share_type['id'],
              availability_zones=expected_azs,
              az_request_multiple_subnet_support_map={},
-             cast_rules_to_readonly=cast_rules_to_readonly))
+             cast_rules_to_readonly=cast_rules_to_readonly,
+             qos_type_id=None))
         db_api.share_replica_update.assert_called_once()
         mock_snapshot_get_all_call.assert_called_once()
         mock_sched_rpcapi_call.assert_called_once()
@@ -4784,7 +4831,8 @@ class ShareAPITestCase(test.TestCase):
              share_network_id=share_network_id, share_type_id=share_type['id'],
              availability_zones=expected_azs,
              az_request_multiple_subnet_support_map=az_id,
-             cast_rules_to_readonly=cast_rules_to_readonly))
+             cast_rules_to_readonly=cast_rules_to_readonly,
+             qos_type_id=None))
 
     def test_delete_last_active_replica(self):
         fake_replica = fakes.fake_replica(
@@ -5023,7 +5071,8 @@ class ShareAPITestCase(test.TestCase):
                                  share_type_id=share_type['id'],
                                  availability_zones=expected_azs,
                                  az_request_multiple_subnet_support_map={},
-                                 cast_rules_to_readonly=False))
+                                 cast_rules_to_readonly=False,
+                                 qos_type_id=None))
 
     def test_migration_complete(self):
 

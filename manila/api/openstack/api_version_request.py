@@ -209,6 +209,7 @@ REST_API_VERSION_HISTORY = """
     * 2.89 - Added support for passing Share network subnet metadata updates
              to driver.
     * 2.89 - Added encryption key reference option to share create API.
+    * 2.89 - Added QoS type and specs APIs.
 """
 
 # The minimum and maximum versions of the API supported

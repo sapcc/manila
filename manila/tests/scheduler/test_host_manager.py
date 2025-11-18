@@ -220,7 +220,8 @@ class HostManagerTestCase(test.TestCase):
                         'share_server_multiple_subnet_support': False,
                         'mount_point_name_support': False,
                         'share_replicas_migration_support': False,
-                        'encryption_support': None
+                        'encryption_support': None,
+                        'qos_type_support': False,
                     },
                 }, {
                     'name': 'host2@back1#BBB',
@@ -257,7 +258,8 @@ class HostManagerTestCase(test.TestCase):
                         'share_server_multiple_subnet_support': False,
                         'mount_point_name_support': False,
                         'share_replicas_migration_support': False,
-                        'encryption_support': None
+                        'encryption_support': None,
+                        'qos_type_support': False,
                     },
                 }, {
                     'name': 'host2@back2#CCC',
@@ -294,7 +296,8 @@ class HostManagerTestCase(test.TestCase):
                         'share_server_multiple_subnet_support': False,
                         'mount_point_name_support': False,
                         'share_replicas_migration_support': False,
-                        'encryption_support': None
+                        'encryption_support': None,
+                        'qos_type_support': False,
                     },
                 },
             ]
@@ -353,7 +356,8 @@ class HostManagerTestCase(test.TestCase):
                         'share_server_multiple_subnet_support': False,
                         'mount_point_name_support': False,
                         'share_replicas_migration_support': False,
-                        'encryption_support': None
+                        'encryption_support': None,
+                        'qos_type_support': False,
                     },
                 }, {
                     'name': 'host2@BBB#pool2',
@@ -391,7 +395,8 @@ class HostManagerTestCase(test.TestCase):
                         'share_server_multiple_subnet_support': False,
                         'mount_point_name_support': False,
                         'share_replicas_migration_support': False,
-                        'encryption_support': None
+                        'encryption_support': None,
+                        'qos_type_support': False,
                     },
                 }, {
                     'name': 'host3@CCC#pool3',
@@ -429,7 +434,8 @@ class HostManagerTestCase(test.TestCase):
                         'share_server_multiple_subnet_support': False,
                         'mount_point_name_support': False,
                         'share_replicas_migration_support': False,
-                        'encryption_support': None
+                        'encryption_support': None,
+                        'qos_type_support': False,
                     },
                 }, {
                     'name': 'host4@DDD#pool4a',
@@ -467,7 +473,8 @@ class HostManagerTestCase(test.TestCase):
                         'share_server_multiple_subnet_support': False,
                         'mount_point_name_support': False,
                         'share_replicas_migration_support': False,
-                        'encryption_support': None
+                        'encryption_support': None,
+                        'qos_type_support': False,
                     },
                 }, {
                     'name': 'host4@DDD#pool4b',
@@ -506,6 +513,7 @@ class HostManagerTestCase(test.TestCase):
                         'mount_point_name_support': False,
                         'share_replicas_migration_support': False,
                         'encryption_support': None,
+                        'qos_type_support': False,
                     },
                 },
             ]
@@ -596,7 +604,8 @@ class HostManagerTestCase(test.TestCase):
                         'share_server_multiple_subnet_support': False,
                         'mount_point_name_support': False,
                         'share_replicas_migration_support': False,
-                        'encryption_support': None
+                        'encryption_support': None,
+                        'qos_type_support': False,
                     },
                 }, {
                     'name': 'host2@back1#BBB',
@@ -633,7 +642,8 @@ class HostManagerTestCase(test.TestCase):
                         'share_server_multiple_subnet_support': False,
                         'mount_point_name_support': False,
                         'share_replicas_migration_support': False,
-                        'encryption_support': None
+                        'encryption_support': None,
+                        'qos_type_support': False,
                     },
                 },
             ]
@@ -699,7 +709,8 @@ class HostManagerTestCase(test.TestCase):
                         'share_server_multiple_subnet_support': False,
                         'mount_point_name_support': False,
                         'share_replicas_migration_support': False,
-                        'encryption_support': None
+                        'encryption_support': None,
+                        'qos_type_support': False,
                     },
                 },
             ]

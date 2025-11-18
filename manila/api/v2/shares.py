@@ -210,7 +210,7 @@ class ShareController(wsgi.Controller,
             scheduler_hints=scheduler_hints,
             encryption_key_ref=encryption_key_ref)
 
-    @wsgi.Controller.api_version("2.65", "2.89")
+    @wsgi.Controller.api_version("2.65", "2.88")
     def create(self, req, body): # pylint: disable=function-redefined  # noqa F811
         if not self.is_valid_body(body, 'share'):
             raise exc.HTTPUnprocessableEntity()

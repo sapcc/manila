@@ -482,3 +482,4 @@ user documentation.
 2.89
 ----
   Added ``encryption_key_ref`` option to share create API.
+  Added qos_type and specs APIs.
