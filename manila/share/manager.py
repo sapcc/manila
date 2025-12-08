@@ -546,6 +546,14 @@ class ShareManager(manager.SchedulerDependentManager):
                 self.db.share_server_backend_details_set(
                     ctxt, share_server['id'], server_info)
 
+            # update share server by driver capabilities
+            server_specs = {
+                'share_replicas_migration_support': (
+                    self.driver.share_replicas_migration_support
+                ),
+            }
+            self.db.share_server_update(ctxt, share_server['id'], server_specs)
+
         share_instances = self.db.share_instance_get_all_by_host(
             ctxt, self.host)
         LOG.debug("Re-exporting %s shares", len(share_instances))
