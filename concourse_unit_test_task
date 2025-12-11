@@ -1,0 +1,24 @@
+#!/bin/bash
+
+set -xe
+
+export DEBIAN_FRONTEND=noninteractive
+
+apt update > /dev/null 2>&1
+apt install -y git curl apt-utils > /dev/null 2>&1
+curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1
+
+source $HOME/.local/bin/env
+uv venv $HOME/.local/tools --python python3.11
+source $HOME/.local/tools/bin/activate
+
+uv pip install bindep tox "six>=1.14" > /dev/null 2>&1
+
+git clone -b dev/stable/2025.1-m3 --single-branch https://github.com/sapcc/manila.git --depth=1
+
+cd manila/
+apt install -y $(bindep -b test) > /dev/null 2>&1
+
+export TOX_PYTHON=3.11
+export TOX_CONSTRAINTS_FILE=https://raw.githubusercontent.com/sapcc/requirements/stable/2025.1-m3/upper-constraints.txt
+tox -e pep8,py3
