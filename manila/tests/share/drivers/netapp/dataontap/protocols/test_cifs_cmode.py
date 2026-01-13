@@ -211,7 +211,10 @@ class NetAppClusteredCIFSHelperTestCase(test.TestCase):
 
     def test_get_target_missing_location(self):
 
-        target = self.helper.get_target({'export_location': ''})
+        target = self.helper.get_target({
+            'export_location': '',
+            'share_proto': 'CIFS'
+        })
         self.assertEqual('', target)
 
     def test_get_share_name_for_share(self):
@@ -261,6 +264,27 @@ class NetAppClusteredCIFSHelperTestCase(test.TestCase):
         self.assertEqual(ip, result_ip)
         self.assertEqual(share_name, result_share_name)
         self.helper._get_share_export_location.assert_called_once_with(share)
+
+    @ddt.data('MULTI', 'NOT_MULTI')
+    def test_get_multi_export_location(self, protocol):
+
+        share = {'id': fake.SHARE_ID}
+        share['export_location'] = None
+        nfs_path = r'%s:/%s' % (fake.SHARE_ADDRESS_1, fake.SHARE_NAME + '_0')
+        cifs_path = r'\\%s\%s' % (fake.SHARE_ADDRESS_2, fake.SHARE_NAME)
+        # keep order, we want to test that it would also take the 2nd path
+        share['export_locations'] = [{'path': nfs_path}, {'path': cifs_path}]
+        share['share_proto'] = protocol
+
+        result_ip, result_share_name = self.helper._get_export_location(share)
+        expected_ip = ''
+        expected_name = ''
+        if protocol == 'MULTI':
+            expected_ip = fake.SHARE_ADDRESS_2
+            expected_name = fake.SHARE_NAME
+
+        self.assertEqual(expected_ip, result_ip)
+        self.assertEqual(expected_name, result_share_name)
 
     def test_cleanup_demoted_replica(self):
         self.helper.cleanup_demoted_replica(fake.CIFS_SHARE, fake.SHARE_NAME)
