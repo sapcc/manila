@@ -188,6 +188,9 @@ class NetAppCmodeCIFSHelper(base.NetAppBaseHelper):
     @na_utils.trace
     def _get_export_location(self, share):
         """Returns host ip and share name for a given CIFS share."""
+        if share['share_proto'].lower() == 'multi':
+            return self._get_multi_export_location(share)
+
         export_location = self._get_share_export_location(share) or '\\\\\\'
         regex = r'^(?:\\\\|//)(?P<host_ip>.*)(?:\\|/)(?P<share_name>.*)$'
         match = re.match(regex, export_location)
@@ -195,6 +198,24 @@ class NetAppCmodeCIFSHelper(base.NetAppBaseHelper):
             return match.group('host_ip'), match.group('share_name')
         else:
             return '', ''
+
+    @na_utils.trace
+    def _get_multi_export_location(self, share):
+        """Returns host ip and share name for a given MULTI share.
+
+        Duplicates few lines of _get_export_location(), but is easier to
+        carry forward in coming release upgrades that way.
+
+        Need to look at all export locations, because the first one may
+        not match the CIFS style.
+        """
+        for export_location in share.get('export_locations'):
+            regex = r'^(?:\\\\|//)(?P<host_ip>.*)(?:\\|/)(?P<share_name>.*)$'
+            match = re.match(regex, export_location['path'])
+            if match:
+                return match.group('host_ip'), match.group('share_name')
+
+        return '', ''
 
     @na_utils.trace
     def cleanup_demoted_replica(self, share, share_name):
