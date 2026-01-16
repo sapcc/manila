@@ -7271,10 +7271,10 @@ class NetAppClientCmodeTestCase(test.TestCase):
             relationship_info_only=relationship_info_only)
 
         snapmirror_release_args = {
-            'source-vserver': fake.SM_SOURCE_VSERVER,
-            'source-volume': fake.SM_SOURCE_VOLUME,
-            'destination-vserver': fake.SM_DEST_VSERVER,
-            'destination-volume': fake.SM_DEST_VOLUME,
+            'source-location':
+                f"{fake.SM_SOURCE_VSERVER}:{fake.SM_SOURCE_VOLUME}",
+            'destination-location':
+                f"{fake.SM_DEST_VSERVER}:{fake.SM_DEST_VOLUME}",
             'relationship-info-only': ('true' if relationship_info_only
                                        else 'false'),
         }
@@ -7327,10 +7327,10 @@ class NetAppClientCmodeTestCase(test.TestCase):
             fake.SM_DEST_VSERVER, fake.SM_DEST_VOLUME)
 
         snapmirror_quiesce_args = {
-            'source-vserver': fake.SM_SOURCE_VSERVER,
-            'source-volume': fake.SM_SOURCE_VOLUME,
-            'destination-vserver': fake.SM_DEST_VSERVER,
-            'destination-volume': fake.SM_DEST_VOLUME,
+            'source-location':
+                f"{fake.SM_SOURCE_VSERVER}:{fake.SM_SOURCE_VOLUME}",
+            'destination-location':
+                f"{fake.SM_DEST_VSERVER}:{fake.SM_DEST_VOLUME}",
         }
         self.client.send_request.assert_has_calls([
             mock.call('snapmirror-quiesce', snapmirror_quiesce_args)])
@@ -7360,10 +7360,10 @@ class NetAppClientCmodeTestCase(test.TestCase):
             clear_checkpoint=clear_checkpoint)
 
         snapmirror_abort_args = {
-            'source-vserver': fake.SM_SOURCE_VSERVER,
-            'source-volume': fake.SM_SOURCE_VOLUME,
-            'destination-vserver': fake.SM_DEST_VSERVER,
-            'destination-volume': fake.SM_DEST_VOLUME,
+            'source-location':
+                f"{fake.SM_SOURCE_VSERVER}:{fake.SM_SOURCE_VOLUME}",
+            'destination-location':
+                f"{fake.SM_DEST_VSERVER}:{fake.SM_DEST_VOLUME}",
             'clear-checkpoint': 'true' if clear_checkpoint else 'false',
         }
         self.client.send_request.assert_has_calls([
@@ -7394,10 +7394,10 @@ class NetAppClientCmodeTestCase(test.TestCase):
             fake.SM_DEST_VSERVER, fake.SM_DEST_VOLUME)
 
         snapmirror_abort_args = {
-            'source-vserver': fake.SM_SOURCE_VSERVER,
-            'source-volume': fake.SM_SOURCE_VOLUME,
-            'destination-vserver': fake.SM_DEST_VSERVER,
-            'destination-volume': fake.SM_DEST_VOLUME,
+            'source-location':
+                f"{fake.SM_SOURCE_VSERVER}:{fake.SM_SOURCE_VOLUME}",
+            'destination-location':
+                f"{fake.SM_DEST_VSERVER}:{fake.SM_DEST_VOLUME}",
             'clear-checkpoint': 'false',
         }
         self.client.send_request.assert_has_calls([
@@ -7421,10 +7421,10 @@ class NetAppClientCmodeTestCase(test.TestCase):
             fake.SM_DEST_VSERVER, fake.SM_DEST_VOLUME)
 
         snapmirror_break_args = {
-            'source-vserver': fake.SM_SOURCE_VSERVER,
-            'source-volume': fake.SM_SOURCE_VOLUME,
-            'destination-vserver': fake.SM_DEST_VSERVER,
-            'destination-volume': fake.SM_DEST_VOLUME,
+            'source-location':
+                f"{fake.SM_SOURCE_VSERVER}:{fake.SM_SOURCE_VOLUME}",
+            'destination-location':
+                f"{fake.SM_DEST_VSERVER}:{fake.SM_DEST_VOLUME}",
         }
         self.client.send_request.assert_has_calls([
             mock.call('snapmirror-break', snapmirror_break_args)])
@@ -7573,10 +7573,10 @@ class NetAppClientCmodeTestCase(test.TestCase):
         snapmirror_delete_args = {
             'query': {
                 'snapmirror-info': {
-                    'source-vserver': fake.SM_SOURCE_VSERVER,
-                    'source-volume': fake.SM_SOURCE_VOLUME,
-                    'destination-vserver': fake.SM_DEST_VSERVER,
-                    'destination-volume': fake.SM_DEST_VOLUME,
+                    'source-location':
+                        f"{fake.SM_SOURCE_VSERVER}:{fake.SM_SOURCE_VOLUME}",
+                    'destination-location':
+                        f"{fake.SM_DEST_VSERVER}:{fake.SM_DEST_VOLUME}",
                 }
             }
         }
@@ -7808,10 +7808,10 @@ class NetAppClientCmodeTestCase(test.TestCase):
             fake.SM_DEST_VSERVER, fake.SM_DEST_VOLUME)
 
         snapmirror_resume_args = {
-            'source-vserver': fake.SM_SOURCE_VSERVER,
-            'source-volume': fake.SM_SOURCE_VOLUME,
-            'destination-vserver': fake.SM_DEST_VSERVER,
-            'destination-volume': fake.SM_DEST_VOLUME,
+            'source-location':
+                f"{fake.SM_SOURCE_VSERVER}:{fake.SM_SOURCE_VOLUME}",
+            'destination-location':
+                f"{fake.SM_DEST_VSERVER}:{fake.SM_DEST_VOLUME}",
         }
         self.client.send_request.assert_has_calls([
             mock.call('snapmirror-resume', snapmirror_resume_args)])
@@ -7839,10 +7839,10 @@ class NetAppClientCmodeTestCase(test.TestCase):
             fake.SM_DEST_VSERVER, fake.SM_DEST_VOLUME)
 
         snapmirror_resume_args = {
-            'source-vserver': fake.SM_SOURCE_VSERVER,
-            'source-volume': fake.SM_SOURCE_VOLUME,
-            'destination-vserver': fake.SM_DEST_VSERVER,
-            'destination-volume': fake.SM_DEST_VOLUME,
+            'source-location':
+                f"{fake.SM_SOURCE_VSERVER}:{fake.SM_SOURCE_VOLUME}",
+            'destination-location':
+                f"{fake.SM_DEST_VSERVER}:{fake.SM_DEST_VOLUME}",
         }
         self.client.send_request.assert_has_calls([
             mock.call('snapmirror-resume', snapmirror_resume_args)])
@@ -7864,10 +7864,10 @@ class NetAppClientCmodeTestCase(test.TestCase):
             fake.SM_DEST_VSERVER, fake.SM_DEST_VOLUME)
 
         snapmirror_resync_args = {
-            'source-vserver': fake.SM_SOURCE_VSERVER,
-            'source-volume': fake.SM_SOURCE_VOLUME,
-            'destination-vserver': fake.SM_DEST_VSERVER,
-            'destination-volume': fake.SM_DEST_VOLUME,
+            'source-location':
+                f"{fake.SM_SOURCE_VSERVER}:{fake.SM_SOURCE_VOLUME}",
+            'destination-location':
+                f"{fake.SM_DEST_VSERVER}:{fake.SM_DEST_VOLUME}",
         }
         self.client.send_request.assert_has_calls([
             mock.call('snapmirror-resync', snapmirror_resync_args)])

@@ -177,6 +177,11 @@ class Detail(object):
           "or create a new subnet/share network. If this doesn't work, "
           "contact your administrator to troubleshoot "
           "issues with your network."))
+    UNSUPPORTED_REPLICA_CREATE_CONFIG = (
+        '034',
+        _("Share driver has failed to create share replica "
+          "because of unsupported configuration options. "
+          "Please try again with a different configuration."))
 
     # SCI: Keep the SCI CUSTOM MESSAGE at the end of list and count backwards
 
@@ -246,6 +251,7 @@ class Detail(object):
         UPDATE_METADATA_NOT_DELETED,
         CIFS_SERVER_SETUP_FAILED,
         CIFS_SERVER_CERTIFICATE_ERROR,
+        UNSUPPORTED_REPLICA_CREATE_CONFIG
     )
 
     # Exception and detail mappings

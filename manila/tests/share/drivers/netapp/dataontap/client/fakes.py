@@ -4169,7 +4169,8 @@ SNAPMIRROR_GET_ITER_RESPONSE_REST = {
                 }
             },
             "policy": {
-                "type": "async"
+                "type": "async",
+                "name": "MirrorAllSnapshots"
             },
             "state": "snapmirrored",
             "healthy": True,
@@ -4195,6 +4196,7 @@ REST_GET_SNAPMIRRORS_RESPONSE = [{
     'source-volume': SM_SOURCE_VOLUME,
     'source-vserver': SM_SOURCE_VSERVER,
     'uuid': FAKE_UUID,
+    'policy': 'MirrorAllSnapshots',
     'policy-type': 'async',
     'schedule': 'hourly',
     'transferring-state': 'success',
