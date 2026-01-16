@@ -42,6 +42,7 @@ from manila import coordination
 from manila import exception
 from manila.i18n import _
 from manila.message import api as message_api
+from manila.message import message_field
 from manila.share.drivers.netapp.dataontap.client import api as netapp_api
 from manila.share.drivers.netapp.dataontap.client import client_cmode
 from manila.share.drivers.netapp.dataontap.client import client_cmode_rest
@@ -166,6 +167,15 @@ class NetAppCmodeFileStorageLibrary(object):
         'setattr', 'symlink']
 
     SNAPLOCK_TYPE = ['compliance', 'enterprise']
+
+    # Replication policies supported by the driver
+    # this can be extended with additional pre-canned policies
+    # which requires some changes in data_motion.py module.
+    SUPPORTED_REPLICATION_POLICIES = [
+        "Sync",
+        "StrictSync",
+        "MirrorAllSnapshots"
+    ]
 
     def __init__(self, driver_name, **kwargs):
         na_utils.validate_driver_instantiation(**kwargs)
@@ -3062,9 +3072,26 @@ class NetAppCmodeFileStorageLibrary(object):
         return [replica for replica in replica_list
                 if replica['replica_state'] != constants.REPLICA_STATE_ACTIVE]
 
+    def _validate_replication_policy(self, replication_policy):
+        """Validates that the replication policy is supported by the driver.
+
+        :param replication_policy: The replication policy to validate.
+        :returns: True if the replication policy is supported, False otherwise.
+        """
+        return replication_policy in self.SUPPORTED_REPLICATION_POLICIES
+
+    @na_utils.trace
     def create_replica(self, context, replica_list, new_replica,
                        access_rules, share_snapshots, share_server=None):
         """Creates the new replica on this backend and sets up SnapMirror."""
+        # Cache frequently used fields
+        new_replica_id = new_replica['id']
+        new_replica_host = new_replica['host']
+        base_msg_args = {
+            'replica_id': new_replica_id,
+            'share_id': new_replica['share_id'],
+        }
+
         active_replica = self.find_active_replica(replica_list)
         dm_session = data_motion.DataMotionSession()
 
@@ -3076,9 +3103,52 @@ class NetAppCmodeFileStorageLibrary(object):
             src_backend, vserver_name=src_vserver)
         src_is_flexgroup = self._is_flexgroup_share(src_client, src_share_name)
 
-        pool_name = share_utils.extract_host(new_replica['host'], level='pool')
+        pool_name = share_utils.extract_host(new_replica_host, level='pool')
         dest_is_flexgroup = self._is_flexgroup_pool(pool_name)
 
+        # Get replication policy and validate (if present)
+        replication_policy, is_sync_policy = (
+            dm_session.get_policy_from_share_replica_metadata(new_replica)
+        )
+        LOG.debug("Replication policy for new replica %(replica_id)s "
+                  "from share %(share_id)s is '%(policy)s'.",
+                  {**base_msg_args,
+                   'policy': replication_policy})
+        if (replication_policy and not
+                self._validate_replication_policy(replication_policy)):
+            msg = _('Could not create replica %(replica_id)s from share '
+                    '%(share_id)s in the destination host %(dest_host)s. The '
+                    'replication policy %(policy)s is not supported.')
+            msg_args = {
+                **base_msg_args,
+                'dest_host': new_replica_host,
+                'policy': replication_policy,
+            }
+            raise exception.NetAppException(msg % msg_args)
+
+        if is_sync_policy and len(share_snapshots) > 0:
+            msg = _('Could not create replica %(replica_id)s from share '
+                    '%(share_id)s in the destination host %(dest_host)s. '
+                    'Synchronous replication is not supported for shares '
+                    'that have snapshots. Either use asynchronous replication '
+                    '(MirrorAllSnapshots) or '
+                    'delete existing snapshots on the share.')
+            msg_args = {
+                **base_msg_args,
+                'dest_host': new_replica_host,
+            }
+            self.message_api.create(
+                context,
+                message_field.Action.CREATE,
+                context.project_id,
+                resource_type=message_field.Resource.SHARE_REPLICA,
+                resource_id=new_replica_id,
+                detail=(message_field.Detail
+                        .UNSUPPORTED_REPLICA_CREATE_CONFIG)
+            )
+            raise exception.NetAppException(msg % msg_args)
+
+        # Ensure source and destination are the same pool type
         if src_is_flexgroup != dest_is_flexgroup:
             src_type = 'FlexGroup' if src_is_flexgroup else 'FlexVol'
             dest_type = 'FlexGroup' if dest_is_flexgroup else 'FlexVol'
@@ -3086,10 +3156,32 @@ class NetAppCmodeFileStorageLibrary(object):
                     '%(share_id)s in the destination host %(dest_host)s. The '
                     'source share is from %(src_type)s style, while the '
                     'destination replica host is %(dest_type)s style.')
-            msg_args = {'replica_id': new_replica['id'],
-                        'share_id': new_replica['share_id'],
-                        'dest_host': new_replica['host'],
-                        'src_type': src_type, 'dest_type': dest_type}
+            msg_args = {
+                **base_msg_args,
+                'dest_host': new_replica_host,
+                'src_type': src_type,
+                'dest_type': dest_type,
+            }
+            raise exception.NetAppException(msg % msg_args)
+
+        if (dest_is_flexgroup and replication_policy and is_sync_policy):
+            msg = _('Could not create replica %(replica_id)s from share '
+                    '%(share_id)s in the destination host %(dest_host)s. '
+                    'FlexGroup shares are not supported for Sync type '
+                    'replication as per ONTAP design.')
+            msg_args = {
+                **base_msg_args,
+                'dest_host': new_replica_host,
+            }
+            self.message_api.create(
+                context,
+                message_field.Action.CREATE,
+                context.project_id,
+                resource_type=message_field.Resource.SHARE_REPLICA,
+                resource_id=new_replica_id,
+                detail=(message_field.Detail
+                        .UNSUPPORTED_REPLICA_CREATE_CONFIG)
+            )
             raise exception.NetAppException(msg % msg_args)
 
         # NOTE(felipe_rodrigues): The FlexGroup replication does not support
@@ -3102,13 +3194,14 @@ class NetAppCmodeFileStorageLibrary(object):
                 msg = _('Could not create replica %(replica_id)s from share '
                         '%(share_id)s in the destination host %(dest_host)s. '
                         'The share does not support more than one replica.')
-                msg_args = {'replica_id': new_replica['id'],
-                            'share_id': new_replica['share_id'],
-                            'dest_host': new_replica['host']}
+                msg_args = {
+                    **base_msg_args,
+                    'dest_host': new_replica_host,
+                }
                 raise exception.NetAppException(msg % msg_args)
 
         # 1. Create the destination share
-        dest_backend = share_utils.extract_host(new_replica['host'],
+        dest_backend = share_utils.extract_host(new_replica_host,
                                                 level='backend_name')
 
         vserver = (dm_session.get_vserver_from_share(new_replica) or
@@ -3123,11 +3216,11 @@ class NetAppCmodeFileStorageLibrary(object):
                                  set_qos=is_readable)
 
         # 2. Setup SnapMirror with mounting replica whether 'readable' type.
-        relationship_type = na_utils.get_relationship_type(dest_is_flexgroup)
+        relationship_type = na_utils.EXTENDED_DATA_PROTECTION_TYPE
         dm_session.create_snapmirror(active_replica, new_replica,
                                      relationship_type, mount=is_readable)
 
-        # 3. Create export location
+        # 3. Create export location and update access rules (if readable)
         model_update = {
             'export_locations': [],
             'replica_state': constants.REPLICA_STATE_OUT_OF_SYNC,
@@ -3141,7 +3234,7 @@ class NetAppCmodeFileStorageLibrary(object):
             if access_rules:
                 helper = self._get_helper(new_replica)
                 helper.set_client(vserver_client)
-                share_name = self._get_backend_share_name(new_replica['id'])
+                share_name = self._get_backend_share_name(new_replica_id)
                 try:
                     helper.update_access(new_replica, share_name, access_rules,
                                          replica=True)
@@ -3151,6 +3244,7 @@ class NetAppCmodeFileStorageLibrary(object):
 
         return model_update
 
+    @na_utils.trace
     def delete_replica(self, context, replica_list, replica, share_snapshots,
                        share_server=None):
         """Removes the replica on this backend and destroys SnapMirror."""
@@ -3238,10 +3332,7 @@ class NetAppCmodeFileStorageLibrary(object):
         if not snapmirrors:
             if replica['status'] != constants.STATUS_CREATING:
                 try:
-                    pool_name = share_utils.extract_host(replica['host'],
-                                                         level='pool')
-                    relationship_type = na_utils.get_relationship_type(
-                        self._is_flexgroup_pool(pool_name))
+                    relationship_type = na_utils.EXTENDED_DATA_PROTECTION_TYPE
                     dm_session.create_snapmirror(active_replica, replica,
                                                  relationship_type,
                                                  mount=is_readable)
@@ -3252,18 +3343,50 @@ class NetAppCmodeFileStorageLibrary(object):
             return constants.REPLICA_STATE_OUT_OF_SYNC
 
         snapmirror = snapmirrors[0]
+
+        # Determine desired steady state based on policy type.
+        # Async policies target 'snapmirrored';
+        # sync policies target 'in_sync'.
+        policy_type = snapmirror.get('policy-type', '').lower()
+        LOG.debug("policy_type %s for replica %s.", policy_type,
+                  replica['id'])
+        is_sync_policy = (
+            policy_type in (
+                na_utils.SYNC_POLICY_TYPE_NAME,
+                na_utils.ZAPI_STRICT_SYNC_POLICY_TYPE_NAME,
+                na_utils.ZAPI_SYNC_POLICY_TYPE_NAME
+            )
+        )
+        LOG.debug("is_sync_policy %s for replica %s.", is_sync_policy,
+                  replica['id'])
+        desired_state = (
+            vserver_client.get_desired_sync_snapmirror_state()
+            if is_sync_policy
+            else na_utils.SM_SNAPMIRRORED_STATE
+        )
+        LOG.debug("desired_state %s for replica %s.", desired_state,
+                  replica['id'])
+
         # NOTE(dviroel): Don't try to resume or resync a SnapMirror that has
         # one of the in progress transfer states, because the storage will
         # answer with an error.
-        in_progress_status = ['preparing', 'transferring', 'finalizing',
-                              'synchronizing']
-        if (snapmirror.get('mirror-state') != 'snapmirrored' and
-                (snapmirror.get('relationship-status') in in_progress_status or
-                 snapmirror.get('transferring-state') in in_progress_status)):
+        in_progress_status = [
+            na_utils.SM_PREPARING_STATE,
+            na_utils.SM_TRANSFERRING_STATE,
+            na_utils.SM_SYNCHRONIZING_STATE,
+            na_utils.SM_FINALIZING_STATE
+        ]
+        if (snapmirror.get('mirror-state') != desired_state and
+            (snapmirror.get('relationship-status') in in_progress_status or
+             snapmirror.get('transferring-state') in in_progress_status)):
+            LOG.debug("Entered in-progress state for replica %s.",
+                      replica['id'])
             return constants.REPLICA_STATE_OUT_OF_SYNC
 
-        if snapmirror.get('mirror-state') != 'snapmirrored':
+        if snapmirror.get('mirror-state') != desired_state:
             try:
+                LOG.debug("Invoking snapmirror resume/resync for replica %s.",
+                          replica['id'])
                 vserver_client.resume_snapmirror_vol(
                     snapmirror['source-vserver'],
                     snapmirror['source-volume'],
@@ -3279,31 +3402,36 @@ class NetAppCmodeFileStorageLibrary(object):
                 LOG.exception("Could not resync snapmirror.")
                 return constants.STATUS_ERROR
 
-        if skip_conf_snapmirror_schedule is False:
-            # Enforce the SnapMirror schedule to match the configuration
-            current_schedule = snapmirror.get('schedule')
-            new_schedule = self.configuration.netapp_snapmirror_schedule
-            if current_schedule != new_schedule:
-                dm_session.modify_snapmirror(active_replica, replica,
-                                             schedule=new_schedule)
-                LOG.debug('Modify snapmirror schedule for replica:'
-                          '%(replica)s from %(from)s to %(to)s',
-                          {'replica': replica['id'],
-                           'from': current_schedule,
-                           'to': new_schedule})
+        # For async type policy, reconcile schedules/RPO if they differ.
+        # Sync/StrictSync do not use schedules; skip modification.
+        # Also skip if the schedule is overridden via share metadata (snapmirror_schedule).     # noqa: E501
+        if not is_sync_policy:
+            if not skip_conf_snapmirror_schedule:
+                current_schedule = snapmirror.get('schedule')
+                new_schedule = self.configuration.netapp_snapmirror_schedule
+                if current_schedule != new_schedule:
+                    dm_session.modify_snapmirror(active_replica, replica,
+                                                 schedule=new_schedule)
+                    LOG.debug('Modify snapmirror schedule for replica:'
+                              '%(replica)s from %(from)s to %(to)s',
+                              {'replica': replica['id'],
+                               'from': current_schedule,
+                               'to': new_schedule})
 
-        last_update_timestamp = float(
-            snapmirror.get('last-transfer-end-timestamp', 0))
-        # Recovery Point Objective (RPO) indicates the point in time to
-        # which data can be recovered. The RPO target is typically less
-        # than twice the replication schedule.
-        if (last_update_timestamp and
-            (timeutils.is_older_than(
-                datetime.datetime.fromtimestamp(
-                    last_update_timestamp,
-                    tz=datetime.timezone.utc).replace(tzinfo=None)
-                .isoformat(), (2 * self._snapmirror_schedule)))):
-            return constants.REPLICA_STATE_OUT_OF_SYNC
+            last_update_timestamp = float(
+                snapmirror.get('last-transfer-end-timestamp', 0))
+            # Recovery Point Objective (RPO) indicates the point in time to
+            # which data can be recovered. The RPO target is typically less
+            # than twice the replication schedule.
+            if (last_update_timestamp and
+                (timeutils.is_older_than(
+                    datetime.datetime.fromtimestamp(
+                        last_update_timestamp,
+                        tz=datetime.timezone.utc).replace(tzinfo=None)
+                    .isoformat(), (2 * self._snapmirror_schedule)))):
+                LOG.debug("Last updated timestamp is too old for replica %s.",
+                          replica['id'])
+                return constants.REPLICA_STATE_OUT_OF_SYNC
 
         last_transfer_error = snapmirror.get('last-transfer-error', None)
         if last_transfer_error:
@@ -3320,6 +3448,12 @@ class NetAppCmodeFileStorageLibrary(object):
             if (not snapshot_name or
                     not vserver_client.snapshot_exists(snapshot_name,
                                                        share_name)):
+                LOG.debug('Could not find the share snapshot ' +
+                          '%(snap)s on destination site or ' +
+                          'provider_location is not set for ' +
+                          'replica %(replica)s.', {
+                              'snap': snapshot_name,
+                              'replica': replica['id']})
                 return constants.REPLICA_STATE_OUT_OF_SYNC
 
         # NOTE(sfernand): When promoting replicas, the previous source volume
@@ -3333,6 +3467,7 @@ class NetAppCmodeFileStorageLibrary(object):
 
         return constants.REPLICA_STATE_IN_SYNC
 
+    @na_utils.trace
     def promote_replica(self, context, replica_list, replica, access_rules,
                         share_server=None, quiesce_wait_time=None):
         """Switch SnapMirror relationships and allow r/w ops on replica.
@@ -3705,6 +3840,7 @@ class NetAppCmodeFileStorageLibrary(object):
 
         return new_active_replica
 
+    @na_utils.trace
     def _safe_change_replica_source(self, dm_session, replica,
                                     orig_source_replica,
                                     new_source_replica, replica_list,
@@ -3725,11 +3861,12 @@ class NetAppCmodeFileStorageLibrary(object):
         :return: Updated replica.
         """
         try:
-            dm_session.change_snapmirror_source(replica,
-                                                orig_source_replica,
-                                                new_source_replica,
-                                                replica_list,
-                                                is_flexgroup=is_flexgroup)
+            is_sync_policy = dm_session.change_snapmirror_source(
+                replica,
+                orig_source_replica,
+                new_source_replica,
+                replica_list,
+                is_flexgroup=is_flexgroup)
         # Catch everything! The original source may be down,
         # but in this disaster scenario we still want to continue
         except Exception as e:
@@ -3742,7 +3879,11 @@ class NetAppCmodeFileStorageLibrary(object):
             LOG.exception(msg)
             return replica
 
-        replica['replica_state'] = constants.REPLICA_STATE_OUT_OF_SYNC
+        replica['replica_state'] = (
+            constants.REPLICA_STATE_IN_SYNC
+            if is_sync_policy
+            else constants.REPLICA_STATE_OUT_OF_SYNC
+        )
         replica['status'] = constants.STATUS_AVAILABLE
         if is_dr:
             replica['export_locations'] = []
