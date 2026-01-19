@@ -210,6 +210,7 @@ REST_API_VERSION_HISTORY = """
              to driver.
     * 2.89 - Added encryption key reference option to share create API.
     * 2.89 - Added QoS type and specs APIs.
+    * 2.89 - Added Share Replica Metadata to Metadata API
 """
 
 # The minimum and maximum versions of the API supported

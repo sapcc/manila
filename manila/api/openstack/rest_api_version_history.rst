@@ -483,3 +483,5 @@ user documentation.
 ----
   Added ``encryption_key_ref`` option to share create API.
   Added qos_type and specs APIs.
+  Added Metadata API methods (GET, PUT, POST, DELETE)
+  to Share Replicas.
