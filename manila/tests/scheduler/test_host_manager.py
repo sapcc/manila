@@ -507,12 +507,20 @@ class HostManagerTestCase(test.TestCase):
             for pool in expected:
                 self.assertIn(pool, res)
 
-    def test_get_pools_host_down(self):
+    @ddt.data({'cached': True, 'missing_pools': True},
+              {'cached': True, 'missing_pools': False},
+              {'cached': False, 'missing_pools': True},
+              {'cached': False, 'missing_pools': False})
+    @ddt.unpack
+    def test_get_pools_host_down(self, cached, missing_pools):
         fake_context = context.RequestContext('user', 'project')
         mock_service_is_up = self.mock_object(utils, 'service_is_up')
         self.mock_object(
             db, 'service_get_all_by_topic',
             mock.Mock(return_value=fakes.SHARE_SERVICES_NO_POOLS))
+        map_update_mock = self.mock_object(
+            self.host_manager, '_update_host_state_map',
+            mock.Mock(wraps=self.host_manager._update_host_state_map))
         host_manager.LOG.warning = mock.Mock()
 
         with mock.patch.dict(self.host_manager.service_states,
@@ -523,14 +531,26 @@ class HostManagerTestCase(test.TestCase):
 
             # Call once to update the host state map
             self.host_manager.get_pools(fake_context)
+            host_state_map_update_calls = 1
 
             self.assertEqual(len(fakes.SHARE_SERVICES_NO_POOLS),
                              len(self.host_manager.host_state_map))
 
             # Then mock one host as down
             mock_service_is_up.side_effect = [True, True, False]
+            if missing_pools:
+                self.host_manager.host_state_map = {
+                    'host1@back1': host_manager.HostState('host1'),
+                    'host2@back2': host_manager.HostState('host2',
+                                                          {'pools': []}),
+                }
 
-            res = self.host_manager.get_pools(fake_context)
+            res = self.host_manager.get_pools(fake_context, cached=cached)
+            if not cached or missing_pools:
+                host_state_map_update_calls += 1
+
+            self.assertEqual(map_update_mock.call_count,
+                             host_state_map_update_calls)
 
             expected = [
                 {
@@ -609,11 +629,12 @@ class HostManagerTestCase(test.TestCase):
             ]
             self.assertIsInstance(res, list)
             self.assertIsInstance(self.host_manager.host_state_map, dict)
-            self.assertEqual(len(expected), len(res))
-            self.assertEqual(len(expected),
-                             len(self.host_manager.host_state_map))
-            for pool in expected:
-                self.assertIn(pool, res)
+            if not cached or missing_pools:
+                self.assertEqual(len(expected), len(res))
+                self.assertEqual(len(expected),
+                                 len(self.host_manager.host_state_map))
+                for pool in expected:
+                    self.assertIn(pool, res)
 
     def test_get_pools_with_filters(self):
         fake_context = context.RequestContext('user', 'project')
