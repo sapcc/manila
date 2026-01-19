@@ -26,6 +26,7 @@ from webob import exc
 from manila.api import common
 from manila.api.openstack import api_version_request as api_version
 from manila.api.openstack import wsgi
+from manila.api.v2 import metadata
 from manila.api.views import share_replicas as replication_view
 from manila.common import constants
 from manila import db
@@ -40,7 +41,8 @@ PRE_GRADUATION_VERSION = '2.55'
 GRADUATION_VERSION = '2.56'
 
 
-class ShareReplicationController(wsgi.Controller, wsgi.AdminActionsMixin):
+class ShareReplicationController(wsgi.Controller, metadata.MetadataController,
+                                 wsgi.AdminActionsMixin):
     """The Share Replication API controller for the OpenStack API."""
 
     resource_name = 'share_replica'
@@ -83,6 +85,37 @@ class ShareReplicationController(wsgi.Controller, wsgi.AdminActionsMixin):
     def detail(self, req):  # pylint: disable=function-redefined  # noqa F811
         """Returns a detailed list of replicas."""
         return self._get_replicas(req, is_detail=True)
+
+    @wsgi.Controller.api_version("2.89")
+    @wsgi.Controller.authorize("get_metadata")
+    def index_metadata(self, req, resource_id):
+        """Returns the list of metadata for a given share replica."""
+        return self._index_metadata(req, resource_id)
+
+    @wsgi.Controller.api_version("2.89")
+    @wsgi.Controller.authorize("update_metadata")
+    def create_metadata(self, req, resource_id, body):
+        return self._create_metadata(req, resource_id, body)
+
+    @wsgi.Controller.api_version("2.89")
+    @wsgi.Controller.authorize("update_metadata")
+    def update_all_metadata(self, req, resource_id, body):
+        return self._update_all_metadata(req, resource_id, body)
+
+    @wsgi.Controller.api_version("2.89")
+    @wsgi.Controller.authorize("update_metadata")
+    def update_metadata_item(self, req, resource_id, body, key):
+        return self._update_metadata_item(req, resource_id, body, key)
+
+    @wsgi.Controller.api_version("2.89")
+    @wsgi.Controller.authorize("get_metadata")
+    def show_metadata(self, req, resource_id, key):
+        return self._show_metadata(req, resource_id, key)
+
+    @wsgi.Controller.api_version("2.89")
+    @wsgi.Controller.authorize("delete_metadata")
+    def delete_metadata(self, req, resource_id, key):
+        return self._delete_metadata(req, resource_id, key)
 
     @wsgi.Controller.authorize('get_all')
     def _get_replicas(self, req, is_detail=False):
@@ -148,13 +181,20 @@ class ShareReplicationController(wsgi.Controller, wsgi.AdminActionsMixin):
     def create(self, req, body):  # pylint: disable=function-redefined  # noqa F811
         return self._create(req, body)
 
-    @wsgi.Controller.api_version("2.67") # noqa
+    @wsgi.Controller.api_version("2.67", "2.88") # noqa
     @wsgi.response(202)
     def create(self, req, body): # pylint: disable=function-redefined  # noqa F811
         return self._create(req, body, allow_scheduler_hints=True)
 
+    @wsgi.Controller.api_version("2.89")  # noqa
+    @wsgi.response(202)
+    def create(self, req, body):  # pylint: disable=function-redefined  # noqa F811
+        return self._create(req, body, allow_scheduler_hints=True,
+                            allow_metadata=True)
+
     @wsgi.Controller.authorize('create')
-    def _create(self, req, body, allow_scheduler_hints=False):
+    def _create(self, req, body, allow_scheduler_hints=False,
+                allow_metadata=False):
         """Add a replica to an existing share."""
         context = req.environ['manila.context']
         self._validate_body(body)
@@ -235,10 +275,16 @@ class ShareReplicationController(wsgi.Controller, wsgi.AdminActionsMixin):
             raise exc.HTTPBadRequest(explanation=msg % share_network_id)
 
         try:
+            metadata_dict = {}
+            if allow_metadata:
+                metadata_dict = body.get('share_replica').get(
+                    'metadata', {})
+
             new_replica = self.share_api.create_share_replica(
                 context, share_ref, availability_zone=availability_zone,
                 share_network_id=share_network_id,
-                scheduler_hints=scheduler_hints, replica_id=share_replica_id)
+                scheduler_hints=scheduler_hints, replica_id=share_replica_id,
+                metadata=metadata_dict)
         except exception.AvailabilityZoneNotFound as e:
             raise exc.HTTPBadRequest(explanation=e.msg)
         except exception.ReplicationException as e:
