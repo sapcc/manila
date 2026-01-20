@@ -5880,6 +5880,7 @@ class ShareManager(manager.SchedulerDependentManager):
             'source_share_group_snapshot_member_id': share_instance.get(
                 'source_share_group_snapshot_member_id'),
             'availability_zone': share_instance.get('availability_zone'),
+            'qos_type_id': share_instance.get('qos_type_id'),
         }
         # share type is nullable
         if share_instance_ref.get('share_type'):

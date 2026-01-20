@@ -1000,6 +1000,7 @@ class ShareManagerTestCase(test.TestCase):
                 'source_share_group_snapshot_member_id'),
             'availability_zone': share_instance.get('availability_zone'),
             'export_locations': share_instance.get('export_locations') or [],
+            'qos_type_id': share_instance.get('qos_type_id'),
         }
         share_type = share_instance.get('share_type')
         if share_type:
