@@ -227,6 +227,7 @@ class NetAppCmodeNFSHelper(base.NetAppBaseHelper):
             self._client.set_nfs_export_policy_for_volume(
                 share_name, expected_export_policy)
         else:
+            self._client.soft_delete_nfs_export_policy(expected_export_policy)
             self._client.rename_nfs_export_policy(actual_export_policy,
                                                   expected_export_policy)
 
