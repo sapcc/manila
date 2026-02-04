@@ -2060,11 +2060,14 @@ def _share_replica_get_with_filters(context, share_id=None, replica_id=None,
     query = model_query(context, models.ShareInstance, session=session,
                         read_deleted="no")
 
+    # Always join with Share table - needed for project filtering (non-admins)
+    # and for checking replication_type (admins with NULL replica_state)
+    query = query.join(
+        models.Share,
+        models.ShareInstance.share_id == models.Share.id)
+
     if not context.is_admin:
-        query = query.join(
-            models.Share,
-            models.ShareInstance.share_id == models.Share.id).filter(
-            models.Share.project_id == context.project_id)
+        query = query.filter(models.Share.project_id == context.project_id)
 
     if share_id is not None:
         query = query.filter(models.ShareInstance.share_id == share_id)
@@ -2076,7 +2079,15 @@ def _share_replica_get_with_filters(context, share_id=None, replica_id=None,
         query = query.filter(
             models.ShareInstance.replica_state == replica_state)
     else:
-        query = query.filter(models.ShareInstance.replica_state.isnot(None))
+        if not context.is_admin:
+            query = query.filter(
+                models.ShareInstance.replica_state.isnot(None))
+        else:
+            # For admins, only include NULL replica_state if the share
+            # supports replication (replication_type is not NULL)
+            query = query.filter(
+                or_(models.ShareInstance.replica_state.isnot(None),
+                    models.Share.replication_type.isnot(None)))
 
     if status is not None:
         query = query.filter(models.ShareInstance.status == status)
