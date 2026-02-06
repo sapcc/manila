@@ -33,6 +33,7 @@ from oslo_log import log
 from oslo_serialization import jsonutils
 from oslo_service import loopingcall
 from oslo_service import periodic_task
+from oslo_service import threadgroup
 from oslo_utils import excutils
 from oslo_utils import importutils
 from oslo_utils import timeutils
@@ -186,6 +187,14 @@ share_manager_opts = [
                help='This value, specified in seconds, determines how often '
                     'the share manager will try to delete the share and share '
                     'snapshots in backend driver.'),
+    cfg.IntOpt('share_service_concurrency',
+               default=10,
+               min=1,
+               max=100,
+               help='Maximum number of concurrent share operations that can '
+                    'execute in parallel. Increase this value to improve '
+                    'throughput for I/O-bound operations (especially NetApp '
+                    'backend calls). Default is 10.'),
 ]
 
 CONF = cfg.CONF
@@ -258,6 +267,31 @@ def locked_share_network_operation(operation):
         return locked_network_operation(*args, **kwargs)
 
     return wrapped
+
+
+def run_concurrently(f):
+    """Decorator to enable concurrent execution of RPC methods.
+
+    Executes the decorated method in a green thread from the thread group,
+    allowing multiple RPC calls to run concurrently. This improves throughput
+    for I/O-bound operations that wait on backend responses.
+
+    The method still returns its result synchronously (blocks the caller),
+    but multiple concurrent calls execute in parallel green threads.
+
+    Uses oslo_service.threadgroup.ThreadGroup for green thread management.
+    Exceptions are propagated via Thread.wait() to maintain RPC semantics.
+    """
+    @functools.wraps(f)
+    def wrapper(self, *args, **kwargs):
+        # Fallback to direct execution if thread group is not available
+        if not hasattr(self, '_thread_group'):
+            return f(self, *args, **kwargs)
+
+        thread = self._thread_group.add_thread(f, self, *args, **kwargs)
+        return thread.wait()  # Wait for result and propagate exceptions
+
+    return wrapper
 
 
 def add_hooks(f):
@@ -344,6 +378,9 @@ class ShareManager(manager.SchedulerDependentManager):
         self.hooks = []
         self._init_hook_drivers()
         self.service_id = None
+
+        self._thread_group = threadgroup.ThreadGroup(
+            thread_pool_size=self.configuration.share_service_concurrency)
 
     def _init_hook_drivers(self):
         # Try to initialize hook driver(s).
@@ -454,6 +491,16 @@ class ShareManager(manager.SchedulerDependentManager):
                 f.write('ready\n')
         except Exception as e:
             LOG.error("Probe not written: %(e)s", {'e': str(e)})
+
+    def stop(self):
+        """Stop share manager gracefully.
+
+        Waits for thread group to complete pending tasks before shutdown.
+        This ensures in-flight operations complete cleanly.
+        """
+        if hasattr(self, '_thread_group'):
+            LOG.info("Stopping share manager, waiting for thread group...")
+            self._thread_group.stop(graceful=True)
 
     def is_service_ready(self):
         """Return if Manager is ready to accept requests.
@@ -2253,6 +2300,7 @@ class ShareManager(manager.SchedulerDependentManager):
             id = share.instance['id']
         return self.db.share_instance_get(context, id, with_share_data=True)
 
+    @run_concurrently
     @add_hooks
     @utils.require_driver_initialized
     def create_share_instance(self, context, share_instance_id,
@@ -3813,6 +3861,7 @@ class ShareManager(manager.SchedulerDependentManager):
             share_server.get('backend_details')
         return (share, share_instance, share_server)
 
+    @run_concurrently
     @add_hooks
     @utils.require_driver_initialized
     def delete_share_instance(self, context, share_instance_id, force=False,
@@ -4194,6 +4243,7 @@ class ShareManager(manager.SchedulerDependentManager):
         }
         LOG.info(msg, msg_args)
 
+    @run_concurrently
     @add_hooks
     @utils.require_driver_initialized
     def create_snapshot(self, context, share_id, snapshot_id):
@@ -4270,6 +4320,7 @@ class ShareManager(manager.SchedulerDependentManager):
                 share_type_id=share_type_id,
             )
 
+    @run_concurrently
     @add_hooks
     @utils.require_driver_initialized
     def delete_snapshot(self, context, snapshot_id, force=False,
@@ -4722,6 +4773,7 @@ class ShareManager(manager.SchedulerDependentManager):
             self.db.share_snapshot_instance_update(
                 context, replica_snapshot['id'], snapshot_update)
 
+    @run_concurrently
     @add_hooks
     @utils.require_driver_initialized
     def update_access(self, context, share_instance_id):
@@ -5064,6 +5116,7 @@ class ShareManager(manager.SchedulerDependentManager):
             "Share server '%s' has been deleted successfully.",
             share_server['id'])
 
+    @run_concurrently
     @add_hooks
     @utils.require_driver_initialized
     def extend_share(self, context, share_id, new_size, reservations):
