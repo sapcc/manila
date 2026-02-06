@@ -9007,3 +9007,221 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.mock_object(mock_des_client,
                          'list_volume_snapshots',
                          mock.Mock(return_value=snap_list))
+
+
+class NetAppFileStorageLibraryThreadSafetyTestCase(test.TestCase):
+    """Test cases for thread safety of NetApp driver."""
+
+    def setUp(self):
+        super(NetAppFileStorageLibraryThreadSafetyTestCase, self).setUp()
+
+        self.mock_object(na_utils, 'validate_driver_instantiation')
+        self.mock_object(na_utils, 'setup_tracing')
+
+        # Mock loggers as themselves to allow logger arg validation
+        mock_logger = log.getLogger('mock_logger')
+        self.mock_object(lib_base,
+                         'LOG',
+                         mock_logger)
+
+        kwargs = {
+            'driver_config': None,
+            'private_storage': mock.Mock(),
+            'configuration': fake.get_config_cmode(),
+            'app_version': fake.APP_VERSION
+        }
+
+        self.library = lib_base.NetAppCmodeFileStorageLibrary(
+            fake.DRIVER_NAME, **kwargs)
+        self.library._client = mock.Mock()
+        self.library._have_cluster_creds = True
+        self.context = mock.Mock()
+
+    def test_client_cache_concurrent_access_thread_safe(self):
+        """Test that concurrent access to _clients cache is thread-safe."""
+        import eventlet
+
+        # Mock the _get_client method to simulate real work
+        def mock_get_client(config, vserver=None):
+            # Simulate some I/O work
+            eventlet.sleep(0.01)
+            return mock.Mock(vserver=vserver)
+
+        self.mock_object(self.library, '_get_client', mock_get_client)
+
+        results = {}
+        errors = []
+
+        def access_client(vserver_name):
+            """Access the client cache concurrently."""
+            try:
+                client = self.library._get_api_client(vserver=vserver_name)
+                results[vserver_name] = client
+            except Exception as e:
+                errors.append(e)
+
+        # Simulate concurrent access to the same vserver
+        greenthreads = []
+        vservers = ['vserver1', 'vserver1', 'vserver2', 'vserver2']
+
+        for vserver in vservers:
+            gt = eventlet.spawn(access_client, vserver)
+            greenthreads.append(gt)
+
+        # Wait for all greenthreads to complete
+        for gt in greenthreads:
+            gt.wait()
+
+        # Verify no errors occurred
+        self.assertEqual([], errors)
+
+        # Verify we got results for all vservers
+        self.assertIn('vserver1', results)
+        self.assertIn('vserver2', results)
+
+        # Verify cache contains only 2 entries (one per unique vserver)
+        self.assertEqual(2, len(self.library._clients))
+        self.assertIn('vserver1', self.library._clients)
+        self.assertIn('vserver2', self.library._clients)
+
+    def test_backend_client_cache_concurrent_access_thread_safe(self):
+        """Test concurrent access to _backend_clients cache is thread-safe."""
+        import eventlet
+
+        # Mock the _get_client method
+        def mock_get_client(config, vserver=None):
+            eventlet.sleep(0.01)
+            return mock.Mock(vserver=vserver, config=config)
+
+        self.mock_object(self.library, '_get_client', mock_get_client)
+
+        # Mock data_motion.get_backend_configuration
+        def mock_get_backend_config(backend_name):
+            return mock.Mock(backend_name=backend_name)
+
+        self.mock_object(data_motion, 'get_backend_configuration',
+                         mock_get_backend_config)
+
+        results = {}
+        errors = []
+
+        def access_backend_client(backend_name, vserver_name):
+            """Access the backend client cache concurrently."""
+            try:
+                client = self.library._get_api_client_for_backend(
+                    backend_name, vserver=vserver_name)
+                key = f"{backend_name}-{vserver_name}"
+                results[key] = client
+            except Exception as e:
+                errors.append(e)
+
+        # Simulate concurrent access to the same backend
+        greenthreads = []
+        accesses = [
+            ('backend1', 'vserver1'),
+            ('backend1', 'vserver1'),
+            ('backend2', 'vserver2'),
+            ('backend2', 'vserver2'),
+        ]
+
+        for backend, vserver in accesses:
+            gt = eventlet.spawn(access_backend_client, backend, vserver)
+            greenthreads.append(gt)
+
+        # Wait for all greenthreads to complete
+        for gt in greenthreads:
+            gt.wait()
+
+        # Verify no errors occurred
+        self.assertEqual([], errors)
+
+        # Verify we got results for all backend-vserver combinations
+        self.assertIn('backend1-vserver1', results)
+        self.assertIn('backend2-vserver2', results)
+
+        # Verify cache contains only 2 entries (one per unique combination)
+        self.assertEqual(2, len(self.library._backend_clients))
+
+    def test_ssc_stats_concurrent_updates_thread_safe(self):
+        """Test that concurrent updates to _ssc_stats are thread-safe."""
+        import eventlet
+
+        errors = []
+
+        def update_ssc_stats(pool_name, stats):
+            """Update SSC stats concurrently."""
+            try:
+                # Simulate read-modify-write
+                eventlet.sleep(0.01)
+                current_stats = self.library._ssc_stats.get(pool_name, {})
+                current_stats.update(stats)
+                self.library._ssc_stats[pool_name] = current_stats
+            except Exception as e:
+                errors.append(e)
+
+        # Simulate concurrent updates to different pools
+        greenthreads = []
+        updates = [
+            ('pool1', {'key1': 'value1'}),
+            ('pool2', {'key2': 'value2'}),
+            ('pool1', {'key3': 'value3'}),
+            ('pool2', {'key4': 'value4'}),
+        ]
+
+        for pool, stats in updates:
+            gt = eventlet.spawn(update_ssc_stats, pool, stats)
+            greenthreads.append(gt)
+
+        # Wait for all greenthreads to complete
+        for gt in greenthreads:
+            gt.wait()
+
+        # Verify no errors occurred
+        self.assertEqual([], errors)
+
+        # Verify both pools have stats
+        self.assertIn('pool1', self.library._ssc_stats)
+        self.assertIn('pool2', self.library._ssc_stats)
+
+    def test_concurrent_client_cache_and_ssc_stats_access(self):
+        """Test concurrent access to multiple shared resources."""
+        import eventlet
+
+        def mock_get_client(config, vserver=None):
+            eventlet.sleep(0.01)
+            return mock.Mock(vserver=vserver)
+
+        self.mock_object(self.library, '_get_client', mock_get_client)
+
+        errors = []
+
+        def mixed_operations(iteration):
+            """Perform mixed operations on shared resources."""
+            try:
+                # Access client cache
+                self.library._get_api_client(
+                    vserver=f'vserver{iteration % 3}')
+
+                # Update SSC stats
+                pool_name = f'pool{iteration % 2}'
+                stats = {f'key{iteration}': f'value{iteration}'}
+                current_stats = self.library._ssc_stats.get(pool_name, {})
+                current_stats.update(stats)
+                self.library._ssc_stats[pool_name] = current_stats
+
+                eventlet.sleep(0.01)
+            except Exception as e:
+                errors.append(e)
+
+        # Simulate many concurrent operations
+        greenthreads = []
+        for i in range(20):
+            gt = eventlet.spawn(mixed_operations, i)
+            greenthreads.append(gt)
+
+        # Wait for all greenthreads to complete
+        for gt in greenthreads:
+            gt.wait()
+
+        # Verify no errors occurred
+        self.assertEqual([], errors)

@@ -264,6 +264,10 @@ class Service(service.Service):
         except Exception:
             pass
 
+        if hasattr(self.manager, "stop"):
+            LOG.info("Stopping manager %s", self.manager_class_name)
+            self.manager.stop()
+
         db.service_update(context.get_admin_context(),
                           self.service_id, {'state': 'stopped'})
         if self.coordinator:
