@@ -26,6 +26,7 @@ import json
 import math
 import re
 import socket
+import threading
 
 from manila.exception import SnapshotResourceNotFound
 from oslo_config import cfg
@@ -191,6 +192,10 @@ class NetAppCmodeFileStorageLibrary(object):
         self._backend_clients = {}
         self._ssc_stats = {}
         self._have_cluster_creds = None
+        # Thread safety locks for shared state
+        self._clients_lock = threading.RLock()
+        self._backend_clients_lock = threading.RLock()
+        self._ssc_stats_lock = threading.RLock()
         self._revert_to_snapshot_support = False
         self._cluster_info = {}
         self._default_nfs_config = None
@@ -309,22 +314,25 @@ class NetAppCmodeFileStorageLibrary(object):
 
     @na_utils.trace
     def _get_api_client(self, vserver=None):
-
+        """Get API client for vserver (thread-safe)."""
         # Use cached value to prevent redo calls during client initialization.
-        client = self._clients.get(vserver)
-        if not client:
-            client = self._get_client(self.configuration, vserver=vserver)
-            self._clients[vserver] = client
+        with self._clients_lock:
+            client = self._clients.get(vserver)
+            if not client:
+                client = self._get_client(self.configuration, vserver=vserver)
+                self._clients[vserver] = client
         return client
 
     @na_utils.trace
     def _get_api_client_for_backend(self, backend_name, vserver=None):
+        """Get backend API client (thread-safe)."""
         key = f"{backend_name}-{vserver}"
-        client = self._backend_clients.get(key)
-        if not client:
-            config = data_motion.get_backend_configuration(backend_name)
-            client = self._get_client(config, vserver=vserver)
-            self._backend_clients[key] = client
+        with self._backend_clients_lock:
+            client = self._backend_clients.get(key)
+            if not client:
+                config = data_motion.get_backend_configuration(backend_name)
+                client = self._get_client(config, vserver=vserver)
+                self._backend_clients[key] = client
         return client
 
     @na_utils.trace
@@ -532,7 +540,10 @@ class NetAppCmodeFileStorageLibrary(object):
         cluster_name = self._cluster_name
         if self._have_cluster_creds and not cluster_name:
             # Get up-to-date node utilization metrics just once.
-            self._perf_library.update_performance_cache({}, self._ssc_stats)
+            # Thread-safe read of SSC stats for performance cache
+            with self._ssc_stats_lock:
+                ssc_stats_copy = copy.deepcopy(self._ssc_stats)
+            self._perf_library.update_performance_cache({}, ssc_stats_copy)
             cluster_name = self._client.get_cluster_name()
             self._cluster_name = cluster_name
 
@@ -624,8 +635,9 @@ class NetAppCmodeFileStorageLibrary(object):
             'share_replicas_migration_support': True,
         }
 
-        # Add storage service catalog data.
-        pool_ssc_stats = self._ssc_stats.get(pool_name)
+        # Add storage service catalog data (thread-safe read).
+        with self._ssc_stats_lock:
+            pool_ssc_stats = self._ssc_stats.get(pool_name)
         if pool_ssc_stats:
             pool.update(pool_ssc_stats)
 
@@ -1868,7 +1880,9 @@ class NetAppCmodeFileStorageLibrary(object):
     def _check_aggregate_extra_specs_validity(self, pool_name, specs):
 
         for specs_key in ('netapp_disk_type', 'netapp_raid_type'):
-            aggr_value = self._ssc_stats.get(pool_name, {}).get(specs_key)
+            # Thread-safe read of SSC stats
+            with self._ssc_stats_lock:
+                aggr_value = self._ssc_stats.get(pool_name, {}).get(specs_key)
             specs_value = specs.get(specs_key)
 
             if aggr_value and specs_value and aggr_value != specs_value:
@@ -2929,7 +2943,9 @@ class NetAppCmodeFileStorageLibrary(object):
                  "backend '%s'", self._backend_name)
 
         # Work on a copy and update the ssc data atomically before returning.
-        ssc_stats = copy.deepcopy(self._ssc_stats)
+        # Thread-safe read of current SSC stats
+        with self._ssc_stats_lock:
+            ssc_stats = copy.deepcopy(self._ssc_stats)
 
         aggregate_names = self._find_matching_aggregates()
 
@@ -2997,7 +3013,9 @@ class NetAppCmodeFileStorageLibrary(object):
 
                 })
 
-        self._ssc_stats = ssc_stats
+        # Thread-safe write of updated SSC stats
+        with self._ssc_stats_lock:
+            self._ssc_stats = ssc_stats
 
     @na_utils.trace
     def _get_aggregate_info(self, aggregate_names):

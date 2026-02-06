@@ -154,6 +154,51 @@ class ShareManagerTestCase(test.TestCase):
             ) for hook in share_manager.configuration.safe_get.return_value
         ], any_order=True)
 
+    def test_config_thread_group_size_default(self):
+        """Verify default thread group size is 10."""
+        # Mock ThreadGroup initialization to verify pool size parameter
+        with mock.patch('oslo_service.threadgroup.ThreadGroup') as mock_tg:
+            importutils.import_object(
+                "manila.share.manager.ShareManager")
+            # Verify ThreadGroup was initialized with correct pool size
+            mock_tg.assert_called_once_with(thread_pool_size=10)
+
+    def test_config_thread_group_size_custom(self):
+        """Verify custom thread group size works."""
+        self.flags(share_service_concurrency=5)
+        # Mock ThreadGroup initialization to verify pool size parameter
+        with mock.patch('oslo_service.threadgroup.ThreadGroup') as mock_tg:
+            importutils.import_object(
+                "manila.share.manager.ShareManager")
+            # Verify ThreadGroup was initialized with custom pool size
+            mock_tg.assert_called_once_with(thread_pool_size=5)
+
+    def test_stop_calls_thread_group_stop_graceful(self):
+        """Verify stop() waits for thread group gracefully."""
+        # Mock the thread group's stop method
+        mock_stop = self.mock_object(
+            self.share_manager._thread_group, 'stop')
+
+        # Call stop on share manager
+        self.share_manager.stop()
+
+        # Verify thread group stop was called with graceful=True
+        mock_stop.assert_called_once_with(graceful=True)
+
+    def test_stop_without_thread_group(self):
+        """Verify stop() works when thread group not initialized."""
+        # Create share manager without thread group
+        share_manager = importutils.import_object(
+            "manila.share.manager.ShareManager")
+
+        # Remove thread group attribute
+        if hasattr(share_manager, '_thread_group'):
+            delattr(share_manager, '_thread_group')
+
+        # Should not raise exception even without thread group
+        # This just verifies no AttributeError is raised
+        share_manager.stop()
+
     def test__execute_periodic_hook(self):
         share_instances_mock = mock.Mock()
         hook_data_mock = mock.Mock()
