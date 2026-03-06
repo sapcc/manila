@@ -5624,7 +5624,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
         mock_get_nfs_export_rule_indices.assert_called_once_with(
             fake.EXPORT_POLICY_NAME, fake.IP_ADDRESS)
         mock_add_nfs_export_rule.assert_called_once_with(
-            fake.EXPORT_POLICY_NAME, fake.IP_ADDRESS, False, auth_methods)
+            fake.EXPORT_POLICY_NAME, fake.IP_ADDRESS, False,
+            auth_methods, anon_user_id=None)
         self.assertFalse(mock_update_nfs_export_rule.called)
 
     def test_add_nfs_export_rule_single_existing(self):
@@ -5650,7 +5651,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.assertFalse(mock_add_nfs_export_rule.called)
         mock_update_nfs_export_rule.assert_called_once_with(
             fake.EXPORT_POLICY_NAME, fake.IP_ADDRESS, False, '1',
-            auth_methods)
+            auth_methods, anon_user_id=None)
         mock_remove_nfs_export_rules.assert_called_once_with(
             fake.EXPORT_POLICY_NAME, [])
 
@@ -5675,7 +5676,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
             fake.EXPORT_POLICY_NAME, fake.IP_ADDRESS)
         self.assertFalse(mock_add_nfs_export_rule.called)
         mock_update_nfs_export_rule.assert_called_once_with(
-            fake.EXPORT_POLICY_NAME, fake.IP_ADDRESS, False, '2', auth_methods)
+            fake.EXPORT_POLICY_NAME, fake.IP_ADDRESS, False, '2',
+            auth_methods, anon_user_id=None)
         mock_remove_nfs_export_rules.assert_called_once_with(
             fake.EXPORT_POLICY_NAME, ['4', '6'])
 
@@ -5862,6 +5864,36 @@ class NetAppClientCmodeTestCase(test.TestCase):
                 'volume-attributes': {
                     'volume-export-attributes': {
                         'policy': fake.EXPORT_POLICY_NAME,
+                    },
+                },
+            },
+        }
+        self.client.send_request.assert_has_calls([
+            mock.call('volume-modify-iter', volume_modify_iter_args)])
+
+    def test_set_pcuser_for_volume(self):
+
+        api_response = netapp_api.NaElement(fake.VOLUME_MODIFY_ITER_RESPONSE)
+        self.mock_object(self.client,
+                         'send_request',
+                         mock.Mock(return_value=api_response))
+
+        self.client.set_pcuser_for_volume(fake.SHARE_NAME)
+
+        volume_modify_iter_args = {
+            'query': {
+                'volume-attributes': {
+                    'volume-id-attributes': {
+                        'name': fake.SHARE_NAME,
+                    },
+                },
+            },
+            'attributes': {
+                'volume-attributes': {
+                    'volume-security-attributes': {
+                        'volume-security-unix-attributes': {
+                            'user-id': 65534,
+                        },
                     },
                 },
             },
