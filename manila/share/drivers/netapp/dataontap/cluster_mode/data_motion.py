@@ -899,7 +899,7 @@ class DataMotionSession(object):
                 vserver_client.mount_volume(share_name)
             except netapp_api.NaApiError as e:
                 undergoing_snap_init = 'snapmirror initialize'
-                msg_args = {'name': share_name}
+                msg_args = {'name': share_name, 'err_msg': e.message}
                 if (e.code == netapp_api.EAPIERROR and
                         undergoing_snap_init in e.message):
                     msg = _('The share %(name)s is undergoing a snapmirror '
@@ -909,7 +909,8 @@ class DataMotionSession(object):
                 else:
                     msg = _("Unable to perform mount operation for the share "
                             "%(name)s. Caught an unexpected error. Not "
-                            "retrying.") % msg_args
+                            "retrying. %(err_msg)s") % msg_args
+                    LOG.exception(msg)
                     raise exception.NetAppException(message=msg)
 
         try:
