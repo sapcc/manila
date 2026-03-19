@@ -498,6 +498,7 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
 
     def test_break_snapmirror(self):
         self.mock_object(self.dm_session, 'quiesce_then_abort')
+        self.mock_dest_client.get_volume.return_value = {'type': 'rw'}
 
         self.dm_session.break_snapmirror(self.fake_src_share,
                                          self.fake_dest_share)
@@ -510,11 +511,15 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
             self.fake_src_share, self.fake_dest_share,
             quiesce_wait_time=None)
 
+        self.mock_dest_client.get_volume.assert_called_once_with(
+            self.fake_dest_vol_name)
+
         self.mock_dest_client.mount_volume.assert_called_once_with(
             self.fake_dest_vol_name)
 
     def test_break_snapmirror_no_mount(self):
         self.mock_object(self.dm_session, 'quiesce_then_abort')
+        self.mock_dest_client.get_volume.return_value = {'type': 'rw'}
 
         self.dm_session.break_snapmirror(self.fake_src_share,
                                          self.fake_dest_share,
@@ -528,10 +533,14 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
             self.fake_src_share, self.fake_dest_share,
             quiesce_wait_time=None)
 
+        self.mock_dest_client.get_volume.assert_called_once_with(
+            self.fake_dest_vol_name)
+
         self.assertFalse(self.mock_dest_client.mount_volume.called)
 
     def test_break_snapmirror_wait_for_quiesced(self):
         self.mock_object(self.dm_session, 'quiesce_then_abort')
+        self.mock_dest_client.get_volume.return_value = {'type': 'rw'}
 
         self.dm_session.break_snapmirror(self.fake_src_share,
                                          self.fake_dest_share)
@@ -544,8 +553,71 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
             self.source_vserver, self.fake_src_vol_name,
             self.dest_vserver, self.fake_dest_vol_name)
 
+        self.mock_dest_client.get_volume.assert_called_once_with(
+            self.fake_dest_vol_name)
+
         self.mock_dest_client.mount_volume.assert_called_once_with(
             self.fake_dest_vol_name)
+
+    def test_break_snapmirror_wait_for_rw(self):
+        self.mock_object(self.dm_session, 'quiesce_then_abort')
+        self.mock_object(time, 'sleep')
+        # First call returns DP, second call returns RW
+        self.mock_dest_client.get_volume.side_effect = [
+            {'type': 'dp'},
+            {'type': 'rw'},
+        ]
+        mock_backend_config = na_fakes.create_configuration()
+        mock_backend_config.netapp_snapmirror_quiesce_timeout = 10
+        self.mock_object(data_motion, 'get_backend_configuration',
+                         mock.Mock(return_value=mock_backend_config))
+
+        self.dm_session.break_snapmirror(self.fake_src_share,
+                                         self.fake_dest_share)
+
+        self.dm_session.quiesce_then_abort.assert_called_once_with(
+            self.fake_src_share, self.fake_dest_share,
+            quiesce_wait_time=None)
+
+        self.mock_dest_client.break_snapmirror_vol.assert_called_once_with(
+            self.source_vserver, self.fake_src_vol_name,
+            self.dest_vserver, self.fake_dest_vol_name)
+
+        # Should be called twice - first returns dp, second returns rw
+        self.assertEqual(2, self.mock_dest_client.get_volume.call_count)
+        time.sleep.assert_called_with(5)
+
+        self.mock_dest_client.mount_volume.assert_called_once_with(
+            self.fake_dest_vol_name)
+
+    def test_break_snapmirror_timeout_waiting_for_rw(self):
+        self.mock_object(self.dm_session, 'quiesce_then_abort')
+        self.mock_object(time, 'sleep')
+        # Always return DP - never becomes RW
+        self.mock_dest_client.get_volume.return_value = {'type': 'dp'}
+        mock_backend_config = na_fakes.create_configuration()
+        mock_backend_config.netapp_snapmirror_quiesce_timeout = 10
+        self.mock_object(data_motion, 'get_backend_configuration',
+                         mock.Mock(return_value=mock_backend_config))
+
+        self.assertRaises(exception.NetAppException,
+                          self.dm_session.break_snapmirror,
+                          self.fake_src_share,
+                          self.fake_dest_share)
+
+        self.dm_session.quiesce_then_abort.assert_called_once_with(
+            self.fake_src_share, self.fake_dest_share,
+            quiesce_wait_time=None)
+
+        self.mock_dest_client.break_snapmirror_vol.assert_called_once_with(
+            self.source_vserver, self.fake_src_vol_name,
+            self.dest_vserver, self.fake_dest_vol_name)
+
+        # Should retry based on timeout/interval (10s / 5s = 2 total attempts)
+        self.assertEqual(2, self.mock_dest_client.get_volume.call_count)
+
+        # Should NOT mount if volume never became RW
+        self.assertFalse(self.mock_dest_client.mount_volume.called)
 
     @ddt.data(None, 2, 30)
     def test_quiesce_then_abort_wait_time(self, wait_time):
