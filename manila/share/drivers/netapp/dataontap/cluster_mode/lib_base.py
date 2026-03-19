@@ -3483,7 +3483,12 @@ class NetAppCmodeFileStorageLibrary(object):
             LOG.warning(msg)
             pass
         # 2. Break SnapMirror
+        # For readable replicas, the volume is already mounted (with junction
+        # path) so we don't need to mount again after break. DR replicas are
+        # not mounted and need mounting after break.
+        is_readable = self._is_readable_replica(replica)
         dm_session.break_snapmirror(orig_active_replica, replica,
+                                    mount=not is_readable,
                                     quiesce_wait_time=quiesce_wait_time)
 
         # 3. Setup access rules
