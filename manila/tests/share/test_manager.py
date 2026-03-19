@@ -2160,6 +2160,34 @@ class ShareManagerTestCase(test.TestCase):
             resource_id=replica['id'],
             exception=mock.ANY)
 
+    def test__share_replica_update_both_replicas_in_error(self):
+        """Test that update is skipped when both replicas are in error."""
+        mock_warning_log = self.mock_object(manager.LOG, 'warning')
+        replica = fake_replica(
+            replica_state=constants.REPLICA_STATE_OUT_OF_SYNC,
+            status=constants.STATUS_ERROR)
+        active_replica = fake_replica(
+            id='fake2',
+            replica_state=constants.REPLICA_STATE_ACTIVE,
+            status=constants.STATUS_ERROR)
+        self.mock_object(db, 'share_replicas_get_all_by_share',
+                         mock.Mock(return_value=[replica, active_replica]))
+        self.mock_object(self.share_manager.db, 'share_replica_get',
+                         mock.Mock(return_value=replica))
+        mock_driver_call = self.mock_object(
+            self.share_manager.driver, 'update_replica_state')
+
+        self.share_manager._share_replica_update(
+            self.context, replica['id'], share_id=replica['share_id'])
+
+        # Driver should not be called
+        self.assertFalse(mock_driver_call.called)
+        # Warning should be logged
+        self.assertEqual(1, mock_warning_log.call_count)
+        warning_msg = mock_warning_log.call_args[0][0]
+        self.assertIn('Both the active replica', warning_msg)
+        self.assertIn('are in error status', warning_msg)
+
     def test__share_replica_update_driver_exception_ignored(self):
         mock_debug_log = self.mock_object(manager.LOG, 'debug')
         replica = fake_replica(replica_state=constants.STATUS_ERROR)
@@ -2206,7 +2234,9 @@ class ShareManagerTestCase(test.TestCase):
               {'status': constants.STATUS_EXTENDING,
                'replica_state': constants.REPLICA_STATE_IN_SYNC, },
               {'status': constants.STATUS_SHRINKING,
-               'replica_state': constants.REPLICA_STATE_IN_SYNC, })
+               'replica_state': constants.REPLICA_STATE_IN_SYNC, },
+              {'status': constants.STATUS_REPLICATION_CHANGE,
+               'replica_state': constants.REPLICA_STATE_OUT_OF_SYNC, })
     def test__share_replica_update_unqualified_replica(self, state):
         mock_debug_log = self.mock_object(manager.LOG, 'debug')
         mock_warning_log = self.mock_object(manager.LOG, 'warning')

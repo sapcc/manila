@@ -5204,6 +5204,9 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                          mock.Mock(return_value=mock.Mock()))
         self.mock_object(self.library, '_create_export',
                          mock.Mock(return_value='fake_export_location'))
+        self.mock_object(self.library,
+                         '_is_readable_replica',
+                         mock.Mock(return_value=False))
 
         replica = self.library._convert_destination_replica_to_independent(
             None, self.mock_dm_session, self.fake_replica,
@@ -5213,7 +5216,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             self.fake_replica, self.fake_replica_2)
         self.mock_dm_session.break_snapmirror.assert_called_once_with(
             self.fake_replica, self.fake_replica_2,
-            quiesce_wait_time=None)
+            mount=True, quiesce_wait_time=None)
 
         self.assertEqual('fake_export_location',
                          replica['export_locations'])
@@ -5230,6 +5233,9 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                          mock.Mock(return_value=mock.Mock()))
         self.mock_object(self.library, '_create_export',
                          mock.Mock(return_value='fake_export_location'))
+        self.mock_object(self.library,
+                         '_is_readable_replica',
+                         mock.Mock(return_value=False))
         self.mock_object(
             self.mock_dm_session, 'update_snapmirror',
             mock.Mock(side_effect=exception.StorageCommunicationException))
@@ -5242,7 +5248,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             self.fake_replica, self.fake_replica_2)
         self.mock_dm_session.break_snapmirror.assert_called_once_with(
             self.fake_replica, self.fake_replica_2,
-            quiesce_wait_time=None)
+            mount=True, quiesce_wait_time=None)
 
         self.assertEqual('fake_export_location',
                          replica['export_locations'])
@@ -5322,6 +5328,9 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                          mock.Mock(return_value=fake_helper))
         self.mock_object(self.library, '_create_export',
                          mock.Mock(return_value='fake_export_location'))
+        self.mock_object(self.library,
+                         '_is_readable_replica',
+                         mock.Mock(return_value=False))
 
         replica = self.library._convert_destination_replica_to_independent(
             None, self.mock_dm_session, self.fake_replica,
@@ -5331,7 +5340,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             self.fake_replica, self.fake_replica_2)
         self.mock_dm_session.break_snapmirror.assert_called_once_with(
             self.fake_replica, self.fake_replica_2,
-            quiesce_wait_time=None)
+            mount=True, quiesce_wait_time=None)
 
         self.assertEqual('fake_export_location',
                          replica['export_locations'])
@@ -5358,6 +5367,9 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                          mock.Mock(return_value=fake_helper))
         self.mock_object(self.library, '_create_export',
                          mock.Mock(return_value='fake_export_location'))
+        self.mock_object(self.library,
+                         '_is_readable_replica',
+                         mock.Mock(return_value=False))
 
         replica = self.library._convert_destination_replica_to_independent(
             None, self.mock_dm_session, self.fake_replica,
@@ -5367,7 +5379,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             self.fake_replica, self.fake_replica_2)
         self.mock_dm_session.break_snapmirror.assert_called_once_with(
             self.fake_replica, self.fake_replica_2,
-            quiesce_wait_time=None)
+            mount=True, quiesce_wait_time=None)
 
         fake_helper.assert_has_calls([
             mock.call.set_client(mock.ANY),

@@ -3123,17 +3123,10 @@ class ShareManager(manager.SchedulerDependentManager):
         # or if they are the 'active' instance.
         if (share_replica['status'] in constants.TRANSITIONAL_STATUSES
             or share_replica['status'] == constants.STATUS_ERROR_DELETING
+            or share_replica['status'] == constants.STATUS_REPLICATION_CHANGE
             or share_replica['replica_state'] ==
                 constants.REPLICA_STATE_ACTIVE):
             return
-
-        share_server = self._get_share_server(context, share_replica)
-
-        access_rules = self.db.share_access_get_all_for_share(
-            context, share_replica['share_id'])
-
-        LOG.debug("Updating status of share share_replica %s: ",
-                  share_replica['id'])
 
         # _get_share_instance_dict will fetch share server
         replica_list = (
@@ -3158,6 +3151,34 @@ class ShareManager(manager.SchedulerDependentManager):
             # without a related active replica, we cannot act on any
             # non-active replica
             return
+
+        # If both the active replica and the target replica are in error
+        # status, skip the update. This likely indicates a failed promotion
+        # or other critical operation that requires manual intervention.
+        # Attempting to restore replication automatically could recreate
+        # the relationship in the wrong direction.
+        if (_active_replica['status'] == constants.STATUS_ERROR and
+                share_replica['status'] == constants.STATUS_ERROR):
+            msg_args = {
+                'replica_id': share_replica['id'],
+                'active_id': _active_replica['id'],
+                'share_id': share_replica['share_id'],
+            }
+            msg = ("Skipping replica update for replica %(replica_id)s. "
+                   "Both the active replica %(active_id)s and this replica "
+                   "are in error status for share %(share_id)s. This may "
+                   "indicate a failed promotion that requires manual "
+                   "intervention.") % msg_args
+            LOG.warning(msg)
+            return
+
+        share_server = self._get_share_server(context, share_replica)
+
+        access_rules = self.db.share_access_get_all_for_share(
+            context, share_replica['share_id'])
+
+        LOG.debug("Updating status of share share_replica %s: ",
+                  share_replica['id'])
 
         # Get snapshots for the share.
         share_snapshots = self.db.share_snapshot_get_all_for_share(
