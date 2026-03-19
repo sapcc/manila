@@ -425,7 +425,8 @@ class DataMotionSession(object):
         1. Quiesce any ongoing snapmirror transfers
         2. Wait until snapmirror finishes transfers and enters quiesced state
         3. Break snapmirror
-        4. Mount the destination volume so it is exported as a share
+        4. Wait for volume to transition from DP to RW
+        5. Mount the destination volume so it is exported as a share
         """
         dest_volume_name, dest_vserver, dest_backend = (
             self.get_backend_info_for_share(dest_share_obj))
@@ -445,7 +446,41 @@ class DataMotionSession(object):
                                          dest_vserver,
                                          dest_volume_name)
 
-        # 3. Mount the destination volume and create a junction path
+        # 3. Wait for volume to become RW after break
+        config = get_backend_configuration(dest_backend)
+        timeout = config.netapp_snapmirror_quiesce_timeout
+        retries = int(timeout / 5) or 1
+
+        @utils.retry(retry_param=exception.ReplicationException,
+                     interval=5,
+                     retries=retries,
+                     backoff_rate=1)
+        def wait_for_rw_volume():
+            volume = dest_client.get_volume(dest_volume_name)
+            volume_type = volume.get('type')
+            if volume_type != 'rw':
+                msg_args = {
+                    'volume': dest_volume_name,
+                    'type': volume_type,
+                }
+                msg = ('Volume %(volume)s is still type %(type)s, '
+                       'waiting for RW after snapmirror break.') % msg_args
+                LOG.debug(msg)
+                raise exception.ReplicationException(reason=msg)
+
+        try:
+            wait_for_rw_volume()
+        except exception.ReplicationException:
+            msg_args = {
+                'volume': dest_volume_name,
+                'timeout': timeout,
+            }
+            msg = _('Volume %(volume)s did not become RW within %(timeout)s '
+                    'seconds after snapmirror break.') % msg_args
+            LOG.exception(msg)
+            raise exception.NetAppException(message=msg)
+
+        # 4. Mount the destination volume and create a junction path
         if mount:
             dest_client.mount_volume(dest_volume_name)
 
