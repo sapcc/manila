@@ -1491,7 +1491,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
 
     @na_utils.trace
     def get_node_for_aggregate(self, aggregate_name):
-        """Get home node for the specified aggregate.
+        """Get home and owner node for the specified aggregate.
 
         This API could return None, most notably if it was sent
         to a Vserver LIF, so the caller must be able to handle that case.
@@ -1505,6 +1505,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 'aggregate-name': None,
                 'aggr-ownership-attributes': {
                     'home-name': None,
+                    'owner-name': None,
                 },
             },
         }
@@ -1523,7 +1524,13 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
 
         aggr_ownership_attrs = aggrs[0].get_child_by_name(
             'aggr-ownership-attributes') or netapp_api.NaElement('none')
-        return aggr_ownership_attrs.get_child_content('home-name')
+        home_name = aggr_ownership_attrs.get_child_content('home-name')
+        owner_name = aggr_ownership_attrs.get_child_content('owner-name')
+
+        return {
+            'home_node': home_name,
+            'owner_node': owner_name,
+        }
 
     @na_utils.trace
     def get_cluster_aggregate_capacities(self, aggregate_names):

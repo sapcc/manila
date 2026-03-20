@@ -149,10 +149,11 @@ class PerformanceLibrary(object):
         aggr_node_map = {}
 
         for aggr_name in aggr_names:
-            node_name = self.zapi_client.get_node_for_aggregate(aggr_name)
-            if node_name:
-                node_names.add(node_name)
-                aggr_node_map[aggr_name] = node_name
+            node_info = (
+                self.zapi_client.get_node_for_aggregate(aggr_name))
+            if node_info and node_info.get('owner_node'):
+                node_names.add(node_info['owner_node'])
+                aggr_node_map[aggr_name] = node_info['owner_node']
 
         return list(node_names), aggr_node_map
 

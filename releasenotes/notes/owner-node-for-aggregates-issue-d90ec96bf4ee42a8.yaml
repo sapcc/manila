@@ -1,0 +1,10 @@
+---
+fixes:
+  - |
+    Fixed an issue on the NetApp ONTAP driver where performance data
+    collection failed when a cluster node was down and its aggregates
+    had been taken over by a partner node. Performance counters are
+    now retrieved from the node that currently owns the aggregate
+    instead of its configured home node, allowing pool capabilities
+    and scheduler weighing to keep working correctly during storage
+    failover scenarios.

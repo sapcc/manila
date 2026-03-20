@@ -2143,6 +2143,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
                 'aggregate-name': None,
                 'aggr-ownership-attributes': {
                     'home-name': None,
+                    'owner-name': None,
                 },
             },
         }
@@ -2152,7 +2153,10 @@ class NetAppClientCmodeTestCase(test.TestCase):
                 aggregate_names=[fake.SHARE_AGGREGATE_NAME],
                 desired_attributes=desired_attributes)])
 
-        self.assertEqual(fake.NODE_NAME, result)
+        self.assertEqual({
+            'home_node': fake.NODE_NAME,
+            'owner_node': None,
+        }, result)
 
     def test_get_node_for_aggregate_none_requested(self):
 
