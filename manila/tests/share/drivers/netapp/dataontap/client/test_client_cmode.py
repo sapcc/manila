@@ -2256,6 +2256,81 @@ class NetAppClientCmodeTestCase(test.TestCase):
             mock.call('vserver-get', vserver_args)])
         self.assertDictEqual(fake.VSERVER_AGGREGATES, result)
 
+    def test_get_owner_node_for_aggregate(self):
+
+        api_response = netapp_api.NaElement(
+            fake.AGGR_GET_OWNER_NODE_RESPONSE).get_child_by_name(
+            'attributes-list').get_children()
+        self.mock_object(self.client,
+                         '_get_aggregates',
+                         mock.Mock(return_value=api_response))
+
+        result = self.client.get_owner_node_for_aggregate(
+            fake.SHARE_AGGREGATE_NAME)
+
+        desired_attributes = {
+            'aggr-attributes': {
+                'aggregate-name': None,
+                'aggr-ownership-attributes': {
+                    'owner-name': None,
+                },
+            },
+        }
+
+        self.client._get_aggregates.assert_has_calls([
+            mock.call(
+                aggregate_names=[fake.SHARE_AGGREGATE_NAME],
+                desired_attributes=desired_attributes)])
+
+        self.assertEqual(fake.NODE_NAME, result)
+
+    def test_get_owner_node_for_aggregate_failover(self):
+
+        api_response = netapp_api.NaElement(
+            fake.AGGR_GET_OWNER_NODE_FAILOVER_RESPONSE).get_child_by_name(
+            'attributes-list').get_children()
+        self.mock_object(self.client,
+                         '_get_aggregates',
+                         mock.Mock(return_value=api_response))
+
+        result = self.client.get_owner_node_for_aggregate(
+            fake.SHARE_AGGREGATE_NAME)
+
+        self.assertEqual(fake.NODE_NAME2, result)
+
+    def test_get_owner_node_for_aggregate_none_requested(self):
+        result = self.client.get_owner_node_for_aggregate(None)
+        self.assertIsNone(result)
+
+    def test_get_owner_node_for_aggregate_api_not_found(self):
+        self.mock_object(self.client,
+                         'send_iter_request',
+                         mock.Mock(side_effect=self._mock_api_error(
+                             netapp_api.EAPINOTFOUND)))
+
+        result = self.client.get_owner_node_for_aggregate(
+            fake.SHARE_AGGREGATE_NAME)
+        self.assertIsNone(result)
+
+    def test_get_owner_node_for_aggregate_api_error(self):
+        self.mock_object(self.client,
+                         'send_iter_request',
+                         self._mock_api_error())
+
+        self.assertRaises(netapp_api.NaApiError,
+                          self.client.get_owner_node_for_aggregate,
+                          fake.SHARE_AGGREGATE_NAME)
+
+    def test_get_owner_node_for_aggregate_not_found(self):
+        api_response = netapp_api.NaElement(fake.NO_RECORDS_RESPONSE)
+        self.mock_object(self.client,
+                         'send_iter_request',
+                         mock.Mock(return_value=api_response))
+
+        result = self.client.get_owner_node_for_aggregate(
+            fake.SHARE_AGGREGATE_NAME)
+        self.assertIsNone(result)
+
     def test_get_vserver_aggregate_capacities_partial_request(self):
 
         api_response = netapp_api.NaElement(fake.VSERVER_GET_RESPONSE)

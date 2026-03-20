@@ -382,14 +382,14 @@ class PerformanceLibraryTestCase(test.TestCase):
         expected_aggregate_names = ['aggr1', 'aggr2', 'aggr3']
         self.assertEqual(sorted(expected_aggregate_names), sorted(result))
 
-    def test_get_nodes_for_aggregates(self):
+    def test_get_nodes_for_aggregates_with_owner_node(self):
 
         aggregate_names = ['aggr1', 'aggr2', 'aggr3']
-        aggregate_nodes = ['node1', 'node2', 'node2']
+        owner_nodes = ['node1', 'node2', 'node2']
 
-        mock_get_node_for_aggregate = self.mock_object(
-            self.zapi_client, 'get_node_for_aggregate',
-            mock.Mock(side_effect=aggregate_nodes))
+        mock_get_owner_node_for_aggregate = self.mock_object(
+            self.zapi_client, 'get_owner_node_for_aggregate',
+            mock.Mock(side_effect=owner_nodes))
 
         result = self.perf_library._get_nodes_for_aggregates(aggregate_names)
 
@@ -397,11 +397,11 @@ class PerformanceLibraryTestCase(test.TestCase):
         result_node_names, result_aggr_node_map = result
 
         expected_node_names = ['node1', 'node2']
-        expected_aggr_node_map = dict(zip(aggregate_names, aggregate_nodes))
+        expected_aggr_node_map = dict(zip(aggregate_names, owner_nodes))
         self.assertEqual(sorted(expected_node_names),
                          sorted(result_node_names))
         self.assertEqual(expected_aggr_node_map, result_aggr_node_map)
-        mock_get_node_for_aggregate.assert_has_calls([
+        mock_get_owner_node_for_aggregate.assert_has_calls([
             mock.call('aggr1'), mock.call('aggr2'), mock.call('aggr3')])
 
     def test_get_node_utilization_kahuna_overutilized(self):

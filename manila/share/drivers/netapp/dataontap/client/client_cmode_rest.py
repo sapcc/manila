@@ -601,6 +601,35 @@ class NetAppRestClient(object):
         return aggrs[0]['home_node']['name'] if aggrs else None
 
     @na_utils.trace
+    def get_owner_node_for_aggregate(self, aggregate_name):
+        """Get current owner node for the specified aggregate."""
+
+        if not aggregate_name:
+            return None
+
+        fields = 'name,node.name'
+
+        try:
+            aggrs = self._get_aggregates(
+                aggregate_names=[aggregate_name],
+                fields=fields
+            )
+        except netapp_api.api.NaApiError as e:
+            if e.code == netapp_api.EREST_NOT_AUTHORIZED:
+                LOG.debug("Could not get the owner node of aggregate %s: "
+                          "command not authorized.", aggregate_name)
+                return None
+            else:
+                raise
+
+        if not aggrs:
+            return None
+        aggr = aggrs[0]
+        if aggr.get('node') and aggr['node'].get('name'):
+            return aggr['node']['name']
+        return None
+
+    @na_utils.trace
     def get_aggregate_disk_types(self, aggregate_name):
         """Get the disk type(s) of an aggregate."""
 

@@ -1516,6 +1516,40 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'aggr-ownership-attributes') or netapp_api.NaElement('none')
         return aggr_ownership_attrs.get_child_content('home-name')
 
+    def get_owner_node_for_aggregate(self, aggregate_name):
+        """Get owner node for the specified aggregate."""
+
+        if not aggregate_name:
+            return None
+
+        desired_attributes = {
+            'aggr-attributes': {
+                'aggregate-name': None,
+                'aggr-ownership-attributes': {
+                    'owner-name': None
+                },
+            },
+        }
+
+        try:
+            aggrs = self._get_aggregates(aggregate_names=[aggregate_name],
+                                         desired_attributes=desired_attributes)
+        except netapp_api.NaApiError as e:
+            if e.code == netapp_api.EAPINOTFOUND:
+                return None
+            else:
+                raise
+
+        if len(aggrs) < 1:
+            return None
+
+        aggr_ownership_attrs = aggrs[0].get_child_by_name(
+            'aggr-ownership-attributes') or netapp_api.NaElement('none')
+        owner_name = aggr_ownership_attrs.get_child_content('owner-name')
+        if not owner_name:
+            return None
+        return owner_name
+
     @na_utils.trace
     def get_cluster_aggregate_capacities(self, aggregate_names):
         """Calculates capacity of one or more aggregates.
