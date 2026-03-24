@@ -586,6 +586,52 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         return 1 if admin_network_api else 0
 
     @na_utils.trace
+    def update_server(self, server_details, network_info):
+        """Update share server."""
+        vserver = server_details.get(
+            'vserver_name') if server_details else None
+
+        if not vserver:
+            LOG.warning("Vserver not specified for share server being "
+                        "updated.")
+            return
+
+        elif not self._client.vserver_exists(vserver):
+            LOG.warning("Could not find Vserver for share server being "
+                        "updated: %s.", vserver)
+            return
+
+        self._update_vserver(vserver, network_info)
+
+    @na_utils.trace
+    def _update_vserver(self, vserver, network_info):
+        """Update a Vserver as needed."""
+        self._client.modify_vserver(
+            vserver_name=vserver,
+            aggregate_names=self._find_matching_aggregates(),
+            retention_hours=self.configuration.netapp_delete_retention_hours,
+        )
+        vserver_client = self._get_api_client(vserver=vserver)
+        vserver_client.enable_nfs(
+            self.configuration.netapp_enabled_share_protocols)
+
+        for network in network_info:
+            self._create_vserver_routes(vserver_client, network)
+
+        # TODO(chuan): uncomment when picking "ccloud: use ldaps for cifs"
+        # (77b58aebb), which adds configure_certificates() to the vserver
+        # client.
+        #
+        # security_services = network_info.get('security_services')
+        # if security_services:
+        #     for security_service in security_services:
+        #         if security_service['type'].lower() == 'active_directory':
+        #             try:
+        #                 vserver_client.configure_certificates()
+        #             except exception.NetAppException as e:
+        #                 LOG.warning(e.message)
+
+    @na_utils.trace
     def teardown_server(self, server_details, security_services=None):
         """Teardown share server."""
         vserver = server_details.get(
