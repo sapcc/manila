@@ -6562,7 +6562,7 @@ class ShareManager(manager.SchedulerDependentManager):
         # be deleted.
         if migration_extended_network_allocations:
             allocs = self.driver.network_api.cutover_network_allocations(
-                context, source_share_server)
+                context, source_share_server, dest_share_server)
             segmentation_id = self.db.share_server_backend_details_get(
                 context, dest_share_server['id'], 'segmentation_id')
             alloc_update = {
