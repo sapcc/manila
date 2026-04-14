@@ -64,11 +64,12 @@ class ViewBuilder(common.ViewBuilder):
         return {'snapshot': snapshot_dict}
 
     @common.ViewBuilder.versioned_method("2.12")
-    def add_provider_location_field(self, context, snapshot_dict, snapshot):
+    def add_provider_location_field(self, _context, snapshot_dict, snapshot):
         # NOTE(xyang): Only retrieve provider_location for admin.
-        if context.is_admin:
-            snapshot_dict['provider_location'] = snapshot.get(
-                'provider_location')
+        # if context.is_admin:
+        # provider_location is now visible to all users, not just admins.
+        snapshot_dict['provider_location'] = snapshot.get(
+            'provider_location')
 
     @common.ViewBuilder.versioned_method("2.17")
     def add_project_and_user_ids(self, context, snapshot_dict, snapshot):
