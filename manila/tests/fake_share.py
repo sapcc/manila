@@ -204,6 +204,11 @@ def expected_snapshot(version=None, id='fake_snapshot_id', **kwargs):
     }
 
     if version and (api_version.APIVersionRequest(version)
+                    >= api_version.APIVersionRequest('2.12')):
+        snapshot.update({
+            'provider_location': None,
+        })
+    if version and (api_version.APIVersionRequest(version)
                     >= api_version.APIVersionRequest('2.17')):
         snapshot.update({
             'user_id': 'fakesnapuser',
