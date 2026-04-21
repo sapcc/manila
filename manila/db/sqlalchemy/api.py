@@ -3759,6 +3759,7 @@ def _share_snapshot_instance_get_all_with_filters(
                       'statuses')
 
     filters = {k: listify(search_filters.get(k)) for k in _known_filters}
+    filters.update({'host': search_filters.get('host')})
 
     result = _share_snapshot_instance_get_with_filters(
         context, **filters,
@@ -3772,7 +3773,8 @@ def _share_snapshot_instance_get_all_with_filters(
 
 def _share_snapshot_instance_get_with_filters(context, instance_ids=None,
                                               snapshot_ids=None, statuses=None,
-                                              share_instance_ids=None):
+                                              share_instance_ids=None,
+                                              host=None):
     query = model_query(context, models.ShareSnapshotInstance,
                         read_deleted="no")
 
@@ -3790,6 +3792,15 @@ def _share_snapshot_instance_get_with_filters(context, instance_ids=None,
 
     if statuses is not None:
         query = query.filter(models.ShareSnapshotInstance.status.in_(statuses))
+
+    if host is not None:
+        query = query.join(
+            models.ShareInstance,
+            models.ShareSnapshotInstance.share_instance_id ==
+            models.ShareInstance.id).filter(
+                or_(models.ShareInstance.host == host,
+                    models.ShareInstance.host.like("{0}#%".format(host)))
+            )
 
     query = query.options(
         orm.joinedload(models.ShareSnapshotInstance.share_group_snapshot),
