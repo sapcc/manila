@@ -74,7 +74,7 @@ class NetAppCmodeCIFSHelper(base.NetAppBaseHelper):
 
     @na_utils.trace
     @base.access_rules_synchronized
-    def update_access(self, share, share_name, rules):
+    def update_access(self, share, share_name, rules, replica=False):
         """Replaces the list of access rules known to the backend storage."""
 
         valid_rules = []
