@@ -3631,7 +3631,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         mock_share_exists.assert_called_once_with(share_name, vserver_client)
         protocol_helper.set_client.assert_called_once_with(vserver_client)
         protocol_helper.update_access.assert_called_once_with(
-            fake.SHARE, fake.SHARE_NAME, [fake.SHARE_ACCESS])
+            fake.SHARE, fake.SHARE_NAME, [fake.SHARE_ACCESS], replica=False)
 
     @ddt.data(exception.InvalidInput(reason='fake_reason'),
               exception.VserverNotSpecified(),
@@ -3732,8 +3732,10 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         share_name = self.library._get_backend_share_name(fake.SHARE['id'])
         mock_share_exists.assert_called_once_with(share_name, vserver_client)
         protocol_helper.set_client.assert_called_once_with(vserver_client)
+        # active replica is RW — replica=False
         protocol_helper.update_access.assert_called_once_with(
-            fake.SHARE, fake.SHARE_NAME, [fake.SHARE_ACCESS])
+            fake_share_copy, fake.SHARE_NAME, [fake.SHARE_ACCESS],
+            replica=False)
 
     @ddt.data(True, False)
     def test_update_access_to_in_sync_replica(self, is_readable):
@@ -3766,8 +3768,38 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         if is_readable:
             mock_get_vserver.assert_called_once_with(
                 share_server=fake.SHARE_SERVER)
+            # readable non-active replica is DP — replica=True
+            protocol_helper.update_access.assert_called_once_with(
+                fake_share_copy, fake.SHARE_NAME, [fake.SHARE_ACCESS],
+                replica=True)
         else:
             mock_get_vserver.assert_not_called()
+
+    def test_update_access_to_readable_dp_replica_skips_pcuser(self):
+        """Verify replica=True is passed for non-active readable replicas."""
+        fake_share_copy = copy.deepcopy(fake.SHARE)
+        fake_share_copy['replica_state'] = constants.REPLICA_STATE_OUT_OF_SYNC
+        vserver_client = mock.Mock()
+        self.mock_object(
+            self.library, '_get_vserver',
+            mock.Mock(return_value=(fake.VSERVER1, vserver_client)))
+        self.mock_object(self.library, '_is_readable_replica',
+                         mock.Mock(return_value=True))
+        protocol_helper = mock.Mock()
+        self.mock_object(self.library, '_get_helper',
+                         mock.Mock(return_value=protocol_helper))
+        self.mock_object(self.library, '_share_exists',
+                         mock.Mock(return_value=True))
+
+        self.library.update_access(self.context,
+                                   fake_share_copy,
+                                   [fake.SHARE_ACCESS],
+                                   [], [], [],
+                                   share_server=fake.SHARE_SERVER)
+
+        protocol_helper.update_access.assert_called_once_with(
+            fake_share_copy, fake.SHARE_NAME, [fake.SHARE_ACCESS],
+            replica=True)
 
     def test_setup_server(self):
         self.assertRaises(NotImplementedError,
@@ -3967,7 +3999,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                 fake.SHARE, None, fake.VSERVER1, vserver_client, replica=True)
             mock_get_helper.assert_called_once_with(fake.SHARE)
             protocol_helper.update_access.assert_called_once_with(
-                fake.SHARE, fake.SHARE_NAME, [fake.SHARE_ACCESS])
+                fake.SHARE, fake.SHARE_NAME, [fake.SHARE_ACCESS],
+                replica=True)
         else:
             mock_create_export.assert_not_called()
             mock_get_helper.assert_not_called()
@@ -4776,7 +4809,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             self.fake_replica_2['id'])
         mock_helper.update_access.assert_called_once_with(self.fake_replica_2,
                                                           share_name,
-                                                          [fake.SHARE_ACCESS])
+                                                          [fake.SHARE_ACCESS],
+                                                          replica=False)
         self.library._unmount_orig_active_replica.assert_called_once_with(
             self.fake_replica, fake.VSERVER1)
         self.library._handle_qos_on_replication_change.assert_called_once()
@@ -5088,7 +5122,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
         fake_helper.assert_has_calls([
             mock.call.set_client(mock.ANY),
-            mock.call.update_access(mock.ANY, mock.ANY, fake_access_rules),
+            mock.call.update_access(mock.ANY, mock.ANY, fake_access_rules,
+                                    replica=False),
         ])
 
         self.assertEqual('fake_export_location',
@@ -5139,11 +5174,15 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         if is_dr:
             self.assertEqual([], replica['export_locations'])
             mock_dm_session.wait_for_mount_replica.assert_not_called()
+            protocol_helper.update_access.assert_not_called()
         else:
             self.assertEqual('fake_export_location',
                              replica['export_locations'])
             mock_dm_session.wait_for_mount_replica.assert_called_once_with(
                 mock_client, fake.SHARE_NAME, timeout=30)
+            protocol_helper.update_access.assert_called_once_with(
+                self.fake_replica, fake.SHARE_NAME, [fake.SHARE_ACCESS],
+                replica=True)
 
     @ddt.data({'fail_create_export': False, 'fail_mount': True},
               {'fail_create_export': True, 'fail_mount': False})

@@ -2629,7 +2629,8 @@ class NetAppCmodeFileStorageLibrary(object):
                                                 allow_decrease=True)
 
     @na_utils.trace
-    def _update_access(self, helper, share, share_name, access_rules):
+    def _update_access(self, helper, share, share_name, access_rules,
+                       replica=False):
         validated_rules = []
 
         for rule in access_rules:
@@ -2643,7 +2644,8 @@ class NetAppCmodeFileStorageLibrary(object):
             # append valid rules
             validated_rules.append(rule)
 
-        helper.update_access(share, share_name, validated_rules)
+        helper.update_access(share, share_name, validated_rules,
+                             replica=replica)
 
     @na_utils.trace
     def update_access(self, context, share, access_rules, add_rules,
@@ -2671,9 +2673,14 @@ class NetAppCmodeFileStorageLibrary(object):
 
         share_name = self._get_backend_share_name(share['id'])
         if self._share_exists(share_name, vserver_client):
+            is_dp_replica = (
+                replica_state is not None and
+                replica_state != constants.REPLICA_STATE_ACTIVE and
+                self._is_readable_replica(share))
             for helper in self._get_helpers(share):
                 helper.set_client(vserver_client)
-                self._update_access(helper, share, share_name, access_rules)
+                self._update_access(helper, share, share_name, access_rules,
+                                    replica=is_dp_replica)
         else:
             raise exception.ShareResourceNotFound(share_id=share['id'])
 
@@ -2965,7 +2972,8 @@ class NetAppCmodeFileStorageLibrary(object):
                 helper.set_client(vserver_client)
                 share_name = self._get_backend_share_name(new_replica['id'])
                 try:
-                    helper.update_access(new_replica, share_name, access_rules)
+                    helper.update_access(new_replica, share_name, access_rules,
+                                         replica=True)
                 except Exception:
                     model_update['access_rules_status'] = (
                         constants.SHARE_INSTANCE_RULES_ERROR)
@@ -3487,7 +3495,8 @@ class NetAppCmodeFileStorageLibrary(object):
         try:
             for helper in helpers:
                 helper.set_client(vserver_client)
-                helper.update_access(replica, share_name, access_rules)
+                helper.update_access(replica, share_name, access_rules,
+                                     replica=False)
         except Exception:
             new_active_replica['access_rules_status'] = (
                 constants.SHARE_INSTANCE_RULES_SYNCING)
@@ -3591,7 +3600,7 @@ class NetAppCmodeFileStorageLibrary(object):
         helper.set_client(replica_client)
         try:
             helper.update_access(
-                replica, replica_volume_name, access_rules)
+                replica, replica_volume_name, access_rules, replica=True)
         except Exception:
             replica['access_rules_status'] = (
                 constants.SHARE_INSTANCE_RULES_ERROR)
