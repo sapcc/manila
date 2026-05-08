@@ -373,11 +373,18 @@ class ZapiClient(BaseClient):
             else:
                 response = self._session.post(
                     self._get_url(), data=request_d)
+            # Reset refresh flag after successful request
+            self._refresh_conn = False
         except requests.HTTPError as e:
             raise NaApiError(e.errno, e.strerror)
         except requests.URLRequired as e:
             raise exception.StorageCommunicationException(str(e))
         except Exception as e:
+            if not self._refresh_conn:
+                # Connection may have timed out; rebuild and retry once.
+                self._refresh_conn = True
+                return self.invoke_elem(na_element,
+                                        enable_tunneling=enable_tunneling)
             raise NaApiError(message=e)
 
         response_xml = response.text
@@ -564,11 +571,17 @@ class RestClient(BaseClient):
                     url, data=data, timeout=self._timeout)
             else:
                 response = request_method(url, data=data)
+            # Reset refresh flag after successful request
+            self._refresh_conn = False
         except requests.HTTPError as e:
             raise NaApiError(e.errno, e.strerror)
         except requests.URLRequired as e:
             raise exception.StorageCommunicationException(str(e))
         except Exception as e:
+            if not self._refresh_conn:
+                # Connection may have timed out; rebuild and retry once.
+                self._refresh_conn = True
+                return self.invoke_elem(na_element, api_args=api_args)
             raise NaApiError(message=e)
 
         response = (
