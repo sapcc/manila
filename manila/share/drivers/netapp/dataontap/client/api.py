@@ -245,6 +245,7 @@ class BaseClient(object):
         headers = self._build_headers()
 
         self._session.headers = headers
+        self._refresh_conn = False
 
     def _build_headers(self):
         """Adds the necessary headers to the session."""
@@ -354,6 +355,11 @@ class ZapiClient(BaseClient):
         except requests.URLRequired as e:
             raise exception.StorageCommunicationException(str(e))
         except Exception as e:
+            if not self._refresh_conn:
+                # Connection may have timed out; rebuild and retry once.
+                self._refresh_conn = True
+                return self.invoke_elem(na_element,
+                                        enable_tunneling=enable_tunneling)
             raise NaApiError(message=e)
 
         response_xml = response.text
@@ -539,6 +545,10 @@ class RestClient(BaseClient):
         except requests.URLRequired as e:
             raise exception.StorageCommunicationException(str(e))
         except Exception as e:
+            if not self._refresh_conn:
+                # Connection may have timed out; rebuild and retry once.
+                self._refresh_conn = True
+                return self.invoke_elem(na_element, api_args=api_args)
             raise NaApiError(message=e)
 
         response = (
