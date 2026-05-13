@@ -2359,11 +2359,20 @@ class ShareAPITest(test.TestCase):
     def test_delete_metadata(self):
         mock_delete = self.mock_object(
             self.controller, '_delete_metadata', mock.Mock())
+        mock_update = self.mock_object(
+            self.controller.share_api, 'update_share_from_metadata',
+            mock.Mock())
+        remaining_metadata = {'test_key': 'test_value'}
+        self.mock_object(
+            self.controller.share_api.db, 'share_metadata_get',
+            mock.Mock(return_value=remaining_metadata))
 
         req = fakes.HTTPRequest.blank(
             '/v2/shares/%s/metadata/fake_key' % id)
         self.controller.delete_metadata(req, id, 'fake_key')
         mock_delete.assert_called_once_with(req, id, 'fake_key')
+        mock_update.assert_called_once_with(
+            req.environ['manila.context'], id, remaining_metadata)
 
 
 def _fake_access_get(self, ctxt, access_id):

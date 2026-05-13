@@ -42,6 +42,7 @@ from manila.common import constants
 from manila import context
 from manila import coordination
 from manila.data import rpcapi as data_rpcapi
+from manila.dns import designate as dns_designate
 from manila import exception
 from manila.i18n import _
 from manila.keymgr import barbican as barbican_api
@@ -385,6 +386,7 @@ class ShareManager(manager.SchedulerDependentManager):
         self.message_api = message_api.API()
         self.share_api = api.API()
         self.transfer_api = transfer_api.API()
+        self.dns_api = dns_designate.API()
         if CONF.profiler.enabled and profiler is not None:
             self.driver = profiler.trace_cls("driver")(self.driver)
         self.hooks = []
@@ -2056,6 +2058,9 @@ class ShareManager(manager.SchedulerDependentManager):
             self.db.export_locations_update(
                 context, dest_share_instance['id'],
                 data_updates['export_locations'])
+            self._update_dns_record_on_migration(
+                context, share_ref, dest_share_instance,
+                data_updates['export_locations'])
 
         snapshot_updates = data_updates.get('snapshot_updates') or {}
 
@@ -2412,6 +2417,147 @@ class ShareManager(manager.SchedulerDependentManager):
             id = share.instance['id']
         return self.db.share_instance_get(context, id, with_share_data=True)
 
+    def _create_dns_export_locations(self, dns_name, dns_domain,
+                                     export_locations):
+        """Creates DNS-based export locations if DNS metadata is present."""
+        dns_locations = []
+
+        if not dns_name or not dns_domain:
+            return dns_locations
+
+        for export_loc in export_locations:
+            if not export_loc.get('metadata', {}).get('preferred'):
+                continue
+
+            ip_path = export_loc['path']
+            try:
+                mountpoint = ip_path.split(':')[1]
+            except IndexError:
+                LOG.warning("Invalid export location path: %s", ip_path)
+                continue
+
+            dns_path = f"{dns_name}.{dns_domain.rstrip('.')}:{mountpoint}"
+
+            # DNS-based location is preferred for easy consumption;
+            # the IP-based location is kept but marked non-preferred.
+            dns_location = {
+                'path': dns_path,
+                'is_admin_only': False,
+                'metadata': {
+                    'preferred': True,
+                    'dns_name': dns_name,
+                    'dns_domain': dns_domain
+                }
+            }
+            dns_locations.append(dns_location)
+            break
+
+        return dns_locations
+
+    def _demote_ip_export_locations(self, export_locations):
+        """Return export locations with preferred=False on IP-based entries.
+
+        Called when DNS export locations are present so that DNS paths become
+        the single preferred mount point for clients.
+        """
+        result = []
+        for loc in export_locations:
+            meta = dict(loc.get('metadata', {}))
+            if meta.get('preferred'):
+                meta['preferred'] = False
+            result.append(dict(loc, metadata=meta))
+        return result
+
+    def _restore_ip_preferred(self, export_locations):
+        """Restore preferred=True on the first non-admin IP export location.
+
+        Called when DNS metadata is removed so that clients fall back to
+        the IP-based path as their preferred mount point.
+        """
+        result = []
+        restored = False
+        for loc in export_locations:
+            meta = dict(loc.get('metadata', {}))
+            if not restored and not loc.get('is_admin_only'):
+                meta['preferred'] = True
+                restored = True
+            result.append(dict(loc, metadata=meta))
+        return result
+
+    def _get_preferred_ips(self, export_locations):
+        """Extract IPs from preferred, non-admin export locations."""
+
+        ips = []
+        for loc in export_locations:
+            if loc.get('is_admin_only'):
+                continue
+            if not loc.get('metadata', {}).get('preferred'):
+                continue
+            ip = loc.get('path', '').split(':')[0]
+            if ip:
+                ips.append(ip)
+        return ips
+
+    def _create_dns_record(self, context, share_instance, dns_name, dns_domain,
+                           export_locations):
+        """Creates a DNS A record in Designate for the preferred export IP."""
+
+        if not self.dns_api.enabled:
+            return
+
+        if not dns_name or not dns_domain:
+            return
+
+        ip_addresses = self._get_preferred_ips(export_locations)
+
+        if not ip_addresses:
+            LOG.warning("No preferred export location IP found for share "
+                        "instance %s, skipping DNS record creation.",
+                        share_instance['id'])
+            return
+
+        self.dns_api.create_record(context, dns_name, dns_domain, ip_addresses)
+
+    def _delete_dns_record(self, context, share):
+        """Deletes the DNS A record in Designate for a share."""
+        if not self.dns_api.enabled:
+            return
+
+        share_metadata = self.db.share_metadata_get(context, share['id'])
+        dns_name = share_metadata.get('dns_name')
+        dns_domain = share_metadata.get('dns_domain')
+
+        if not dns_name or not dns_domain:
+            return
+
+        self.dns_api.delete_record(context, dns_name, dns_domain)
+
+    def _update_dns_record_on_migration(self, context, share_ref,
+                                        dest_share_instance, export_locations):
+        """Update Designate DNS A record after share migration completes."""
+
+        if not self.dns_api.enabled:
+            return
+
+        share_metadata = self.db.share_metadata_get(context, share_ref['id'])
+        dns_name = share_metadata.get('dns_name')
+        dns_domain = share_metadata.get('dns_domain')
+
+        if not dns_name or not dns_domain:
+            return
+
+        ip_addresses = self._get_preferred_ips(export_locations)
+
+        if not ip_addresses:
+            LOG.warning("No preferred export location IP found after "
+                        "migration of share instance %s, "
+                        "skipping DNS record update.",
+                        dest_share_instance['id'])
+            return
+
+        self.dns_api.update_record(
+            context, dns_name, dns_domain, ip_addresses)
+
     @run_concurrently
     @add_hooks
     @utils.require_driver_initialized
@@ -2677,6 +2823,25 @@ class ShareManager(manager.SchedulerDependentManager):
                 self.db.export_locations_update(
                     context, share_instance['id'], export_locations)
 
+                _share_meta = self.db.share_metadata_get(
+                    context, share_instance['share_id'])
+                _dns_name = _share_meta.get('dns_name')
+                _dns_domain = _share_meta.get('dns_domain')
+
+                dns_locations = self._create_dns_export_locations(
+                    _dns_name, _dns_domain, export_locations)
+
+                if dns_locations:
+                    self.db.export_locations_update(
+                        context, share_instance['id'],
+                        self._demote_ip_export_locations(
+                            export_locations) + dns_locations,
+                        delete=True)
+
+                self._create_dns_record(
+                    context, share_instance, _dns_name, _dns_domain,
+                    export_locations)
+
         except Exception as e:
             with excutils.save_and_reraise_exception():
                 LOG.warning("Share instance %s failed on creation.",
@@ -2710,6 +2875,23 @@ class ShareManager(manager.SchedulerDependentManager):
                     resource_type=message_field.Resource.SHARE,
                     resource_id=share_id,
                     exception=e)
+                # Clean up any Designate record that was written before the
+                # failure so we do not leave orphaned records behind.
+                _share_meta_cleanup = self.db.share_metadata_get(
+                    context, share_id)
+                _cleanup_dns_name = _share_meta_cleanup.get('dns_name')
+                _cleanup_dns_domain = _share_meta_cleanup.get('dns_domain')
+                if _cleanup_dns_name and _cleanup_dns_domain:
+                    try:
+                        self.dns_api.delete_record(
+                            context, _cleanup_dns_name, _cleanup_dns_domain)
+                    except Exception:
+                        LOG.warning(
+                            "Could not clean up DNS record '%s.%s' after "
+                            "share instance %s creation failure. "
+                            "Manual cleanup in Designate may be required.",
+                            _cleanup_dns_name, _cleanup_dns_domain,
+                            share_instance_id)
         else:
             LOG.info("Share instance %s created successfully.",
                      share_instance_id)
@@ -3111,6 +3293,8 @@ class ShareManager(manager.SchedulerDependentManager):
         share_metadata = {
             m['key']: m['value'] for m in share_metadata_list
         } if share_metadata_list else {}
+        dns_name = share_metadata.get('dns_name')
+        dns_domain = share_metadata.get('dns_domain')
 
         for r in replica_list:
             replica_metadata = self.db.share_replica_metadata_get(
@@ -3233,6 +3417,45 @@ class ShareManager(manager.SchedulerDependentManager):
 
         LOG.info("Share replica %s: promoted to active state "
                  "successfully.", share_replica['id'])
+
+        if self.dns_api.enabled and dns_name and dns_domain:
+            new_export_locs = (
+                self.db.export_location_get_all_by_share_instance_id(
+                    context, share_replica['id']))
+            ip_locs = [
+                {
+                    'path': el['path'],
+                    'is_admin_only': el['is_admin_only'],
+                    'metadata': el.get('el_metadata', {}),
+                }
+                for el in new_export_locs
+                if not el.get('el_metadata', {}).get('dns_name')
+            ]
+            ip_addresses = self._get_preferred_ips(ip_locs)
+            if ip_addresses:
+                # Update the Designate record to the new IP.
+                self.dns_api.update_record(
+                    context, dns_name, dns_domain, ip_addresses)
+                # Rebuild DNS export locations on this replica in case it
+                # was created before DNS metadata was set.
+                existing_dns_locs = [
+                    el for el in new_export_locs
+                    if el.get('el_metadata', {}).get('dns_name')
+                ]
+                if not existing_dns_locs:
+                    dns_locations = self._create_dns_export_locations(
+                        dns_name, dns_domain, ip_locs)
+                    if dns_locations:
+                        self.db.export_locations_update(
+                            context, share_replica['id'],
+                            self._demote_ip_export_locations(
+                                ip_locs) + dns_locations,
+                            delete=True)
+            else:
+                LOG.warning(
+                    "No preferred export location IP found on promoted "
+                    "replica %s; DNS A record was not updated.",
+                    share_replica['id'])
 
     @periodic_task.periodic_task(spacing=CONF.replica_state_update_interval)
     @utils.require_driver_initialized
@@ -4086,6 +4309,18 @@ class ShareManager(manager.SchedulerDependentManager):
             self._get_share_details_from_instance(context, share_instance_id))
         self._notify_about_share_usage(context, share,
                                        share_instance, "delete.start")
+
+        share_metadata = self.db.share_metadata_get(context, share['id'])
+        dns_name = share_metadata.get('dns_name')
+        dns_domain = share_metadata.get('dns_domain')
+        if dns_name and dns_domain:
+            other_instances = [
+                si for si in self.db.share_instance_get_all_by_share(
+                    context, share['id'])
+                if si['id'] != share_instance_id
+            ]
+            if not other_instances:
+                self._delete_dns_record(context, share)
 
         error_state = None
         if deferred_delete:
@@ -7594,6 +7829,89 @@ class ShareManager(manager.SchedulerDependentManager):
         self._check_share_network_update_finished(
             context, share_network_id=share_network['id'])
 
+    def _sync_dns_on_metadata_update(self, context, share, share_instance):
+        """Sync Designate DNS record and DNS export locations.
+
+        Called after a metadata update on the share.
+        """
+
+        share_metadata = self.db.share_metadata_get(context, share['id'])
+        dns_name = share_metadata.get('dns_name')
+        dns_domain = share_metadata.get('dns_domain')
+
+        # Fetch current export locations from DB (includes DNS ones)
+        existing_els = self.db.export_location_get_all_by_share_instance_id(
+            context, share_instance['id'])
+
+        ip_export_locs = []
+        dns_export_locs = []
+        for el in existing_els:
+            el_meta = el.get('el_metadata', {})
+            if el_meta.get('dns_name'):
+                dns_export_locs.append(el)
+            else:
+                ip_export_locs.append({
+                    'path': el['path'],
+                    'is_admin_only': el['is_admin_only'],
+                    'metadata': el_meta,
+                })
+
+        # Detect the old FQDN stored in the existing DNS export locations
+        old_dns_name = None
+        old_dns_domain = None
+        for el in dns_export_locs:
+            el_meta = el.get('el_metadata', {})
+            old_dns_name = el_meta.get('dns_name')
+            old_dns_domain = el_meta.get('dns_domain')
+            break
+
+        if dns_name and dns_domain:
+            fqdn_changed = (old_dns_name and (
+                old_dns_name != dns_name or old_dns_domain != dns_domain))
+
+            if fqdn_changed:
+                # Remove old DNS export locations and Designate record before
+                # writing the new ones, to avoid orphaned records.
+                restored_ip_locs = self._restore_ip_preferred(ip_export_locs)
+                self.db.export_locations_update(
+                    context, share_instance['id'],
+                    restored_ip_locs, delete=True)
+                self.dns_api.delete_record(
+                    context, old_dns_name, old_dns_domain)
+                dns_export_locs = []
+
+            new_dns_locs = self._create_dns_export_locations(
+                dns_name, dns_domain, ip_export_locs)
+            if new_dns_locs and not dns_export_locs:
+                self.db.export_locations_update(
+                    context, share_instance['id'],
+                    self._demote_ip_export_locations(
+                        ip_export_locs) + new_dns_locs,
+                    delete=True)
+            self._create_dns_record(
+                context, share_instance, dns_name, dns_domain, ip_export_locs)
+        else:
+            # DNS metadata removed: clean up DNS export locations and A-record.
+            # Pass only the IP-based locations with delete=True so that the DB
+            # layer soft-deletes any export locations not in the provided list.
+            # Also restore preferred=True on the IP locations since DNS
+            # is gone.
+            if dns_export_locs:
+                restored_ip_locs = self._restore_ip_preferred(ip_export_locs)
+                self.db.export_locations_update(
+                    context, share_instance['id'],
+                    restored_ip_locs, delete=True)
+            # Recover FQDN from stored DNS export location metadata and delete
+            # the corresponding Designate record.
+            for el in dns_export_locs:
+                el_meta = el.get('el_metadata', {})
+                old_dns_name = el_meta.get('dns_name')
+                old_dns_domain = el_meta.get('dns_domain')
+                if old_dns_name and old_dns_domain:
+                    self.dns_api.delete_record(
+                        context, old_dns_name, old_dns_domain)
+                    break
+
     def update_share_from_metadata(self, context, share_id, metadata):
         share = self.db.share_get(context, share_id)
         share_instance = self._get_share_instance(context, share)
@@ -7616,6 +7934,8 @@ class ShareManager(manager.SchedulerDependentManager):
                 resource_type=message_field.Resource.SHARE,
                 resource_id=share_id,
                 detail=message_field.Detail.UPDATE_METADATA_FAILURE)
+
+        self._sync_dns_on_metadata_update(context, share, share_instance)
 
     def update_share_network_subnet_from_metadata(self, context,
                                                   share_network_id,
