@@ -20,6 +20,7 @@ from webob import exc
 from manila.api.openstack import wsgi
 from manila.api.v2 import metadata
 from manila.api.views import export_locations as export_locations_views
+from manila.common import constants
 from manila.db import api as db_api
 from manila import exception
 from manila.i18n import _
@@ -123,6 +124,8 @@ class ShareExportLocationController(wsgi.Controller,
 
         current_export_metadata = db_api.export_location_metadata_get(
             context, share_export_location)
+        self._check_dns_reserved_metadata(current_export_metadata,
+                                          metadata.keys())
         if delete:
             _metadata = metadata
             for key in persistent_keys:
@@ -136,6 +139,22 @@ class ShareExportLocationController(wsgi.Controller,
             _metadata.update(metadata_copy)
 
         return _metadata
+
+    @staticmethod
+    def _check_dns_reserved_metadata(current_export_metadata, keys):
+        """Reject changes to the metadata Manila uses for DNS locations."""
+        reserved = set(constants.DNS_EXPORT_LOCATION_METADATA_KEYS)
+        if current_export_metadata.get('dns_name'):
+            raise exc.HTTPBadRequest(explanation=_(
+                "The metadata of a DNS export location is managed by Manila "
+                "and cannot be changed. Update the share's 'dns_name' and "
+                "'dns_domain' metadata instead."))
+        used = reserved.intersection(keys)
+        if used:
+            raise exc.HTTPBadRequest(explanation=_(
+                "Export location metadata keys %s are reserved for the DNS "
+                "integration and cannot be set directly.")
+                % ', '.join(sorted(used)))
 
     @wsgi.Controller.api_version("2.87")
     @wsgi.Controller.authorize("get_metadata")
@@ -198,6 +217,9 @@ class ShareExportLocationController(wsgi.Controller,
         """Delete metadata for a given share export location."""
         context = req.environ['manila.context']
         self._verify_share(context, share_id, for_modification=True)
+        current_export_metadata = db_api.export_location_metadata_get(
+            context, resource_id)
+        self._check_dns_reserved_metadata(current_export_metadata, [key])
         return self._delete_metadata(
             req, resource_id, key, parent_id=share_id)
 

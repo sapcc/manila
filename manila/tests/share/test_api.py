@@ -733,8 +733,7 @@ class ShareAPITestCase(test.TestCase):
             'snapshot_policy': 'monthly',
             'max_share_size': '10'
         }
-        backend_metadata = {
-            k: v for k, v in metadata.items() if k != 'max_share_size'}
+        expected_metadata = {'dedupe': 'True', 'snapshot_policy': 'monthly'}
 
         self.mock_object(self.api, 'get', mock.Mock(return_value='fake_share'))
         mock_call = self.mock_object(
@@ -744,7 +743,142 @@ class ShareAPITestCase(test.TestCase):
 
         self.api.update_share_from_metadata(self.context, 'fake_id', metadata)
         mock_call.assert_called_once_with(
-            self.context, 'fake_share', backend_metadata)
+            self.context, 'fake_share', expected_metadata)
+
+    def test_update_share_from_metadata_dns_changed(self):
+        CONF.set_default("driver_updatable_metadata", ['snapshot_policy'])
+        previous = {'snapshot_policy': 'monthly'}
+        metadata = {'snapshot_policy': 'monthly', 'dns_name': 'share',
+                    'dns_domain': 'example.com.'}
+        self.mock_object(self.api, 'get', mock.Mock(return_value='fake_share'))
+        mock_call = self.mock_object(
+            self.api.share_rpcapi, 'update_share_from_metadata')
+
+        self.api.update_share_from_metadata(
+            self.context, 'fake_id', metadata, previous_metadata=previous)
+
+        mock_call.assert_called_once_with(
+            self.context, 'fake_share',
+            {'snapshot_policy': 'monthly', 'dns_name': 'share',
+             'dns_domain': 'example.com.'})
+
+    def test_update_share_from_metadata_dns_removed(self):
+        CONF.set_default("driver_updatable_metadata", [])
+        previous = {'dns_name': 'share', 'dns_domain': 'example.com.',
+                    'foo': 'bar'}
+        self.mock_object(self.api, 'get', mock.Mock(return_value='fake_share'))
+        mock_call = self.mock_object(
+            self.api.share_rpcapi, 'update_share_from_metadata')
+
+        self.api.update_share_from_metadata(
+            self.context, 'fake_id', {'foo': 'bar'},
+            previous_metadata=previous)
+
+        mock_call.assert_called_once_with(
+            self.context, 'fake_share',
+            {'dns_name': None, 'dns_domain': None})
+
+    def test_update_share_from_metadata_dns_unchanged_no_rpc(self):
+        CONF.set_default("driver_updatable_metadata", [])
+        metadata = {'dns_name': 'share', 'dns_domain': 'example.com.',
+                    'foo': 'baz'}
+        previous = dict(metadata, foo='bar')
+        mock_call = self.mock_object(
+            self.api.share_rpcapi, 'update_share_from_metadata')
+
+        self.api.update_share_from_metadata(
+            self.context, 'fake_id', metadata, previous_metadata=previous)
+
+        self.assertFalse(mock_call.called)
+
+    def test_update_share_from_metadata_without_previous(self):
+        CONF.set_default("driver_updatable_metadata", [])
+        metadata = {'dns_name': 'share', 'dns_domain': 'example.com.'}
+        self.mock_object(self.api, 'get', mock.Mock(return_value='fake_share'))
+        mock_call = self.mock_object(
+            self.api.share_rpcapi, 'update_share_from_metadata')
+
+        self.api.update_share_from_metadata(self.context, 'fake_id', metadata)
+
+        mock_call.assert_called_once_with(
+            self.context, 'fake_share', metadata)
+
+    def _dns_share(self, **kwargs):
+        share = {'id': 'share-1', 'status': constants.STATUS_AVAILABLE,
+                 'task_state': None, 'share_proto': 'NFS'}
+        share.update(kwargs)
+        return share
+
+    def test_validate_dns_metadata_normalizes_in_place(self):
+        mock_get_all = self.mock_object(
+            self.api.db, 'share_get_all', mock.Mock(return_value=[]))
+        metadata = {'dns_name': ' My-Share ', 'dns_domain': 'Example.COM',
+                    'foo': 'bar'}
+
+        self.api.validate_dns_metadata(self.context, metadata, 'NFS')
+
+        self.assertEqual({'dns_name': 'my-share',
+                          'dns_domain': 'example.com.', 'foo': 'bar'},
+                         metadata)
+        mock_get_all.assert_called_once_with(
+            mock.ANY, filters={'metadata': {'dns_name': 'my-share',
+                                            'dns_domain': 'example.com.'}})
+
+    def test_validate_dns_metadata_without_dns_keys(self):
+        mock_get_all = self.mock_object(self.api.db, 'share_get_all')
+
+        self.api.validate_dns_metadata(self.context, {'foo': 'bar'}, 'CIFS')
+        self.api.validate_dns_metadata(self.context, None, 'CIFS')
+
+        self.assertFalse(mock_get_all.called)
+
+    def test_validate_dns_metadata_incomplete_pair(self):
+        self.assertRaises(exception.InvalidInput,
+                          self.api.validate_dns_metadata,
+                          self.context, {'dns_name': 'share'}, 'NFS')
+
+    def test_validate_dns_metadata_rejects_non_nfs(self):
+        metadata = {'dns_name': 'share', 'dns_domain': 'example.com.'}
+
+        self.assertRaises(exception.InvalidInput,
+                          self.api.validate_dns_metadata,
+                          self.context, metadata, 'CIFS')
+
+    def test_validate_dns_metadata_name_in_use(self):
+        self.mock_object(
+            self.api.db, 'share_get_all',
+            mock.Mock(return_value=[{'id': 'other-share'}]))
+        metadata = {'dns_name': 'share', 'dns_domain': 'example.com.'}
+
+        self.assertRaises(exception.DNSNameInUse,
+                          self.api.validate_dns_metadata,
+                          self.context, metadata, 'NFS')
+
+    def test_validate_dns_metadata_ignores_own_share(self):
+        self.mock_object(
+            self.api.db, 'share_get_all',
+            mock.Mock(return_value=[{'id': 'share-1'}]))
+        metadata = {'dns_name': 'share', 'dns_domain': 'example.com.'}
+
+        self.api.validate_dns_metadata(self.context, metadata, 'NFS',
+                                       share=self._dns_share())
+
+    @ddt.data({'status': constants.STATUS_ERROR},
+              {'task_state': constants.TASK_STATE_MIGRATION_IN_PROGRESS})
+    def test_validate_dns_metadata_share_not_ready(self, share_kwargs):
+        self.mock_object(self.api.db, 'share_get_all',
+                         mock.Mock(return_value=[]))
+        metadata = {'dns_name': 'share', 'dns_domain': 'example.com.'}
+
+        self.assertRaises(exception.InvalidShare,
+                          self.api.validate_dns_metadata,
+                          self.context, metadata, 'NFS',
+                          share=self._dns_share(**share_kwargs))
+
+    def test_check_share_ready_for_dns_update_after_migration(self):
+        # A finished migration leaves task_state set; that is not busy.
+        self.api.check_share_ready_for_dns_update(self._dns_share(
+            task_state=constants.TASK_STATE_MIGRATION_SUCCESS))
 
     @ddt.data(True, False)
     def test_create_public_and_private_share(self, is_public):

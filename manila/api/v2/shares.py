@@ -37,6 +37,7 @@ from manila.i18n import _
 from manila.lock import api as resource_locks
 from manila import policy
 from manila import share
+from manila.share import api as share_api
 from manila.share import utils as share_utils
 from manila import utils
 
@@ -698,6 +699,17 @@ class ShareController(wsgi.Controller,
             _metadata = current_share_metadata.copy()
             _metadata.update(metadata_copy)
 
+        if (share_api.get_dns_pair(current_share_metadata)
+                != share_api.get_dns_pair(_metadata)):
+            share = self.share_api.get(context, share_id)
+            try:
+                self.share_api.validate_dns_metadata(
+                    context, _metadata, share['share_proto'], share=share)
+            except (exception.InvalidInput, exception.InvalidShare) as e:
+                raise exc.HTTPBadRequest(explanation=e.msg)
+            except exception.DNSNameInUse as e:
+                raise exc.HTTPConflict(explanation=e.msg)
+
         return _metadata
 
     # NOTE: (ashrod98) original metadata method and policy overrides
@@ -713,15 +725,17 @@ class ShareController(wsgi.Controller,
         if not self.is_valid_body(body, 'metadata'):
             expl = _('Malformed request body')
             raise exc.HTTPBadRequest(explanation=expl)
+        context = req.environ['manila.context']
+        previous_metadata = db.share_metadata_get(context, resource_id)
         _metadata = self._validate_metadata_for_update(req, resource_id,
                                                        body['metadata'],
                                                        delete=False)
         body['metadata'] = _metadata
         metadata = self._create_metadata(req, resource_id, body)
 
-        context = req.environ['manila.context']
-        self.share_api.update_share_from_metadata(context, resource_id,
-                                                  metadata.get('metadata'))
+        self.share_api.update_share_from_metadata(
+            context, resource_id, metadata.get('metadata'),
+            previous_metadata=previous_metadata)
         return metadata
 
     @wsgi.Controller.api_version("2.0")
@@ -730,14 +744,16 @@ class ShareController(wsgi.Controller,
         if not self.is_valid_body(body, 'metadata'):
             expl = _('Malformed request body')
             raise exc.HTTPBadRequest(explanation=expl)
+        context = req.environ['manila.context']
+        previous_metadata = db.share_metadata_get(context, resource_id)
         _metadata = self._validate_metadata_for_update(req, resource_id,
                                                        body['metadata'])
         body['metadata'] = _metadata
         metadata = self._update_all_metadata(req, resource_id, body)
 
-        context = req.environ['manila.context']
-        self.share_api.update_share_from_metadata(context, resource_id,
-                                                  metadata.get('metadata'))
+        self.share_api.update_share_from_metadata(
+            context, resource_id, metadata.get('metadata'),
+            previous_metadata=previous_metadata)
         return metadata
 
     @wsgi.Controller.api_version("2.0")
@@ -746,15 +762,17 @@ class ShareController(wsgi.Controller,
         if not self.is_valid_body(body, 'meta'):
             expl = _('Malformed request body')
             raise exc.HTTPBadRequest(explanation=expl)
+        context = req.environ['manila.context']
+        previous_metadata = db.share_metadata_get(context, resource_id)
         _metadata = self._validate_metadata_for_update(req, resource_id,
                                                        body['metadata'],
                                                        delete=False)
         body['metadata'] = _metadata
         metadata = self._update_metadata_item(req, resource_id, body, key)
 
-        context = req.environ['manila.context']
-        self.share_api.update_share_from_metadata(context, resource_id,
-                                                  metadata.get('metadata'))
+        self.share_api.update_share_from_metadata(
+            context, resource_id, metadata.get('metadata'),
+            previous_metadata=previous_metadata)
         return metadata
 
     @wsgi.Controller.api_version("2.0")
@@ -769,7 +787,28 @@ class ShareController(wsgi.Controller,
         if key in self._conf_admin_only_metadata_keys:
             policy.check_policy(context, 'share',
                                 'update_admin_only_metadata')
-        return self._delete_metadata(req, resource_id, key)
+
+        if key not in constants.DNS_METADATA_KEYS:
+            return self._delete_metadata(req, resource_id, key)
+
+        # 'dns_name' and 'dns_domain' only make sense as a pair: deleting
+        # either one unpublishes the DNS name and removes both keys.
+        previous_metadata = db.share_metadata_get(context, resource_id)
+        share = self.share_api.get(context, resource_id)
+        try:
+            self.share_api.check_share_ready_for_dns_update(share)
+        except exception.InvalidShare as e:
+            raise exc.HTTPBadRequest(explanation=e.msg)
+        self._delete_metadata(req, resource_id, key)
+        for other_key in constants.DNS_METADATA_KEYS:
+            if other_key != key and other_key in previous_metadata:
+                self._delete_metadata(req, resource_id, other_key)
+        remaining_metadata = {
+            k: v for k, v in previous_metadata.items()
+            if k not in constants.DNS_METADATA_KEYS}
+        self.share_api.update_share_from_metadata(
+            context, resource_id, remaining_metadata,
+            previous_metadata=previous_metadata)
 
 
 def create_resource():
