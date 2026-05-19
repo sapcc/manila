@@ -1361,6 +1361,7 @@ class NetAppCmodeFileStorageLibrary(object):
                 vserver_client, aggr_list, share_name,
                 share['size'],
                 self.configuration.netapp_volume_snapshot_reserve_percent,
+                replica=replica,
                 mount_point_name=mount_point_name,
                 comment=share_comment, **provisioning_options)
         else:
@@ -1397,8 +1398,9 @@ class NetAppCmodeFileStorageLibrary(object):
     def _create_flexgroup_share(self, vserver_client, aggr_list, share_name,
                                 size, snapshot_reserve, dedup_enabled=False,
                                 compression_enabled=False, max_files=None,
-                                mount_point_name=None, snaplock_type=None,
-                                comment='', **provisioning_options):
+                                replica=False, mount_point_name=None,
+                                snaplock_type=None, comment='',
+                                **provisioning_options):
         """Create a FlexGroup share using async API with job."""
 
         start_timeout = (
@@ -1421,15 +1423,16 @@ class NetAppCmodeFileStorageLibrary(object):
             share_name, dedup_enabled, compression_enabled, is_flexgroup=True,
             efficiency_policy=efficiency_policy)
 
-        if provisioning_options.get('max_files_multiplier') is not None:
-            max_files_multiplier = provisioning_options.pop(
-                'max_files_multiplier')
-            max_files = na_utils.calculate_max_files(size,
-                                                     max_files_multiplier,
-                                                     max_files)
+        if not replica:
+            if provisioning_options.get('max_files_multiplier') is not None:
+                max_files_multiplier = provisioning_options.pop(
+                    'max_files_multiplier')
+                max_files = na_utils.calculate_max_files(size,
+                                                         max_files_multiplier,
+                                                         max_files)
 
-        if max_files is not None:
-            vserver_client.set_volume_max_files(share_name, max_files)
+            if max_files is not None:
+                vserver_client.set_volume_max_files(share_name, max_files)
 
         if snaplock_type is not None:
             vserver_client.set_snaplock_attributes(share_name,
