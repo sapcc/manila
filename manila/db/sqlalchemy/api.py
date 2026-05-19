@@ -6411,10 +6411,21 @@ def availability_zone_get_all(context):
 
 @require_admin_context
 @context_manager.writer.independent
-def _purge_table_records(context, model, table_name, deleted_age):
-    s_deleted_records = context.session.query(
-        model
-    ).filter(model.deleted_at <= deleted_age)
+def _purge_table_records(context, model, table_name, deleted_age,
+                         has_id=True):
+    if has_id:
+        # On soft-delete the 'deleted' column is set to the record's id.
+        # Guard against purging records that were un-deleted but whose
+        # deleted_at was intentionally left intact for audit purposes.
+        s_deleted_records = context.session.query(model).filter(
+            model.deleted_at <= deleted_age,
+            model.deleted == model.id)
+    else:
+        # Tables without an 'id' column (async_operation_data, backend_info,
+        # drivers_private_data) use deleted=1 on soft-delete.
+        s_deleted_records = context.session.query(model).filter(
+            model.deleted_at <= deleted_age,
+            model.deleted == 1)
     deleted_count = 0
 
     # delete records one by one,
@@ -6488,6 +6499,11 @@ def purge_deleted_records(context, age_in_days):
         msg = 'No tables found, check database connection'
         raise exception.InvalidResults(msg)
 
+    # Tables without an 'id' column use deleted=1 (not deleted=id) on
+    # soft-delete; they need a different filter in _purge_table_records.
+    tables_without_id = {'async_operation_data', 'backend_info',
+                         'drivers_private_data'}
+
     # Build model lookup once
     model_by_table = {m.__tablename__: m
                       for m in models.__dict__.values()
@@ -6500,8 +6516,10 @@ def purge_deleted_records(context, age_in_days):
         table_name = table.name
         if table_name in model_by_table:
             try:
-                _purge_table_records(context, model_by_table[table_name],
-                                     table_name, deleted_age)
+                _purge_table_records(
+                    context, model_by_table[table_name],
+                    table_name, deleted_age,
+                    has_id=table_name not in tables_without_id)
             except db_exc.DBError:
                 LOG.warning("Querying table %s's soft-deleted records "
                             "failed, skipping.", table_name)
