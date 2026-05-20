@@ -3109,10 +3109,14 @@ class ShareManager(manager.SchedulerDependentManager):
             return
 
         if replica_state in (constants.REPLICA_STATE_IN_SYNC,
-                             constants.REPLICA_STATE_OUT_OF_SYNC,
-                             constants.STATUS_ERROR):
-            self.db.share_replica_update(context, share_replica['id'],
-                                         {'replica_state': replica_state})
+                             constants.REPLICA_STATE_OUT_OF_SYNC):
+            states = {'replica_state': replica_state,
+                      'status': constants.STATUS_AVAILABLE}
+            self.db.share_replica_update(context, share_replica['id'], states)
+        elif replica_state == constants.STATUS_ERROR:
+            states = {'replica_state': replica_state,
+                      'status': constants.STATUS_ERROR}
+            self.db.share_replica_update(context, share_replica['id'], states)
         elif replica_state:
             msg = (("Replica %(id)s cannot be set to %(state)s "
                     "through update call.") %
