@@ -6730,6 +6730,11 @@ def purge_deleted_records(context, age_in_days):
                       for m in models.__dict__.values()
                       if hasattr(m, '__tablename__')}
 
+    # These tables use deleted=1 on soft-delete because they have no 'id'
+    # column; all other tables set deleted=id on soft-delete.
+    tables_without_id = {'async_operation_data', 'backend_info',
+                         'drivers_private_data'}
+
     for table in reversed(tables):
         if 'deleted' not in table.columns.keys():
             continue
