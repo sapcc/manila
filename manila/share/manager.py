@@ -2341,6 +2341,38 @@ class ShareManager(manager.SchedulerDependentManager):
                         resource_id=share_id,
                         detail=(message_field.Detail
                                 .SECURITY_SERVICE_FAILED_AUTH))
+            except exception.CifsServerCertificateError:
+                with excutils.save_and_reraise_exception():
+                    LOG.warning("Provision of share server failed: CIFS AD "
+                                "join failed due to a certificate error.")
+                    self.db.share_instance_update(
+                        context, share_instance_id,
+                        {'status': constants.STATUS_ERROR}
+                    )
+                    self.message_api.create(
+                        context,
+                        message_field.Action.CREATE,
+                        share['project_id'],
+                        resource_type=message_field.Resource.SHARE,
+                        resource_id=share_id,
+                        detail=(message_field.Detail
+                                .CIFS_SERVER_CERTIFICATE_ERROR))
+            except exception.CifsServerSetupFailed:
+                with excutils.save_and_reraise_exception():
+                    LOG.warning("Provision of share server failed: CIFS "
+                                "server could not be set up after all "
+                                "retries.")
+                    self.db.share_instance_update(
+                        context, share_instance_id,
+                        {'status': constants.STATUS_ERROR}
+                    )
+                    self.message_api.create(
+                        context,
+                        message_field.Action.CREATE,
+                        share['project_id'],
+                        resource_type=message_field.Resource.SHARE,
+                        resource_id=share_id,
+                        detail=message_field.Detail.CIFS_SERVER_SETUP_FAILED)
             except exception.IpAddressGenerationFailureClient:
                 with excutils.save_and_reraise_exception():
                     error = ("Creation of share instance %s failed: "
