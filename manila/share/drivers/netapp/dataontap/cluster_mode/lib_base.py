@@ -2829,6 +2829,16 @@ class NetAppCmodeFileStorageLibrary(object):
         if qos_policy_group_name:
             provisioning_options['qos_policy_group'] = qos_policy_group_name
 
+        snap_attributes = self._get_provisioning_options_for_snap_attributes(
+            vserver_client, share_name)
+        provisioning_options.update(snap_attributes)
+
+        metadata = share.get('metadata')
+        if metadata:
+            snapshot_policy = metadata.get('snapshot_policy')
+            if snapshot_policy:
+                provisioning_options['snapshot_policy'] = snapshot_policy
+
         modify_args = {
             'share': share_name,
             'aggr': aggregate_name,
