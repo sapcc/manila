@@ -178,11 +178,25 @@ class Detail(object):
           "contact your administrator to troubleshoot "
           "issues with your network."))
 
-    # ////////////////////////// SCI custom message //////////////////////////
+    # SCI: Keep the SCI CUSTOM MESSAGE at the end of list and count backwards
+
+    CIFS_SERVER_CERTIFICATE_ERROR = (
+        '993',
+        _("Share Driver failed to setup the CIFS server due to a TLS/SSL "
+          "certificate error. Either the CA certificate used to sign the "
+          "Active Directory domain controller certificate is not in the list "
+          "of allowed CAs, or the domain controller hostname does not match "
+          "the certificate. Please refer to the documentation for the list "
+          "of allowed CAs."))
+    CIFS_SERVER_SETUP_FAILED = (
+        '994',
+        _("Failed to setup the CIFS/Active Directory server after multiple "
+          "attempts. Please contact your administrator to check the storage "
+          "backend logs for details."))
     EXTERNAL_SCHEDULER_FILTERED_ALL_HOSTS = (
         '995',
         _("External scheduler API has filtered out all hosts."))
-
+    # 996: NEUTRON_SUBNET_FULL moved to 033 upstream
     DRIVER_FAILED_DELETE_SHARE_SNAPMIRROR = (
         '997',
         _("Share Driver failed to delete the share. A backup SnapMirror "
@@ -230,6 +244,8 @@ class Detail(object):
         UPDATE_METADATA_SUCCESS,
         UPDATE_METADATA_FAILURE,
         UPDATE_METADATA_NOT_DELETED,
+        CIFS_SERVER_SETUP_FAILED,
+        CIFS_SERVER_CERTIFICATE_ERROR,
     )
 
     # Exception and detail mappings

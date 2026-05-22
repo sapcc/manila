@@ -675,6 +675,14 @@ class SecurityServiceFailedAuth(ManilaException):
     message = _("Failed to authenticate user against security service.")
 
 
+class CifsServerSetupFailed(ManilaException):
+    message = _("Failed to setup CIFS/Active Directory server.")
+
+
+class CifsServerCertificateError(ManilaException):
+    message = _("Failed to setup CIFS server due to a certificate error.")
+
+
 class InvalidVolume(Invalid):
     message = _("Invalid volume.")
 
