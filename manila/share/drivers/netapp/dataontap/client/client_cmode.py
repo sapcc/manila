@@ -2081,6 +2081,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             except netapp_api.NaApiError as e:
                 credential_msg = "could not authenticate"
                 privilege_msg = "insufficient access"
+                cert_missing_msg = "required certificate with ca"
+                cert_verify_msg = "certificate verify failed"
+                tls_mismatch_msg = "does not match cn"
                 if (e.code == netapp_api.EAPIERROR and (
                         credential_msg in e.message.lower() or
                         privilege_msg in e.message.lower())):
@@ -2089,6 +2092,12 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                                  "or privileges. %s")
                     raise exception.SecurityServiceFailedAuth(
                         auth_msg % e.message)
+                msg_lower = e.message.lower()
+                if e.code == netapp_api.EAPIERROR and (
+                        cert_missing_msg in msg_lower or
+                        cert_verify_msg in msg_lower or
+                        tls_mismatch_msg in msg_lower):
+                    raise exception.CifsServerCertificateError(e.message)
                 LOG.debug("Failed to create CIFS server entry. %s", e.message)
                 return False
             try:
@@ -2121,7 +2130,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 self.configure_cifs_aes_encryption(aes_encryption,
                                                    secure=True)
         msg = _('Cannot setup CIFS server after 12 attempts.')
-        raise exception.NetAppException(msg)
+        raise exception.CifsServerSetupFailed(msg)
 
     @na_utils.trace
     def modify_active_directory_security_service(
