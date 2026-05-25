@@ -4331,6 +4331,116 @@ class PurgeDeletedTest(test.TestCase):
                                       models.ShareTypes).count()
         self.assertEqual(0, s_row + type_row)
 
+    def test_purge_skips_records_with_stale_deleted_at_but_not_soft_deleted(
+            self):
+        fake_now = timeutils.utcnow()
+        with mock.patch.object(timeutils, 'utcnow',
+                               mock.Mock(return_value=fake_now)):
+            share_type_id = uuidutils.generate_uuid()
+            # Create a share type with deleted_at set but deleted NOT equal
+            # to its id (simulates an un-deleted record with a stale
+            # deleted_at).
+            db_utils.create_share_type(
+                id=share_type_id,
+                deleted='False',
+                deleted_at=fake_now - datetime.timedelta(days=1))
+
+            db_api.purge_deleted_records(self.context, age_in_days=0)
+
+            rows = db_api.model_query(
+                self.context, models.ShareTypes).count()
+            # The record must survive because deleted != id.
+            self.assertEqual(1, rows)
+
+    def test_purge_tables_without_id_uses_deleted_equals_one(self):
+        fake_now = timeutils.utcnow()
+        with mock.patch.object(timeutils, 'utcnow',
+                               mock.Mock(return_value=fake_now)):
+            entity_uuid = uuidutils.generate_uuid()
+            old_time = fake_now - datetime.timedelta(days=2)
+
+            # Insert a soft-deleted drivers_private_data row directly via
+            # the session (deleted=1, deleted_at set).
+            with db_api.context_manager.writer.using(self.context):
+                self.context.session.execute(
+                    models.DriverPrivateData.__table__.insert(),
+                    {'entity_uuid': entity_uuid,
+                     'key': 'test_key',
+                     'value': 'test_value',
+                     'deleted': 1,
+                     'deleted_at': old_time,
+                     'created_at': old_time,
+                     'updated_at': None})
+            # Insert a live row (deleted=0) that must survive.
+            entity_uuid_live = uuidutils.generate_uuid()
+            with db_api.context_manager.writer.using(self.context):
+                self.context.session.execute(
+                    models.DriverPrivateData.__table__.insert(),
+                    {'entity_uuid': entity_uuid_live,
+                     'key': 'live_key',
+                     'value': 'live_value',
+                     'deleted': 0,
+                     'deleted_at': None,
+                     'created_at': fake_now,
+                     'updated_at': None})
+
+            db_api.purge_deleted_records(self.context, age_in_days=0)
+
+            with db_api.context_manager.reader.using(self.context):
+                rows = self.context.session.query(
+                    models.DriverPrivateData).count()
+            # Only the live row must remain.
+            self.assertEqual(1, rows)
+
+    def test_purge_share_access_map_cleans_up_instance_access_map(self):
+        """Purging share_access_map must not raise an IntegrityError. """
+        fake_now = timeutils.utcnow()
+        with mock.patch.object(timeutils, 'utcnow',
+                               mock.Mock(return_value=fake_now)):
+            deleted_at = fake_now - datetime.timedelta(days=1)
+            access_id = uuidutils.generate_uuid()
+
+            # Create share and instance while access rule is live.
+            share = db_utils.create_share_without_instance(metadata={})
+            instance = db_utils.create_share_instance(
+                share_id=share['id'])
+
+            # Create soft-deleted access rule directly via db_utils.
+            db_utils.create_share_access(
+                context=self.context,
+                id=access_id,
+                share_id=share['id'],
+                deleted=access_id,
+                deleted_at=deleted_at)
+
+            # Insert a live share_instance_access_map row referencing the
+            # access rule (worst case for FK violation).
+            instance_access_id = uuidutils.generate_uuid()
+            with db_api.context_manager.writer.using(self.context):
+                self.context.session.execute(
+                    models.ShareInstanceAccessMapping.__table__.insert(),
+                    {'id': instance_access_id,
+                     'share_instance_id': instance['id'],
+                     'access_id': access_id,
+                     'state': 'active',
+                     'deleted': 'False',
+                     'created_at': fake_now,
+                     'updated_at': None,
+                     'deleted_at': None})
+
+            # Must not raise an IntegrityError.
+            db_api.purge_deleted_records(self.context, age_in_days=0)
+
+            with db_api.context_manager.reader.using(self.context):
+                access_rows = db_api.model_query(
+                    self.context, models.ShareAccessMapping,
+                    read_deleted='yes').count()
+                instance_access_rows = self.context.session.query(
+                    models.ShareInstanceAccessMapping).count()
+            # Parent purged, child cleaned up.
+            self.assertEqual(0, access_rows)
+            self.assertEqual(0, instance_access_rows)
+
 
 @ddt.ddt
 class ShareTypeAPITestCase(test.TestCase):
