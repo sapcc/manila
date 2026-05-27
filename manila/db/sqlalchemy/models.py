@@ -21,10 +21,7 @@ SQLAlchemy models for Manila data.
 
 from oslo_config import cfg
 from oslo_db.sqlalchemy import models
-from oslo_log import log
-from oslo_utils import strutils
 from sqlalchemy import Column, Integer, String, schema
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import orm
 from sqlalchemy import ForeignKey, DateTime, Boolean, Enum
 from sqlalchemy_utils import generic_repr
@@ -32,8 +29,7 @@ from sqlalchemy_utils import generic_repr
 from manila.common import constants
 
 CONF = cfg.CONF
-BASE = declarative_base()
-LOG = log.getLogger(__name__)
+BASE = orm.declarative_base()
 
 
 @generic_repr
@@ -208,6 +204,11 @@ class Share(BASE, ManilaBase):
             return self.instance.export_location
 
     @property
+    def encryption_key_ref(self):
+        if len(self.instances) > 0:
+            return self.instance.encryption_key_ref
+
+    @property
     def is_busy(self):
         # Make sure share is not busy, i.e., not part of a migration
         if self.task_state in constants.BUSY_TASK_STATES:
@@ -335,7 +336,6 @@ class Share(BASE, ManilaBase):
             'ShareInstance.deleted == "False")'
         ),
         viewonly=True,
-        join_depth=2,
     )
 
 
@@ -362,17 +362,6 @@ class ShareInstance(BASE, ManilaBase):
     @property
     def export_location(self):
         if len(self.export_locations) > 0:
-            try:
-                for export_location in self.export_locations:
-                    is_preferred = strutils.bool_from_string(
-                        export_location['el_metadata'].get('preferred')
-                    )
-                    if is_preferred:
-                        return export_location['path']
-            except Exception as e:
-                # not fatal, if preferred does not work, take the first
-                LOG.warning("Failed to get preferred export location: %s.", e)
-
             return self.export_locations[0]['path']
 
     @property
@@ -401,10 +390,13 @@ class ShareInstance(BASE, ManilaBase):
     scheduled_at = Column(DateTime)
     launched_at = Column(DateTime)
     terminated_at = Column(DateTime)
+    encryption_key_ref = Column(String(36), nullable=True)
     replica_state = Column(String(255), nullable=True)
     cast_rules_to_readonly = Column(Boolean, default=False, nullable=False)
     share_type_id = Column(String(36), ForeignKey('share_types.id'),
                            nullable=True)
+    qos_type_id = Column(String(36), ForeignKey('qos_types.id'),
+                         nullable=True)
     availability_zone_id = Column(String(36),
                                   ForeignKey('availability_zones.id'),
                                   nullable=True)
@@ -442,6 +434,14 @@ class ShareInstance(BASE, ManilaBase):
         primaryjoin='and_('
                     'ShareInstance.share_type_id == ShareTypes.id, '
                     'ShareTypes.deleted == "False")')
+    qos_type = orm.relationship(
+        "QosTypes",
+        lazy='subquery',
+        foreign_keys=qos_type_id,
+        primaryjoin='and_('
+                    'ShareInstance.qos_type_id == QosTypes.id, '
+                    'QosTypes.deleted == "False")')
+
     share = orm.relationship(
         'Share',
         foreign_keys=share_id,
@@ -590,7 +590,7 @@ class ShareAccessMapping(BASE, ManilaBase):
 
     instance_mappings = orm.relationship(
         "ShareInstanceAccessMapping",
-        lazy='subquery',
+        lazy='selectin',
         primaryjoin=(
             'and_('
             'ShareAccessMapping.id == '
@@ -621,7 +621,7 @@ class ShareAccessRulesMetadata(BASE, ManilaBase):
     access = orm.relationship(
         ShareAccessMapping, backref="share_access_rules_metadata",
         foreign_keys=access_id,
-        lazy='subquery',
+        lazy='selectin',
         primaryjoin='and_('
         'ShareAccessRulesMetadata.access_id == ShareAccessMapping.id,'
         'ShareAccessRulesMetadata.deleted == "False")')
@@ -646,7 +646,7 @@ class ShareInstanceAccessMapping(BASE, ManilaBase):
 
     instance = orm.relationship(
         "ShareInstance",
-        lazy='subquery',
+        lazy='selectin',
         primaryjoin=(
             'and_('
             'ShareInstanceAccessMapping.share_instance_id == '
@@ -654,6 +654,25 @@ class ShareInstanceAccessMapping(BASE, ManilaBase):
             'ShareInstanceAccessMapping.deleted == "False")'
         )
     )
+
+
+class ShareInstanceMetadata(BASE, ManilaBase):
+    """Represents a metadata key/value pair for an instance."""
+    __tablename__ = 'share_instance_metadata'
+    id = Column(Integer, primary_key=True)
+    key = Column(String(255), nullable=False)
+    value = Column(String(1023), nullable=False)
+    deleted = Column(String(36), default='False')
+    share_instance_id = Column(String(36), ForeignKey(
+        'share_instances.id'), nullable=False)
+
+    share_instance = orm.relationship(
+        ShareInstance,
+        backref=orm.backref('share_instance_metadata'),
+        foreign_keys=share_instance_id,
+        primaryjoin='and_('
+        'ShareInstanceMetadata.share_instance_id == ShareInstance.id,'
+        'ShareInstanceMetadata.deleted == "False")')
 
 
 class ShareSnapshot(BASE, ManilaBase):
@@ -712,11 +731,9 @@ class ShareSnapshot(BASE, ManilaBase):
                 lambda x: qualified_replica(x.share_instance), self.instances))
 
             migrating_snapshots = list(filter(
-                lambda x: (x.share_instance is not None and
-                           x.share_instance['status'] in (
-                               constants.STATUS_MIGRATING,
-                               constants.STATUS_SERVER_MIGRATING)
-                           ), self.instances))
+                lambda x: x.share_instance['status'] in (
+                    constants.STATUS_MIGRATING,
+                    constants.STATUS_SERVER_MIGRATING), self.instances))
 
             snapshot_instances = (replica_snapshots or migrating_snapshots
                                   or self.instances)
@@ -839,7 +856,7 @@ class ShareSnapshotInstance(BASE, ManilaBase):
 
     export_locations = orm.relationship(
         "ShareSnapshotInstanceExportLocation",
-        lazy='subquery',
+        lazy='selectin',
         primaryjoin=(
             'and_('
             'ShareSnapshotInstance.id == '
@@ -849,7 +866,7 @@ class ShareSnapshotInstance(BASE, ManilaBase):
     )
     share_instance = orm.relationship(
         ShareInstance, backref="snapshot_instances",
-        lazy='subquery',
+        lazy='selectin',
         primaryjoin=(
             'and_('
             'ShareSnapshotInstance.share_instance_id == ShareInstance.id,'
@@ -857,7 +874,7 @@ class ShareSnapshotInstance(BASE, ManilaBase):
     )
     snapshot = orm.relationship(
         "ShareSnapshot",
-        lazy="subquery",
+        lazy='selectin',
         foreign_keys=snapshot_id,
         backref="instances",
         primaryjoin=(
@@ -871,7 +888,7 @@ class ShareSnapshotInstance(BASE, ManilaBase):
     )
     share_group_snapshot = orm.relationship(
         "ShareGroupSnapshot",
-        lazy="subquery",
+        lazy='selectin',
         foreign_keys=share_group_snapshot_id,
         backref="share_group_snapshot_members",
         primaryjoin=('ShareGroupSnapshot.id == '
@@ -904,7 +921,7 @@ class ShareSnapshotAccessMapping(BASE, ManilaBase):
 
     instance_mappings = orm.relationship(
         "ShareSnapshotInstanceAccessMapping",
-        lazy='subquery',
+        lazy='selectin',
         primaryjoin=(
             'and_('
             'ShareSnapshotAccessMapping.id == '
@@ -935,7 +952,7 @@ class ShareSnapshotInstanceAccessMapping(BASE, ManilaBase):
 
     instance = orm.relationship(
         "ShareSnapshotInstance",
-        lazy='subquery',
+        lazy='selectin',
         primaryjoin=(
             'and_('
             'ShareSnapshotInstanceAccessMapping.share_snapshot_instance_id == '
@@ -1149,6 +1166,8 @@ class ShareServer(BASE, ManilaBase):
         Boolean, nullable=False, default=False)
     share_replicas_migration_support = Column(
         Boolean, nullable=False, default=False)
+    encryption_key_ref = Column(String(36), nullable=True)
+    application_credential_id = Column(String(36), nullable=True)
     status = Column(Enum(
         constants.STATUS_INACTIVE, constants.STATUS_ACTIVE,
         constants.STATUS_ERROR, constants.STATUS_DELETING,
@@ -1212,6 +1231,39 @@ class ShareServer(BASE, ManilaBase):
                 if self.share_network_subnets else None)
 
     _extra_keys = ['backend_details', 'share_network_subnet_ids']
+
+
+class EncryptionRef(BASE, ManilaBase):
+    """Represents a share server with encryption keys."""
+    __tablename__ = 'encryption_refs'
+    id = Column(String(36), primary_key=True, nullable=False)
+    share_server_id = Column(
+        String(36), ForeignKey('share_servers.id'), unique=True)
+    share_instance_id = Column(
+        String(36), ForeignKey('share_instances.id'), unique=True)
+    encryption_key_ref = Column(String(36), nullable=True)
+    project_id = Column(String(255), nullable=True)
+    deleted = Column(String(36), default='False')
+
+    share_server = orm.relationship(
+        ShareServer,
+        backref=orm.backref(
+            'server_encryption_ref_entry', lazy='joined', uselist=False),
+        foreign_keys=share_server_id,
+        primaryjoin='and_('
+        'EncryptionRef.share_server_id == ShareServer.id,'
+        'EncryptionRef.deleted == "False")'
+    )
+
+    share_instance = orm.relationship(
+        ShareInstance,
+        backref=orm.backref(
+            'instance_encryption_ref_entry', lazy='joined', uselist=False),
+        foreign_keys=share_instance_id,
+        primaryjoin='and_('
+        'EncryptionRef.share_instance_id == ShareInstance.id,'
+        'EncryptionRef.deleted == "False")'
+    )
 
 
 class ShareServerBackendDetails(BASE, ManilaBase):
@@ -1579,6 +1631,39 @@ class ShareBackup(BASE, ManilaBase):
             'AvailabilityZone.id, '
             'AvailabilityZone.deleted == \'False\')'
         )
+    )
+
+
+class QosTypes(BASE, ManilaBase):
+    """Represent possible qos_types offered."""
+    __tablename__ = "qos_types"
+
+    __table_args__ = (
+        schema.UniqueConstraint('name', 'deleted', name='uc_qos_type_name'),
+    )
+
+    id = Column(String(36), primary_key=True)
+    deleted = Column(String(36), default='False')
+    name = Column(String(255), nullable=False)
+    description = Column(String(255))
+
+
+class QosTypeSpecs(BASE, ManilaBase):
+    """Represents additional specs as key/value pairs for a qos_type."""
+    __tablename__ = 'qos_type_specs'
+    id = Column(Integer, primary_key=True)
+    key = Column(String(255), nullable=False)
+    value = Column(String(255), nullable=False)
+    deleted = Column(String(36), default='False')
+    qos_type_id = Column(String(36), ForeignKey('qos_types.id'),
+                         nullable=False)
+    qos_type = orm.relationship(
+        QosTypes,
+        backref="specs",
+        foreign_keys=qos_type_id,
+        primaryjoin='and_('
+        'QosTypeSpecs.qos_type_id == QosTypes.id,'
+        'QosTypeSpecs.deleted == "False")'
     )
 
 
