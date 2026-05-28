@@ -827,6 +827,9 @@ class ShareManager(manager.SchedulerDependentManager):
         if do_service_status_update:
             self.db.service_update(ctxt, service['id'], {'ensuring': False})
 
+        LOG.debug("ensure_driver_resources loop completed for host %s.",
+                  self.host)
+
     def _ensure_share(self, ctxt, share_instance):
         export_locations = None
         try:
