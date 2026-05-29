@@ -2439,10 +2439,21 @@ class ShareManager(manager.SchedulerDependentManager):
                             "mandatory for protocol %s.") %
                             share_instance.get('share_proto'))
 
-        # SAPCC Get project_domain_name from request_spec and set to context
+        # SCI: Get project_domain_name from request_spec and set to context
+        # IDEA: reuse to set domain name to volume tags in the future
         if context.project_domain_name is None and request_spec:
             context.project_domain_name = request_spec.get(
                 'project_domain_name')
+
+        # SCI: Set cross_dedup_disabled metadata for neo domain shares
+        if (hasattr(context, 'project_domain_name') and
+                context.project_domain_name in ['neo']):
+            self.db.share_metadata_update(
+                context, share['id'],
+                {'cross_dedup_disabled': 'true'},
+                delete=False)
+            LOG.debug('Set cross_dedup_disabled metadata for neo share %s',
+                      share['id'])
 
         status = constants.STATUS_AVAILABLE
         try:

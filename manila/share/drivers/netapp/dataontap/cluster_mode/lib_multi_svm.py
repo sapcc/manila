@@ -2046,9 +2046,14 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                 dest_aggregate = volume.get('aggregate')
 
                 if not migration_id:
+                    # SVM DR
                     # Update share attributes according with share extra specs.
                     self._update_share_attributes_after_server_migration(
                         instance, src_client, dest_aggregate, dest_client)
+                else:
+                    # SVM Migrate
+                    self._update_share_efficiency_after_server_migration(
+                        instance, dest_client)
 
             except Exception:
                 msg_args = {
@@ -2250,6 +2255,32 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         # Modify volume to match extra specs
         dest_client.modify_volume(dest_aggregate, volume_name,
                                   **provisioning_options)
+
+    def _update_share_efficiency_after_server_migration(
+            self, share_instance, dest_client):
+        """Updates efficiency settings after SVM Migrate based on metadata.
+
+        SVM Migrate is a physical copy operation that may not preserve
+        cross-volume-deduplication settings correctly. This method checks
+        the share's metadata (set at creation) and re-applies the efficiency
+        settings to the destination volume if needed.
+        """
+        volume_name = self._get_backend_share_name(share_instance['id'])
+
+        metadata = share_instance.get('metadata', {})
+        if metadata.get('cross_dedup_disabled') == 'true':
+            LOG.info('Restoring cross-dedup-disabled for share %s after '
+                     'migration based on metadata', volume_name)
+            try:
+                dest_client.update_volume_efficiency_attributes(
+                    volume_name,
+                    dedup_enabled=True,
+                    compression_enabled=True,
+                    cross_dedup_disabled=True,
+                    is_flexgroup=False)
+            except Exception as e:
+                LOG.warning('Failed to restore efficiency settings for share '
+                            '%s after migration: %s', volume_name, e)
 
     def validate_provisioning_options_for_share(self, provisioning_options,
                                                 extra_specs=None,

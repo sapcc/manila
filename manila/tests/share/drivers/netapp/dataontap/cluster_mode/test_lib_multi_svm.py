@@ -3077,6 +3077,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.mock_object(self.library, '_delete_share')
         mock_update_share_attrs = self.mock_object(
             self.library, '_update_share_attributes_after_server_migration')
+        mock_update_efficiency = self.mock_object(
+            self.library, '_update_share_efficiency_after_server_migration')
         self.mock_object(data_motion, 'get_client_for_host',
                          mock.Mock(return_value=self.mock_dest_client))
         self.mock_object(self.mock_dest_client, 'list_network_interfaces',
@@ -3146,9 +3148,14 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             mock_update_share_attrs.assert_called_once_with(
                 fake.SHARE_INSTANCE, self.mock_src_client,
                 fake_volume['aggregate'], self.mock_dest_client)
+            mock_update_efficiency.assert_not_called()
         else:
             mock_complete_svm_migrate.assert_called_once_with(
                 migration_id, self.fake_dest_share_server)
+            # SCI: SVM Migrate should update efficiency settings
+            mock_update_efficiency.assert_called_once_with(
+                fake.SHARE_INSTANCE, self.mock_dest_client)
+            mock_update_share_attrs.assert_not_called()
             self.mock_dest_client.list_network_interfaces.assert_called_once()
             data_motion.get_client_for_host.assert_has_calls([
                 mock.call(self.fake_dest_share_server['host']),

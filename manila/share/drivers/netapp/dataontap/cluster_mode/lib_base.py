@@ -830,16 +830,17 @@ class NetAppCmodeFileStorageLibrary(object):
     def create_share(self, context, share, share_server):
         """Creates new share."""
         vserver, vserver_client = self._get_vserver(share_server=share_server)
-        # SAPCC
+        # SCI
         # Force enabling logical-space-reporting on new Volumes.
-        # Disable cross volume dedupe in neo projects.
         # Set logical space settings to False for hypervisor_storage types
+        # Disable cross volume dedupe based on share metadata
         provisioning_options = {'logical_space_reporting': True}
         share_type = (
             share_types.get_share_type(context, share.get('share_type_id')))
         if share_type['name'].startswith('hypervisor_storage'):
             provisioning_options = {'logical_space_reporting': False}
-        if context.project_domain_name in ['neo']:
+        metadata = share.get('metadata', {})
+        if metadata.get('cross_dedup_disabled') == 'true':
             provisioning_options['dedup_enabled'] = True
             provisioning_options['compression_enabled'] = True
             provisioning_options['cross_dedup_disabled'] = True
@@ -2696,6 +2697,12 @@ class NetAppCmodeFileStorageLibrary(object):
         if share_comment is None:
             share_comment = self._get_backend_share_comment(share)
 
+        replica_state = share.get('replica_state')
+        is_replica = True
+        if (replica_state is None or
+                replica_state == constants.REPLICA_STATE_ACTIVE):
+            is_replica = False
+
         extra_specs = share_types.get_extra_specs_from_share(share)
         provisioning_options = self._get_provisioning_options_for_share(
             share, vserver, vserver_client=vserver_client, set_qos=False)
@@ -2731,6 +2738,18 @@ class NetAppCmodeFileStorageLibrary(object):
             if snapshot_policy:
                 provisioning_options['snapshot_policy'] = snapshot_policy
 
+            # SCI: Allow setting cross-dedup-disabled via metadata
+            # Admins can set metadata 'cross_dedup_disabled=true' on any share
+            # to enable this setting. This is useful for:
+            # - Fixing neo shares that lost this setting during SVM migration
+            # - Applying the setting to shares in other domains if needed
+            if metadata.get('cross_dedup_disabled') == 'true':
+                LOG.info('Applying cross_dedup_disabled from metadata for '
+                         'share %s', share_name)
+                provisioning_options['cross_dedup_disabled'] = True
+                provisioning_options['dedup_enabled'] = True
+                provisioning_options['compression_enabled'] = True
+
         modify_args = {
             'share': share_name,
             'aggr': aggregate_name,
@@ -2740,30 +2759,19 @@ class NetAppCmodeFileStorageLibrary(object):
         try:
             vserver_client.modify_volume(aggregate_name, share_name,
                                          comment=share_comment,
+                                         replica=is_replica,
                                          **provisioning_options)
         except netapp_api.NaApiError:
             LOG.warning('update share %(share)s on aggregate %(aggr)s with '
                         'provisioning options %(options)s failed', modify_args)
 
-        # TODO(carthaca): change to 'is_readable' condition
         # non-active (i.e. 'dr') replicas do not have export locations
         # and cannot have their max files modified
         is_readable_replica = self._is_readable_replica(share)
-        replica_state = share.get('replica_state')
-        if (replica_state is not None and
-                replica_state != constants.REPLICA_STATE_ACTIVE and
-                not is_readable_replica):
+        if (is_replica and not is_readable_replica):
             return []
 
-        if not is_readable_replica:
-            if provisioning_options.get('max_files_multiplier') is not None:
-                max_files_multiplier = provisioning_options.pop(
-                    'max_files_multiplier')
-                max_files = na_utils.calculate_max_files(share['size'],
-                                                         max_files_multiplier)
-                vserver_client.set_volume_max_files(share_name, max_files)
-
-        else:
+        if is_readable_replica:
             # we do not build a different vserver client for the
             # readable replicas (here and for _create_export() below),
             # because we trust that we only operate on share instances local
@@ -2773,6 +2781,13 @@ class NetAppCmodeFileStorageLibrary(object):
 
             if not existing_mount:
                 vserver_client.mount_volume(share_name)
+        else:   # is active replica (or non-replica share)
+            if provisioning_options.get('max_files_multiplier') is not None:
+                max_files_multiplier = provisioning_options.pop(
+                    'max_files_multiplier')
+                max_files = na_utils.calculate_max_files(share['size'],
+                                                         max_files_multiplier)
+                vserver_client.set_volume_max_files(share_name, max_files)
 
         return self._create_export(share, share_server, vserver,
                                    vserver_client,
