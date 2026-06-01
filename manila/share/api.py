@@ -2684,7 +2684,8 @@ class API(base.Base):
                 raise exception.ShareNotFound(share_id=uuid)
 
     def _save_scheduler_hints(self, context, share, share_uuids, key):
-        share_uuids = share_uuids.split(",")
+        if not isinstance(share_uuids, list):
+            share_uuids = share_uuids.split(",")
 
         self._validate_scheduler_hints(context, share, share_uuids)
         val_uuids = None
