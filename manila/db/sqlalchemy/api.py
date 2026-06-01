@@ -6465,8 +6465,10 @@ def purge_deleted_records(context, age_in_days):
                         # but both are set to the id on soft-delete
                         s_deleted_records = context.session.query(
                             model,
-                        ).filter(model.deleted_at <= deleted_age,
-                                 model.deleted == model.id)
+                        ).filter(
+                            model.deleted_at <= deleted_age,
+                            model.deleted == model.id,
+                        ).order_by('deleted_at')
 
                 deleted_count = 0
                 # delete records one by one,
