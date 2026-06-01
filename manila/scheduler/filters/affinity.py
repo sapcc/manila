@@ -67,7 +67,8 @@ class AffinityBaseFilter(base_host.BaseHostFilter):
             if share_uuids is None:
                 raise SchedulerHintsNotSet
 
-        share_uuids = share_uuids.split(",")
+        if not isinstance(share_uuids, (tuple, list)):
+            share_uuids = share_uuids.split(",")
 
         filter_properties['scheduler_hints'][self._filter_type] = []
 
