@@ -5183,6 +5183,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         mock_backend_config.netapp_mount_replica_timeout = 30
         self.mock_object(data_motion, 'get_backend_configuration',
                          mock.Mock(return_value=mock_backend_config))
+        self.mock_object(self.library, '_get_api_client_for_backend',
+                         mock.Mock(return_value=mock_client))
 
         replica = self.library._safe_change_replica_source(
             mock_dm_session, self.fake_replica, self.fake_replica_2,
