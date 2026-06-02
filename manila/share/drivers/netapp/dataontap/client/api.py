@@ -245,7 +245,6 @@ class BaseClient(object):
         headers = self._build_headers()
 
         self._session.headers = headers
-        self._refresh_conn = False
 
     def _build_headers(self):
         """Adds the necessary headers to the session."""
@@ -350,6 +349,8 @@ class ZapiClient(BaseClient):
             else:
                 response = self._session.post(
                     self._get_url(), data=request_d)
+            # Reset refresh flag after successful request
+            self._refresh_conn = False
         except requests.HTTPError as e:
             raise NaApiError(e.errno, e.strerror)
         except requests.URLRequired as e:
@@ -540,6 +541,8 @@ class RestClient(BaseClient):
                     url, data=data, timeout=self._timeout)
             else:
                 response = request_method(url, data=data)
+            # Reset refresh flag after successful request
+            self._refresh_conn = False
         except requests.HTTPError as e:
             raise NaApiError(e.errno, e.strerror)
         except requests.URLRequired as e:
