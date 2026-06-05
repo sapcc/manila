@@ -15,6 +15,8 @@
 """Testing of SQLAlchemy model classes."""
 
 import ddt
+from oslo_serialization import jsonutils
+from oslo_utils import uuidutils
 
 from manila.common import constants
 from manila import context
@@ -207,6 +209,66 @@ class ShareAccessTestCase(test.TestCase):
         access_rule = db_api.share_access_get(ctxt, access_rule['id'])
 
         self.assertEqual(expected_status, access_rule['state'])
+
+
+class ShareServerTestCase(test.TestCase):
+    """Testing of SQLAlchemy ShareServer model class."""
+
+    def _create_share_server_with_subnets(self, *availability_zones):
+        ctxt = context.get_admin_context()
+        share_network = db_utils.create_share_network()
+        for availability_zone in availability_zones:
+            values = {'availability_zone': availability_zone}
+            db_api.ensure_availability_zone_exists(ctxt, values, strict=False)
+            db_utils.create_share_network_subnet(
+                id=uuidutils.generate_uuid(),
+                share_network_id=share_network['id'],
+                availability_zone_id=values.get('availability_zone_id'))
+        # Read the subnets back together so they share a single share network
+        # identity, which the share server creation requires.
+        subnets = db_api.share_network_subnet_get_all_by_share_network(
+            ctxt, share_network['id'])
+        share_server = db_utils.create_share_server(
+            share_network_subnets=subnets)
+        # Re-read so the property is exercised on a detached instance, the
+        # way API controllers see it.
+        return db_api.share_server_get(ctxt, share_server['id'])
+
+    def test_availability_zone(self):
+        share_server = self._create_share_server_with_subnets('fake_az')
+
+        self.assertEqual('fake_az', share_server['availability_zone'])
+        self.assertEqual('fake_az', share_server.get('availability_zone'))
+
+    def test_serializable_when_reached_through_its_subnet(self):
+        """A share server reached from its subnet still serializes."""
+
+        ctxt = context.get_admin_context()
+        self._create_share_server_with_subnets('fake_az')
+        subnet = db_api.share_network_subnet_get_all(ctxt)[0]
+
+        share_server = db_api.share_network_subnet_get(
+            ctxt, subnet['id'])['share_servers'][0]
+
+        primitive = jsonutils.to_primitive(share_server)
+
+        self.assertEqual(share_server['id'], primitive['id'])
+        self.assertNotIn('availability_zone', primitive)
+
+    def test_availability_zone_only_default_subnet(self):
+        share_server = self._create_share_server_with_subnets(None)
+
+        self.assertIsNone(share_server['availability_zone'])
+
+    def test_availability_zone_skips_default_subnet(self):
+        share_server = self._create_share_server_with_subnets(None, 'fake_az')
+
+        self.assertEqual('fake_az', share_server['availability_zone'])
+
+    def test_availability_zone_no_subnets(self):
+        share_server = db_utils.create_share_server(share_network_subnets=[])
+
+        self.assertIsNone(share_server['availability_zone'])
 
 
 class ShareSnapshotTestCase(test.TestCase):

@@ -1,0 +1,11 @@
+{
+  "share_server_replica": {
+    "share_server_id": "f3d5f6de-7d7d-4ee2-9508-2f6f41f62b11",
+    "availability_zone": "az2",
+    "share_network_id": "3e6d9cc4-413f-4f22-b10c-6a7a5f1f8f17",
+    "metadata": {
+      "purpose": "dr",
+      "site": "dc2"
+    }
+  }
+}

@@ -426,3 +426,60 @@ class SchedulerManagerTestCase(test.TestCase):
             self.context, request_spec, {})
         self.assertFalse(db_update.called)
         self.assertIsNone(retval)
+
+    def test_create_share_server_replica(self):
+        """Test happy path for create_share_server_replica."""
+        db_update = self.mock_object(db, 'share_server_update')
+        mock_scheduler_driver_call = self.mock_object(
+            self.manager.driver, 'schedule_create_share_server_replica')
+        request_spec = {'share_server_replica_id': 'fake_replica_id'}
+
+        retval = self.manager.create_share_server_replica(
+            self.context, request_spec=request_spec, filter_properties={})
+
+        mock_scheduler_driver_call.assert_called_once_with(
+            self.context, request_spec, {})
+        self.assertFalse(db_update.called)
+        self.assertIsNone(retval)
+
+    def test_create_share_server_replica_no_valid_host(self):
+        """Test the NoValidHost exception for create_share_server_replica."""
+        db_update = self.mock_object(db, 'share_server_update')
+        request_spec = {'share_server_replica_id': 'fake_replica_id'}
+        expected_updates = {
+            'status': constants.STATUS_ERROR,
+            'replica_state': constants.STATUS_ERROR,
+        }
+        with mock.patch.object(
+                self.manager.driver,
+                'schedule_create_share_server_replica',
+                mock.Mock(side_effect=self.raise_no_valid_host)):
+
+            retval = self.manager.create_share_server_replica(
+                self.context, request_spec=request_spec,
+                filter_properties={})
+
+            self.assertIsNone(retval)
+            db_update.assert_called_once_with(
+                self.context, 'fake_replica_id', expected_updates)
+
+    def test_create_share_server_replica_exception_path(self):
+        """Test 'raisable' exceptions for create_share_server_replica."""
+        db_update = self.mock_object(db, 'share_server_update')
+        request_spec = {'share_server_replica_id': 'fake_replica_id'}
+        expected_updates = {
+            'status': constants.STATUS_ERROR,
+            'replica_state': constants.STATUS_ERROR,
+        }
+        with mock.patch.object(
+                self.manager.driver,
+                'schedule_create_share_server_replica',
+                mock.Mock(side_effect=exception.NotFound)):
+
+            self.assertRaises(exception.NotFound,
+                              self.manager.create_share_server_replica,
+                              self.context,
+                              request_spec=request_spec,
+                              filter_properties={})
+            db_update.assert_called_once_with(
+                self.context, 'fake_replica_id', expected_updates)

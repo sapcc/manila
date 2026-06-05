@@ -32,6 +32,7 @@ from manila.scheduler.drivers import base
 from manila.scheduler.drivers.external import call_external_scheduler_api
 from manila.scheduler import scheduler_options
 from manila.share import share_types
+from manila.share import utils as share_utils
 
 CONF = cfg.CONF
 LOG = log.getLogger(__name__)
@@ -131,6 +132,105 @@ class FilterScheduler(base.Scheduler):
         self.share_rpcapi.create_share_replica(
             context, updated_share_replica, host, request_spec=request_spec,
             filter_properties=filter_properties)
+
+    def schedule_create_share_server_replica(self, context, request_spec,
+                                             filter_properties=None):
+        elevated = context.elevated()
+
+        source_host = request_spec.get('source_host')
+        request_az_id = request_spec.get('availability_zone_id')
+        request_azs = request_spec.get('availability_zones')
+        az_request_multiple_subnet_support_map = request_spec.get(
+            'az_request_multiple_subnet_support_map', {})
+
+        all_hosts = self.host_manager.get_all_host_states_share(elevated)
+        if not all_hosts:
+            msg = _("There are no hosts to fulfill this provisioning request."
+                    " Are share backend services down?")
+            raise exception.WillNotSchedule(msg)
+
+        # Resolve the source host's replication_domain from host states.
+        # This reads from the scheduler's in-memory capability cache, which
+        # is populated from driver-reported stats — not the DB services table.
+        source_host_state = next(
+            (h for h in all_hosts
+             if share_utils.extract_host(h.host) == source_host), None)
+        source_replication_domain = (
+            source_host_state.replication_domain
+            if source_host_state else None)
+
+        hosts = []
+        filtered_by_replication_domain = []
+        for host_state in all_hosts:
+            if (source_host and
+                    share_utils.extract_host(host_state.host) == source_host):
+                continue
+
+            host_replication_domain = host_state.replication_domain
+            # Only enforce replication_domain matching when the source
+            # backend reports one. If source has none configured, allow
+            # any candidate (backwards-compatible behaviour).
+            if source_replication_domain:
+                if (not host_replication_domain or
+                        host_replication_domain != source_replication_domain):
+                    filtered_by_replication_domain.append({
+                        'host': host_state.host,
+                        'replication_domain': host_replication_domain,
+                    })
+                    continue
+
+            host_az_id = host_state.service['availability_zone_id']
+            host_az = host_state.service['availability_zone']['name']
+            if request_az_id is not None and request_az_id != host_az_id:
+                continue
+            if request_azs and host_az not in request_azs:
+                continue
+
+            host_single_subnet_only = (
+                not host_state.share_server_multiple_subnet_support)
+            if (az_request_multiple_subnet_support_map and
+                    host_single_subnet_only and
+                    az_request_multiple_subnet_support_map.get(host_az_id,
+                                                               False)):
+                continue
+
+            hosts.append(host_state)
+
+        if not hosts:
+            if source_replication_domain and filtered_by_replication_domain:
+                LOG.error(
+                    'No valid host found for share server replica scheduling '
+                    'because replication domains do not match. '
+                    'source_host=%(source_host)s '
+                    'source_replication_domain=%(source_domain)s '
+                    'filtered_hosts=%(filtered_hosts)s',
+                    {
+                        'source_host': source_host,
+                        'source_domain': source_replication_domain,
+                        'filtered_hosts': filtered_by_replication_domain,
+                    },
+                )
+            raise exception.NoValidHost(
+                reason=_('No compatible host was found for '
+                         'share server replica scheduling.'))
+
+        filter_properties = filter_properties or {}
+        filter_properties.update({'context': context,
+                                  'request_spec': request_spec})
+
+        weighed_hosts = self.host_manager.get_weighed_hosts(
+            hosts, filter_properties)
+        host = weighed_hosts[0].obj.host
+
+        replica_id = request_spec.get('share_server_replica_id')
+        updated_replica = base.share_server_replica_update_db(
+            context, replica_id, share_utils.extract_host(host))
+
+        # context is not serializable
+        filter_properties.pop('context', None)
+
+        self.share_rpcapi.create_share_server_replica(
+            context, updated_replica)
 
     def _format_filter_properties(self, context, filter_properties,
                                   request_spec):
