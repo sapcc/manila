@@ -426,3 +426,40 @@ class NetAppCmodeMultiSvmShareDriver(driver.ShareDriver):
         self.library.update_share_network_subnet_from_metadata(
             context, share_network, share_network_subnet,
             share_server, metadata)
+
+    def create_share_server_replica(self, context, new_share_server_replica,
+                                    share_server_replica_list,
+                                    share_network_details=None):
+        return self.library.create_share_server_replica(
+            context, new_share_server_replica, share_server_replica_list,
+            network_info=share_network_details)
+
+    def delete_share_server_replica(self, context, share_server_replica,
+                                    share_server_replica_list,
+                                    protected_share_instances=None):
+        self.library.delete_share_server_replica(
+            context, share_server_replica, share_server_replica_list,
+            protected_share_instances=protected_share_instances)
+
+    def promote_share_server_replica(self, context, share_server_replica,
+                                     share_server_replica_list,
+                                     share_server_resources=None,
+                                     network_info_list=None):
+        return self.library.promote_share_server_replica(
+            context, share_server_replica, share_server_replica_list,
+            share_server_resources=share_server_resources,
+            network_info_list=network_info_list)
+
+    def update_share_server_replica_state(
+            self, context, share_server_replica,
+            share_server_replica_list):
+        return self.library.update_share_server_replica_state(
+            context, share_server_replica,
+            share_server_replica_list)
+
+    def check_for_unplanned_share_server_replica_failover(
+            self, context, share_server_replica_list,
+            share_server_resources=None):
+        return self.library.check_for_unplanned_share_server_replica_failover(
+            context, share_server_replica_list,
+            share_server_resources=share_server_resources)

@@ -330,25 +330,83 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
 
         self.assertEqual(return_mock, result)
 
-    def test__wait_job_result(self):
+    def test_get_ontap_version_svm_scoped_fallback(self):
+        self.client.get_ontap_version = self.original_get_ontap_version
+        cli_response = fake.FAKE_GET_ONTAP_VERSION_CLI_REST
+        expected = {
+            'version': fake.VERSION,
+            'version-tuple': (8, 2, 1)
+        }
+        mock_send_request = self.mock_object(
+            self.client,
+            'send_request',
+            mock.Mock(side_effect=[
+                netapp_api.api.NaApiError(
+                    code=netapp_api.EREST_NOT_AUTHORIZED),
+                cli_response,
+            ]))
+
+        result = self.client.get_ontap_version(self=self.client, cached=False)
+
+        mock_send_request.assert_has_calls([
+            mock.call('/cluster/nodes', 'get', query={'fields': 'version'},
+                      enable_tunneling=False),
+            mock.call('/private/cli/version', 'get',
+                      query={'fields': 'version'}),
+        ])
+        self.assertEqual(expected, result)
+
+    def test_get_ontap_version_unexpected_error(self):
+        self.client.get_ontap_version = self.original_get_ontap_version
+        self.mock_object(
+            self.client,
+            'send_request',
+            self._mock_api_error(netapp_api.EREST_VSERVER_NOT_FOUND))
+
+        self.assertRaises(
+            netapp_api.api.NaApiError,
+            lambda: self.client.get_ontap_version(
+                self=self.client, cached=False))
+
+    @ddt.data(False, True)
+    def test__wait_job_result(self, preserve_error_code):
         response = fake.JOB_SUCCESSFUL_REST
         self.mock_object(self.client,
                          'send_request',
                          mock.Mock(return_value=response))
         result = self.client._wait_job_result(
-            f'/cluster/jobs/{fake.FAKE_UUID}')
+            f'/cluster/jobs/{fake.FAKE_UUID}',
+            preserve_error_code=preserve_error_code)
         self.assertEqual(response, result)
 
-    def test__wait_job_result_failure(self):
+    @ddt.data((False, netapp_utils.NetAppDriverException),
+              (True, netapp_api.api.NaApiError))
+    @ddt.unpack
+    def test__wait_job_result_failure(self, preserve_error_code, expected):
         response = fake.JOB_ERROR_REST
         self.mock_object(self.client,
                          'send_request',
                          mock.Mock(return_value=response))
-        self.assertRaises(netapp_utils.NetAppDriverException,
+        self.assertRaises(expected,
                           self.client._wait_job_result,
-                          f'/cluster/jobs/{fake.FAKE_UUID}')
+                          f'/cluster/jobs/{fake.FAKE_UUID}',
+                          preserve_error_code=preserve_error_code)
 
-    def test__wait_job_result_timeout(self):
+    def test__wait_job_result_failure_preserves_error_code(self):
+        response = fake.JOB_ERROR_REST
+        self.mock_object(self.client,
+                         'send_request',
+                         mock.Mock(return_value=response))
+
+        exc = self.assertRaises(netapp_api.api.NaApiError,
+                                self.client._wait_job_result,
+                                f'/cluster/jobs/{fake.FAKE_UUID}',
+                                preserve_error_code=True)
+
+        self.assertEqual(fake.JOB_ERROR_REST['error']['code'], exc.code)
+
+    @ddt.data(False, True)
+    def test__wait_job_result_timeout(self, preserve_error_code):
         response = fake.JOB_RUNNING_REST
         self.client.async_rest_timeout = 2
         self.mock_object(self.client,
@@ -356,7 +414,8 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
                          mock.Mock(return_value=response))
         self.assertRaises(netapp_utils.NetAppDriverException,
                           self.client._wait_job_result,
-                          f'/cluster/jobs/{fake.FAKE_UUID}')
+                          f'/cluster/jobs/{fake.FAKE_UUID}',
+                          preserve_error_code=preserve_error_code)
 
     def test_list_cluster_nodes(self):
         """Get all available cluster nodes."""
@@ -5847,6 +5906,23 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
 
         self.assertEqual(1, client_cmode_rest.LOG.error.call_count)
 
+    def test_delete_vserver_already_being_deleted(self):
+        vserver_info = copy.deepcopy(fake.VSERVER_INFO)
+        vserver_info['state'] = 'deleting'
+        self.mock_object(self.client,
+                         'get_vserver_info',
+                         mock.Mock(return_value=vserver_info))
+        self.mock_object(self.client,
+                         '_get_unique_svm_by_name',
+                         mock.Mock(return_value=fake.FAKE_UUID))
+
+        self.assertRaises(exception.NetAppException,
+                          self.client.delete_vserver,
+                          fake.VSERVER_NAME,
+                          self.client)
+
+        self.assertEqual(1, client_cmode_rest.LOG.error.call_count)
+
     def test_get_vserver_volume_count(self):
         fake_response = fake.VOLUME_GET_ITER_RESPONSE_REST_PAGE
         mock_request = self.mock_object(self.client, 'send_request',
@@ -7845,3 +7921,582 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
               and method == 'get'):
             return {'location': {'failover': 'sfo_partners_only'}}
         return {}
+
+    def test_validate_cluster_peering(self):
+        self.mock_object(
+            self.client, 'get_cluster_peers',
+            mock.Mock(return_value=fake.CLUSTER_PEER_INFO_LIST))
+
+        self.client.validate_cluster_peering(fake.CLUSTER_PEER_NAME)
+
+        self.client.get_cluster_peers.assert_called_once_with(
+            remote_cluster_name=fake.CLUSTER_PEER_NAME)
+
+    @ddt.data(
+        [],
+        fake.CLUSTER_PEER_INFO_LIST_UNAVAILABLE,
+    )
+    def test_validate_cluster_peering_error(self, peer_info):
+        self.mock_object(
+            self.client, 'get_cluster_peers',
+            mock.Mock(return_value=peer_info))
+
+        self.assertRaises(
+            exception.NetAppException,
+            self.client.validate_cluster_peering,
+            fake.CLUSTER_PEER_NAME)
+
+    def test_get_cluster_mediators(self):
+        self.mock_object(
+            self.client, 'send_request',
+            mock.Mock(return_value=fake.CLUSTER_MEDIATORS_GET_RESPONSE))
+
+        result = self.client.get_cluster_mediators(
+            peer_cluster_name=fake.CLUSTER_PEER_NAME)
+
+        self.client.send_request.assert_called_once_with(
+            '/cluster/mediators', 'get',
+            query={
+                'peer_cluster.name': fake.CLUSTER_PEER_NAME,
+                'fields': 'reachable,peer_mediator_connectivity',
+            },
+            enable_tunneling=False)
+        self.assertEqual(
+            fake.CLUSTER_MEDIATORS_GET_RESPONSE['records'], result)
+
+    def test_get_cluster_mediators_with_custom_fields(self):
+        self.mock_object(
+            self.client, 'send_request',
+            mock.Mock(return_value=fake.CLUSTER_MEDIATORS_GET_RESPONSE))
+
+        self.client.get_cluster_mediators(fields='reachable,ip_address')
+
+        self.client.send_request.assert_called_once_with(
+            '/cluster/mediators', 'get',
+            query={'fields': 'reachable,ip_address'},
+            enable_tunneling=False)
+
+    def test_assign_aggregates_to_svm(self):
+        job_resp = {
+            'job': {'_links': {'self': {'href': '/api/cluster/jobs/J1'}}}
+        }
+        self.mock_object(self.client, 'send_request',
+                         mock.Mock(return_value=job_resp))
+        self.mock_object(self.client, '_wait_job_result')
+
+        self.client.assign_aggregates_to_svm(
+            fake.FAKE_SVM_UUID, fake.FAKE_SVM_NAME,
+            fake.FAKE_AGGREGATE_NAMES)
+
+        expected_body = {
+            'aggregates': [{'name': n} for n in fake.FAKE_AGGREGATE_NAMES]
+        }
+        self.client.send_request.assert_called_once_with(
+            f'/svm/svms/{fake.FAKE_SVM_UUID}', 'patch',
+            body=expected_body, enable_tunneling=False,
+            wait_on_accepted=False)
+        self.client._wait_job_result.assert_called_once_with(
+            '/cluster/jobs/J1', preserve_error_code=True)
+
+    def test_assign_aggregates_to_svm_falls_back_to_cli(self):
+        job_resp = {
+            'job': {'_links': {'self': {'href': '/api/cluster/jobs/J1'}}}
+        }
+        self.mock_object(self.client, 'send_request',
+                         mock.Mock(return_value=job_resp))
+        err = netapp_api.api.NaApiError(
+            code=netapp_api.EREST_SVM_DR_OPERATION_NOT_PERMITTED,
+            message='SVM DR destination')
+        self.mock_object(self.client, '_wait_job_result',
+                         mock.Mock(side_effect=err))
+
+        self.client.assign_aggregates_to_svm(
+            fake.FAKE_SVM_UUID, fake.FAKE_SVM_NAME,
+            fake.FAKE_AGGREGATE_NAMES)
+
+        cli_body = {'vserver': fake.FAKE_SVM_NAME,
+                    'aggregates': fake.FAKE_AGGREGATE_NAMES}
+        self.client.send_request.assert_any_call(
+            '/private/cli/vserver/add-aggregates', 'post',
+            body=cli_body, enable_tunneling=False)
+
+    def test_assign_aggregates_to_svm_propagates_other_error(self):
+        job_resp = {
+            'job': {'_links': {'self': {'href': '/api/cluster/jobs/J1'}}}
+        }
+        self.mock_object(self.client, 'send_request',
+                         mock.Mock(return_value=job_resp))
+        err = netapp_api.api.NaApiError(code='99', message='boom')
+        self.mock_object(self.client, '_wait_job_result',
+                         mock.Mock(side_effect=err))
+
+        self.assertRaises(
+            netapp_api.api.NaApiError,
+            self.client.assign_aggregates_to_svm,
+            fake.FAKE_SVM_UUID, fake.FAKE_SVM_NAME,
+            fake.FAKE_AGGREGATE_NAMES)
+
+    def test_get_volume_details(self):
+        fake_volume = {'name': 'vol1', 'uuid': 'vol-uuid'}
+        self.mock_object(
+            self.client, '_get_volume_by_args',
+            mock.Mock(return_value=fake_volume))
+
+        result = self.client.get_volume_details(
+            fake.VSERVER_NAME, 'vol1', 'smas_protection,uuid')
+
+        self.client._get_volume_by_args.assert_called_once_with(
+            vol_name='vol1', vserver=fake.VSERVER_NAME,
+            fields='smas_protection,uuid')
+        self.assertEqual(fake_volume, result)
+
+    # --- SM-as NAS (SMAS) share-server replica REST method tests ---
+
+    def test_delete_snapmirror_relationship(self):
+        self.mock_object(self.client, 'send_request')
+
+        self.client.delete_snapmirror_relationship(fake.FAKE_UUID)
+
+        self.client.send_request.assert_called_once_with(
+            f'/snapmirror/relationships/{fake.FAKE_UUID}',
+            'delete', query={})
+
+    def test_delete_snapmirror_relationship_source_only(self):
+        self.mock_object(self.client, 'send_request')
+
+        self.client.delete_snapmirror_relationship(
+            fake.FAKE_UUID, source_only=True)
+
+        self.client.send_request.assert_called_once_with(
+            f'/snapmirror/relationships/{fake.FAKE_UUID}',
+            'delete', query={'source_only': 'true'})
+
+    def test_delete_snapmirror_relationship_not_found(self):
+        self.mock_object(
+            self.client, 'send_request',
+            self._mock_api_error(code=netapp_api.EREST_ENTRY_NOT_FOUND))
+
+        self.client.delete_snapmirror_relationship(fake.FAKE_UUID)
+
+        self.client.send_request.assert_called_once_with(
+            f'/snapmirror/relationships/{fake.FAKE_UUID}',
+            'delete', query={})
+
+    def test_delete_snapmirror_relationship_error(self):
+        self.mock_object(
+            self.client, 'send_request',
+            self._mock_api_error(code='unexpected_error'))
+
+        self.assertRaises(
+            netapp_api.api.NaApiError,
+            self.client.delete_snapmirror_relationship,
+            fake.FAKE_UUID)
+
+    def test_delete_cifs_service_force(self):
+        self.mock_object(self.client, '_get_unique_svm_by_name',
+                         mock.Mock(return_value=fake.FAKE_UUID))
+        self.mock_object(self.client, 'send_request')
+
+        self.client.delete_cifs_service_force(fake.VSERVER_NAME)
+
+        self.client._get_unique_svm_by_name.assert_called_once_with(
+            fake.VSERVER_NAME)
+        self.client.send_request.assert_called_once_with(
+            f'/protocols/cifs/services/{fake.FAKE_UUID}',
+            'delete', body={'force': True})
+
+    def test_delete_cifs_service_force_not_found(self):
+        self.mock_object(self.client, '_get_unique_svm_by_name',
+                         mock.Mock(return_value=fake.FAKE_UUID))
+        self.mock_object(
+            self.client, 'send_request',
+            self._mock_api_error(code=netapp_api.EREST_ENTRY_NOT_FOUND))
+
+        self.client.delete_cifs_service_force(fake.VSERVER_NAME)
+
+        self.client._get_unique_svm_by_name.assert_called_once_with(
+            fake.VSERVER_NAME)
+        self.client.send_request.assert_called_once_with(
+            f'/protocols/cifs/services/{fake.FAKE_UUID}',
+            'delete', body={'force': True})
+
+    def test_delete_cifs_service_force_error(self):
+        self.mock_object(self.client, '_get_unique_svm_by_name',
+                         mock.Mock(return_value=fake.FAKE_UUID))
+        self.mock_object(
+            self.client, 'send_request',
+            self._mock_api_error(code='unexpected_error'))
+
+        self.assertRaises(
+            netapp_api.api.NaApiError,
+            self.client.delete_cifs_service_force,
+            fake.VSERVER_NAME)
+
+        self.client._get_unique_svm_by_name.assert_called_once_with(
+            fake.VSERVER_NAME)
+        self.client.send_request.assert_called_once_with(
+            f'/protocols/cifs/services/{fake.FAKE_UUID}',
+            'delete', body={'force': True})
+
+    def test__get_volumes_on_svm(self):
+        fake_records = [
+            {'uuid': 'uuid-1', 'name': 'vol1', 'is_svm_root': False},
+            {'uuid': 'uuid-2', 'name': 'vol2', 'is_svm_root': False},
+        ]
+        api_response = {'records': fake_records, 'num_records': 2}
+        self.mock_object(self.client, 'send_request',
+                         mock.Mock(return_value=api_response))
+
+        result = self.client._get_volumes_on_svm(fake.VSERVER_NAME)
+
+        expected_query = {
+            'svm.name': fake.VSERVER_NAME,
+            'style': 'flex*',
+            'fields': 'uuid,name,type,style,clone.is_flexclone,'
+                      'clone.parent_volume.name,is_svm_root',
+        }
+        self.client.send_request.assert_called_once_with(
+            '/storage/volumes/', 'get', query=expected_query)
+        self.assertEqual(fake_records, result)
+
+    def test__get_volumes_on_svm_with_filters(self):
+        api_response = {'records': [], 'num_records': 0}
+        self.mock_object(self.client, 'send_request',
+                         mock.Mock(return_value=api_response))
+
+        result = self.client._get_volumes_on_svm(
+            fake.VSERVER_NAME, is_root=False, is_flexclone=True)
+
+        expected_query = {
+            'svm.name': fake.VSERVER_NAME,
+            'style': 'flex*',
+            'fields': 'uuid,name,type,style,clone.is_flexclone,'
+                      'clone.parent_volume.name,is_svm_root',
+            'is_svm_root': 'false',
+            'clone.is_flexclone': 'true',
+        }
+        self.client.send_request.assert_called_once_with(
+            '/storage/volumes/', 'get', query=expected_query)
+        self.assertEqual([], result)
+
+    def test_delete_volumes_by_uuids(self):
+        vol_uuids = ['uuid-1', 'uuid-2', 'uuid-3']
+        job_resp = {
+            'job': {'_links': {'self': {'href': '/api/cluster/jobs/J1'}}}
+        }
+        self.mock_object(self.client, 'send_request',
+                         mock.Mock(return_value=job_resp))
+        self.mock_object(self.client, '_wait_job_result')
+
+        self.client.delete_volumes_by_uuids(vol_uuids)
+
+        expected_body = {
+            'records': [{'uuid': u} for u in vol_uuids]
+        }
+        self.client.send_request.assert_called_once_with(
+            '/storage/volumes', 'delete', body=expected_body,
+            query={'continue_on_failure': 'true'}, wait_on_accepted=False)
+        self.client._wait_job_result.assert_called_once_with(
+            '/cluster/jobs/J1', preserve_error_code=True)
+
+    def test_delete_volumes_by_uuids_empty_list(self):
+        self.mock_object(self.client, 'send_request')
+        self.mock_object(self.client, '_wait_job_result')
+
+        self.client.delete_volumes_by_uuids([])
+
+        self.client.send_request.assert_not_called()
+        self.client._wait_job_result.assert_not_called()
+
+    def test_delete_volumes_by_uuids_no_job_in_response(self):
+        self.mock_object(self.client, 'send_request',
+                         mock.Mock(return_value={}))
+        self.mock_object(self.client, '_wait_job_result')
+
+        self.client.delete_volumes_by_uuids(['uuid-1', 'uuid-2'])
+
+        self.client._wait_job_result.assert_not_called()
+
+    def test_delete_volumes_by_uuids_response_none(self):
+        self.mock_object(self.client, 'send_request',
+                         mock.Mock(return_value=None))
+        self.mock_object(self.client, '_wait_job_result')
+
+        self.client.delete_volumes_by_uuids(['uuid-1', 'uuid-2'])
+
+        self.client._wait_job_result.assert_not_called()
+
+    def test_delete_volumes_by_uuids_job_key_missing(self):
+        # A truthy response dict that simply lacks a 'job' key (distinct
+        # from an empty/None response) must also skip polling.
+        self.mock_object(self.client, 'send_request',
+                         mock.Mock(return_value={'num_records': 0}))
+        self.mock_object(self.client, '_wait_job_result')
+
+        self.client.delete_volumes_by_uuids(['uuid-1', 'uuid-2'])
+
+        self.client._wait_job_result.assert_not_called()
+
+    def test_delete_volumes_by_uuids_error(self):
+        job_resp = {
+            'job': {'_links': {'self': {'href': '/api/cluster/jobs/J1'}}}
+        }
+        self.mock_object(self.client, 'send_request',
+                         mock.Mock(return_value=job_resp))
+        err = netapp_api.api.NaApiError(code='262292', message='partial')
+        self.mock_object(self.client, '_wait_job_result',
+                         mock.Mock(side_effect=err))
+
+        self.assertRaises(
+            netapp_api.api.NaApiError,
+            self.client.delete_volumes_by_uuids,
+            ['uuid-1', 'uuid-2'])
+
+        expected_body = {
+            'records': [{'uuid': 'uuid-1'}, {'uuid': 'uuid-2'}]
+        }
+        self.client.send_request.assert_called_once_with(
+            '/storage/volumes', 'delete', body=expected_body,
+            query={'continue_on_failure': 'true'}, wait_on_accepted=False)
+        self.client._wait_job_result.assert_called_once_with(
+            '/cluster/jobs/J1', preserve_error_code=True)
+
+    def test_break_snapmirror_svm_dest(self):
+        self.mock_object(self.client, 'send_request')
+
+        self.client.break_snapmirror_svm(
+            source_vserver=fake.SM_SOURCE_VSERVER,
+            dest_vserver=fake.SM_DEST_VSERVER)
+
+        self.client.send_request.assert_called_once_with(
+            '/private/cli/snapmirror/break', 'post',
+            body={'destination-path': fake.SM_DEST_VSERVER + ':'})
+
+    def test_break_snapmirror_svm_source_only(self):
+        self.mock_object(self.client, 'send_request')
+
+        self.assertRaises(
+            exception.NetAppException,
+            self.client.break_snapmirror_svm,
+            source_vserver=fake.SM_SOURCE_VSERVER)
+
+        self.client.send_request.assert_not_called()
+
+    def test_break_snapmirror_svm_smas_not_supported(self):
+        self.mock_object(
+            self.client, 'send_request',
+            self._mock_api_error(code='23003190'))
+
+        self.assertRaises(
+            netapp_api.api.NaApiError,
+            self.client.break_snapmirror_svm,
+            dest_vserver=fake.SM_DEST_VSERVER)
+
+        self.client.send_request.assert_called_once_with(
+            '/private/cli/snapmirror/break', 'post',
+            body={'destination-path': fake.SM_DEST_VSERVER + ':'})
+
+    def test_break_snapmirror_svm_no_vserver(self):
+        self.assertRaises(exception.NetAppException,
+                          self.client.break_snapmirror_svm)
+
+    @ddt.data(
+        (None, False, None),
+        ('AutomatedFailOver', True, None),
+        ('AutomatedFailOver', True, fake.IPSPACE_NAME),
+    )
+    @ddt.unpack
+    def test_create_snapmirror_relationship(self, policy_name,
+                                            create_destination,
+                                            destination_ipspace):
+        self.mock_object(self.client, 'send_request')
+
+        self.client.create_snapmirror_relationship(
+            fake.SM_SOURCE_PATH, fake.SM_DEST_PATH,
+            fake.CLUSTER_NAME, fake.REMOTE_CLUSTER_NAME,
+            policy_name=policy_name,
+            create_destination=create_destination,
+            destination_ipspace=destination_ipspace)
+
+        expected_body = {
+            'source': {
+                'path': fake.SM_SOURCE_PATH,
+                'cluster': {'name': fake.CLUSTER_NAME},
+            },
+            'destination': {
+                'path': fake.SM_DEST_PATH,
+                'cluster': {'name': fake.REMOTE_CLUSTER_NAME},
+            },
+        }
+        if policy_name:
+            expected_body['policy'] = policy_name
+        if create_destination:
+            expected_body['create_destination'] = {'enabled': True}
+        if destination_ipspace:
+            expected_body['destination']['ipspace'] = destination_ipspace
+        self.client.send_request.assert_called_once_with(
+            '/snapmirror/relationships/', 'post', body=expected_body)
+
+    @ddt.data(
+        (None, 'in_sync'),
+        ('snapmirrored', 'snapmirrored'),
+    )
+    @ddt.unpack
+    def test_update_snapmirror_state(self, state_arg, expected_state):
+        self.mock_object(self.client, 'send_request')
+
+        self.client.update_snapmirror_state(
+            fake.SVM_SM_RELATIONSHIP_UUID, state=state_arg)
+
+        expected_body = {'state': expected_state}
+        self.client.send_request.assert_called_once_with(
+            f'/snapmirror/relationships/{fake.SVM_SM_RELATIONSHIP_UUID}',
+            'patch', body=expected_body)
+
+    @ddt.data(
+        (None, 'state,policy,healthy'),
+        ('state,healthy,unhealthy_reason', 'state,healthy,unhealthy_reason'),
+    )
+    @ddt.unpack
+    def test_get_svm_snapmirror_by_id(self, fields_arg,
+                                      expected_fields):
+        fake_response = {'state': 'in_sync', 'healthy': True}
+        self.mock_object(self.client, 'send_request',
+                         mock.Mock(return_value=fake_response))
+
+        result = self.client.get_svm_snapmirror_by_id(
+            fake.SVM_SM_RELATIONSHIP_UUID, fields=fields_arg)
+
+        self.client.send_request.assert_called_once_with(
+            f'/snapmirror/relationships/{fake.SVM_SM_RELATIONSHIP_UUID}',
+            'get', query={'fields': expected_fields})
+        self.assertEqual(fake_response, result)
+
+    @ddt.data(
+        (None, None, {
+            'source.path': fake.SM_SOURCE_PATH,
+            'destination.path': fake.SM_DEST_PATH,
+            'fields': 'state,policy,healthy',
+        }),
+        ('uuid', True, {
+            'source.path': fake.SM_SOURCE_PATH,
+            'destination.path': fake.SM_DEST_PATH,
+            'fields': 'uuid',
+            'list_destinations_only': 'true',
+        }),
+    )
+    @ddt.unpack
+    def test_get_snapmirror_relationships(self, fields_arg,
+                                          list_dest_only,
+                                          expected_query):
+        fake_records = [{'uuid': fake.SVM_SM_RELATIONSHIP_UUID}]
+        fake_response = {'records': fake_records}
+        self.mock_object(self.client, 'send_request',
+                         mock.Mock(return_value=fake_response))
+
+        result = self.client.get_snapmirror_relationships(
+            fake.SM_SOURCE_PATH, fake.SM_DEST_PATH,
+            fields=fields_arg, list_destinations_only=list_dest_only)
+
+        self.client.send_request.assert_called_once_with(
+            '/snapmirror/relationships', 'get', query=expected_query)
+        self.assertEqual(fake_records, result)
+
+    def test_get_snapmirror_relationships_no_records(self):
+        self.mock_object(self.client, 'send_request',
+                         mock.Mock(return_value={}))
+
+        result = self.client.get_snapmirror_relationships(
+            fake.SM_SOURCE_PATH, fake.SM_DEST_PATH)
+
+        self.assertEqual([], result)
+
+    def test_failover_svm_snapmirror(self):
+        self.mock_object(self.client, 'send_request')
+
+        self.client.failover_svm_snapmirror(
+            fake.SVM_SM_RELATIONSHIP_UUID,
+            source_path='new_src:',
+            destination_path='new_dest:')
+
+        expected_body = {
+            'source': {'path': 'new_src:'},
+            'destination': {'path': 'new_dest:'},
+            'state': 'in_sync',
+        }
+        self.client.send_request.assert_called_once_with(
+            f'/snapmirror/relationships/{fake.SVM_SM_RELATIONSHIP_UUID}',
+            'patch', body=expected_body)
+
+    def test_failover_svm_snapmirror_custom_state(self):
+        self.mock_object(self.client, 'send_request')
+
+        self.client.failover_svm_snapmirror(
+            fake.SVM_SM_RELATIONSHIP_UUID,
+            source_path='new_src:',
+            destination_path='new_dest:',
+            state='snapmirrored')
+
+        expected_body = {
+            'source': {'path': 'new_src:'},
+            'destination': {'path': 'new_dest:'},
+            'state': 'snapmirrored',
+        }
+        self.client.send_request.assert_called_once_with(
+            f'/snapmirror/relationships/{fake.SVM_SM_RELATIONSHIP_UUID}',
+            'patch', body=expected_body)
+
+    def test_get_smas_protected_volumes(self):
+        fake_records = [{'name': 'vol1'}, {'name': 'vol2'}]
+        self.mock_object(self.client, 'send_request',
+                         mock.Mock(return_value={'records': fake_records}))
+
+        result = self.client.get_smas_protected_volumes(fake.VSERVER_NAME)
+
+        expected_query = {
+            'svm.name': fake.VSERVER_NAME,
+            'smas_protection': netapp_utils.SMAS_PROTECTION_PROTECTED,
+            'is_svm_root': 'false',
+            'fields': 'name',
+        }
+        self.client.send_request.assert_called_once_with(
+            '/storage/volumes', 'get', query=expected_query)
+        self.assertEqual(['vol1', 'vol2'], result)
+
+    def test_get_smas_protected_volumes_no_records(self):
+        self.mock_object(self.client, 'send_request',
+                         mock.Mock(return_value={}))
+
+        result = self.client.get_smas_protected_volumes(fake.VSERVER_NAME)
+
+        self.assertEqual([], result)
+
+    def test_get_svm_volumes_with_aggregates(self):
+        fake_records = [
+            {'name': 'vol1', 'uuid': 'uuid1',
+             'aggregates': [{'name': 'aggr1'}]},
+            {'name': 'vol2', 'uuid': 'uuid2',
+             'aggregates': [{'name': 'aggr2'}]},
+        ]
+        self.mock_object(self.client, 'send_request',
+                         mock.Mock(return_value={'records': fake_records}))
+
+        result = self.client.get_svm_volumes_with_aggregates(fake.VSERVER_NAME)
+
+        expected_query = {
+            'svm.name': fake.VSERVER_NAME,
+            'is_svm_root': 'false',
+            'fields': 'name,uuid,aggregates',
+        }
+        self.client.send_request.assert_called_once_with(
+            '/storage/volumes', 'get', query=expected_query)
+        self.assertEqual(
+            {'vol1': fake_records[0], 'vol2': fake_records[1]}, result)
+
+    def test_get_svm_volumes_with_aggregates_no_records(self):
+        self.mock_object(self.client, 'send_request',
+                         mock.Mock(return_value={}))
+
+        result = self.client.get_svm_volumes_with_aggregates(fake.VSERVER_NAME)
+
+        self.assertEqual({}, result)

@@ -10317,6 +10317,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.assertTrue(result)
 
 
+@ddt.ddt
 class NetAppFileStorageLibraryThreadSafetyTestCase(test.TestCase):
     """Test cases for thread safety of NetApp driver."""
 
@@ -10533,3 +10534,39 @@ class NetAppFileStorageLibraryThreadSafetyTestCase(test.TestCase):
 
         # Verify no errors occurred
         self.assertEqual([], errors)
+
+    @ddt.data(
+        {'replication_type': 'async'},
+        {'replication_type': 'unknown_type'},
+    )
+    def test_validate_share_server_replication_type_invalid(
+            self, properties):
+        self.assertRaises(
+            exception.NetAppException,
+            self.library._validate_share_server_replication_type_and_policy,
+            properties)
+
+    @ddt.data(
+        (None, na_utils.SMAS_POLICY_NAME),
+        ({}, na_utils.SMAS_POLICY_NAME),
+        ({'replication_type': 'sync'}, na_utils.SMAS_POLICY_NAME),
+        ({'replication_policy': 'AutomatedFailOver'},
+         'AutomatedFailOver'),
+        ({'replication_type': 'sync',
+          'replication_policy': 'AutomatedFailOver'},
+         'AutomatedFailOver'),
+    )
+    @ddt.unpack
+    def test_validate_share_server_replication_type_sync_valid(
+            self, properties, expected_policy):
+        result = (
+            self.library._validate_share_server_replication_type_and_policy(
+                properties))
+        self.assertEqual(expected_policy, result)
+
+    def test_validate_share_server_replication_type_sync_bad_policy(self):
+        self.assertRaises(
+            exception.NetAppException,
+            self.library._validate_share_server_replication_type_and_policy,
+            {'replication_type': 'sync',
+             'replication_policy': 'BadPolicy'})
