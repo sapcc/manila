@@ -15,6 +15,7 @@
 """Unit Tests for the interface methods in the manila/db/api.py."""
 
 import re
+from unittest import mock
 
 from manila.db import api as db_interface
 from manila.db.sqlalchemy import api as db_api
@@ -36,7 +37,14 @@ class DBInterfaceTestCase(test.TestCase):
         members = dir(db_interface)
         # Ignore private methods for the file and any other members that
         # need not match.
-        ignore_members = re.compile(r'^_|CONF|IMPL')
+        ignore_members = re.compile(
+            r'^_|CONF|IMPL|'
+            r'share_server_replica_metadata_get$|'
+            r'share_server_replica_metadata_get_item$|'
+            r'share_server_replica_metadata_update$|'
+            r'share_server_replica_metadata_update_item$|'
+            r'share_server_replica_metadata_delete$'
+        )
         interfaces = [i for i in members if not ignore_members.match(i)]
         for interface in interfaces:
             method = getattr(db_interface, interface)
@@ -49,3 +57,73 @@ class DBInterfaceTestCase(test.TestCase):
                 method(*args)
 
                 self.assertTrue(mock_method_call.called)
+
+    def test_share_server_replica_metadata_get_delegates(self):
+        ctxt = mock.Mock(is_admin=True)
+        get_mock = self.mock_object(
+            db_api, 'share_server_metadata_get',
+            mock.Mock(return_value={'k': 'v'}))
+
+        result = db_interface.share_server_replica_metadata_get(
+            ctxt, 'fake-server-id')
+
+        get_mock.assert_called_once_with(ctxt, 'fake-server-id')
+        self.assertEqual({'k': 'v'}, result)
+
+    def test_share_server_replica_metadata_get_item_delegates(self):
+        ctxt = mock.Mock(is_admin=True)
+        get_item_mock = self.mock_object(
+            db_api, 'share_server_metadata_get_item',
+            mock.Mock(return_value='value'))
+
+        result = db_interface.share_server_replica_metadata_get_item(
+            ctxt, 'fake-server-id', 'key')
+
+        get_item_mock.assert_called_once_with(ctxt, 'fake-server-id', 'key')
+        self.assertEqual('value', result)
+
+    def test_share_server_replica_metadata_get_item_not_found(self):
+        ctxt = mock.Mock(is_admin=True)
+        self.mock_object(
+            db_api, 'share_server_metadata_get_item',
+            mock.Mock(return_value=None))
+
+        result = db_interface.share_server_replica_metadata_get_item(
+            ctxt, 'fake-server-id', 'missing')
+
+        self.assertIsNone(result)
+
+    def test_share_server_replica_metadata_update_delegates(self):
+        ctxt = mock.Mock(is_admin=True)
+        update_mock = self.mock_object(
+            db_api, 'share_server_metadata_update',
+            mock.Mock(return_value={'k': 'v'}))
+
+        result = db_interface.share_server_replica_metadata_update(
+            ctxt, 'fake-server-id', {'k': 'v'}, delete=False)
+
+        update_mock.assert_called_once_with(
+            ctxt, 'fake-server-id', {'k': 'v'}, False)
+        self.assertEqual({'k': 'v'}, result)
+
+    def test_share_server_replica_metadata_update_item_delegates(self):
+        ctxt = mock.Mock(is_admin=True)
+        update_mock = self.mock_object(
+            db_api, 'share_server_metadata_update',
+            mock.Mock(return_value={'k': 'v'}))
+
+        result = db_interface.share_server_replica_metadata_update_item(
+            ctxt, 'fake-server-id', {'k': 'v'})
+
+        update_mock.assert_called_once_with(
+            ctxt, 'fake-server-id', {'k': 'v'}, delete=False)
+        self.assertEqual({'k': 'v'}, result)
+
+    def test_share_server_replica_metadata_delete_delegates(self):
+        ctxt = mock.Mock(is_admin=True)
+        delete_mock = self.mock_object(db_api, 'share_server_metadata_delete')
+
+        db_interface.share_server_replica_metadata_delete(
+            ctxt, 'fake-server-id', 'key')
+
+        delete_mock.assert_called_once_with(ctxt, 'fake-server-id', 'key')

@@ -176,6 +176,12 @@ share_type_for_quota:
   required: false
   type: string
   min_version: 2.39
+share_server_replica_id_path:
+  description: |
+    The UUID of the share server replica.
+  in: path
+  required: true
+  type: string
 share_type_id:
   description: |
     The UUID of the share type.
@@ -3712,6 +3718,94 @@ share_replica_status:
 share_server_id:
   description: |
     The UUID of the share server.
+  in: body
+  required: true
+  type: string
+share_server_replica_az_request:
+  description: |
+    The availability zone to create the share server replica in. The share
+    network the replica is created on must reach this availability zone,
+    either with a subnet pinned to it or with a default subnet, which every
+    availability zone reaches. If it is omitted, the availability zone is
+    derived from that share network: a default subnet leaves the zone open,
+    to be chosen when the replica is scheduled, and otherwise the single
+    availability zone the share network has subnets in is used. Specifying
+    an availability zone is mandatory when a share server replica is created
+    on a network that spans multiple availability zones.
+  in: body
+  required: false
+  type: string
+share_server_replica_az_response:
+  description: |
+    The availability zone of the share server replica.
+  in: body
+  required: true
+  type: string
+share_server_replica_host:
+  description: |
+    The host name of the share server replica.
+  in: body
+  required: true
+  type: string
+share_server_replica_id:
+  description: |
+    The UUID of the share server replica.
+  in: body
+  required: true
+  type: string
+share_server_replica_metadata_request:
+  description: |
+    One or more metadata key and value pairs for the share server replica.
+  in: body
+  required: false
+  type: object
+share_server_replica_metadata_response:
+  description: |
+    One or more metadata key and value pairs for the share server replica.
+  in: body
+  required: true
+  type: object
+share_server_replica_replica_state:
+  description: |
+    The replica state of a share server replica. List of possible values:
+    ``active``, ``in_sync``, ``out_of_sync``, and ``error``.
+  in: body
+  required: true
+  type: string
+share_server_replica_reset_replica_state:
+  description: |
+    The ``reset_replica_state`` object for a share server replica.
+  in: body
+  required: true
+  type: object
+share_server_replica_share_network_id:
+  description: |
+    The UUID of the share network of the share server replica.
+  in: body
+  required: true
+  type: string
+share_server_replica_share_network_id_request:
+  description: |
+    The UUID of the share network to create the share server replica on. It
+    must belong to the same project as the source share server. If it is
+    omitted, the share network of the source share server is used. A share
+    network is never selected implicitly.
+  in: body
+  required: false
+  type: string
+share_server_replica_share_server_id:
+  description: |
+    The UUID of the source share server for which a replica will be created.
+  in: body
+  required: true
+  type: string
+share_server_replica_status:
+  description: |
+    The status of a share server replica. A replica is a share server, so it
+    reports the share server statuses: ``active`` for the replica currently
+    serving the shares, ``inactive`` for the ones standing by, and otherwise
+    ``creating``, ``deleting``, ``error``, ``error_deleting``, or
+    ``replication_change``.
   in: body
   required: true
   type: string

@@ -544,6 +544,36 @@ class QuotaSetsControllerTest(test.TestCase):
             req.environ['manila.context'],
             req.environ['QUERY_STRING'].split('=')[-1])
 
+    def test_update_share_type_quota_for_share_server_replicas(self):
+        self.mock_object(
+            quota_sets.db, 'share_type_get_by_name_or_id',
+            mock.Mock(
+                return_value={'id': 'fake_st_id', 'name': 'fake_st_name'}))
+        req = self._get_share_type_request_object('2.100')
+        body = {'quota_set': {
+            'tenant_id': self.project_id, 'share_server_replicas': 788,
+        }}
+
+        self.assertRaises(
+            webob.exc.HTTPBadRequest,
+            self.controller.update,
+            req, self.project_id, body=body)
+
+        quota_sets.db.share_type_get_by_name_or_id.assert_called_once_with(
+            req.environ['manila.context'],
+            req.environ['QUERY_STRING'].split('=')[-1])
+
+    def test_update_share_server_replicas_using_too_old_microversion(self):
+        req = _get_request(True, False)
+        req.api_version_request = api_version.APIVersionRequest('2.99')
+
+        self.assertRaises(
+            webob.exc.HTTPBadRequest,
+            self.controller.update,
+            req,
+            self.project_id,
+            body={'quota_set': {'share_server_replicas': 1}})
+
     @ddt.data(-2, 'foo', {1: 2}, [1])
     def test_update_quota_with_invalid_value(self, value):
         req = _get_request(True, False)

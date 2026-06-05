@@ -70,11 +70,17 @@ def stub_share(id, **kwargs):
 
     # NOTE(ameade): We must wrap the dictionary in an class in order to stub
     # object attributes.
-    class wrapper(abc.Mapping):
+    class wrapper(abc.MutableMapping):
         def __getitem__(self, name):
             if hasattr(self, name):
                 return getattr(self, name)
             return self.__dict__[name]
+
+        def __setitem__(self, name, value):
+            setattr(self, name, value)
+
+        def __delitem__(self, name):
+            del self.__dict__[name]
 
         def __iter__(self):
             return iter(self.__dict__)

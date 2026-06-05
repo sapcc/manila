@@ -37,6 +37,7 @@ from manila.i18n import _
 from manila.lock import api as resource_locks
 from manila import policy
 from manila import share
+from manila.share import utils as share_utils
 from manila import utils
 
 LOG = log.getLogger(__name__)
@@ -62,6 +63,27 @@ class ShareController(wsgi.Controller,
         self._conf_admin_only_metadata_keys = getattr(
             CONF, 'admin_only_metadata', []
         )
+
+    def _set_share_server_replica_protection(self, context, share):
+        share['protected_via_share_server_replica'] = (
+            share_utils.is_share_protected_via_share_server_replica(
+                context, db, share)
+        )
+
+    @wsgi.Controller.authorize('get')
+    @wsgi.Controller.authorize('get')
+    def show(self, req, id):
+        """Return data about the given share."""
+        context = req.environ['manila.context']
+
+        try:
+            share = self.share_api.get(context, id)
+        except exception.NotFound:
+            raise exc.HTTPNotFound()
+
+        self._set_share_server_replica_protection(context, share)
+
+        return self._view_builder.detail(req, share)
 
     @wsgi.Controller.authorize('revert_to_snapshot')
     def _revert(self, req, id, body=None):
