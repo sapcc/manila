@@ -527,6 +527,13 @@ class ManilaExceptionResponseCode404(test.TestCase):
         self.assertEqual(404, e.code)
         self.assertIn(replica_id, e.msg)
 
+    def test_share_server_replica_not_found_exception(self):
+        # Verify response code for exception.ShareServerReplicaNotFound
+        replica_id = "FAKE_SS_REPLICA_ID"
+        e = exception.ShareServerReplicaNotFound(replica_id=replica_id)
+        self.assertEqual(404, e.code)
+        self.assertIn(replica_id, e.msg)
+
     def test_storage_resource_not_found(self):
         # verify response code for exception.StorageResourceNotFound
         name = "fake_name"

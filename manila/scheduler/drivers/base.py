@@ -61,6 +61,16 @@ def share_replica_update_db(context, share_replica_id, host):
     return db.share_replica_update(context, share_replica_id, values)
 
 
+def share_server_replica_update_db(context, share_server_replica_id, host):
+    """Set the host and the updated_at field of a share server replica.
+
+    :returns: A share server replica with the updated fields set.
+    """
+    now = timeutils.utcnow()
+    values = {'host': host, 'updated_at': now}
+    return db.share_server_update(context, share_server_replica_id, values)
+
+
 def share_group_update_db(context, share_group_id, host):
     '''Set the host and set the updated_at field of a share group.
 
@@ -131,3 +141,9 @@ class Scheduler(object):
                                 filter_properties):
         """Must override schedule method for create replica to work."""
         raise NotImplementedError(_("Must implement schedule_create_replica"))
+
+    def schedule_create_share_server_replica(self, context, request_spec,
+                                             filter_properties):
+        """Must override schedule method for share server replicas to work."""
+        raise NotImplementedError(_(
+            "Must implement schedule_create_share_server_replica"))

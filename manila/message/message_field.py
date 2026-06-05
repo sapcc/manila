@@ -19,6 +19,7 @@ class Resource(object):
     SHARE = 'SHARE'
     SHARE_GROUP = 'SHARE_GROUP'
     SHARE_REPLICA = 'SHARE_REPLICA'
+    SHARE_SERVER_REPLICA = 'SHARE_SERVER_REPLICA'
     SHARE_SNAPSHOT = 'SHARE_SNAPSHOT'
     SECURITY_SERVICE = 'SECURITY_SERVICE'
     SHARE_NETWORK_SUBNET = 'SHARE_NETWORK_SUBNET'
@@ -40,6 +41,8 @@ class Action(object):
     TRANSFER_ACCEPT = ('026', _('transfer accept'))
     UPDATE_METADATA = ('027', _('update_metadata'))
     RESTORE_BACKUP = ('028', _('restore share backup'))
+    RESYNC = ('029', _('resync'))
+    FAILOVER = ('030', _('failover'))
     ALL = (
         ALLOCATE_HOST,
         CREATE,
@@ -54,7 +57,9 @@ class Action(object):
         ADD_UPDATE_SECURITY_SERVICE,
         TRANSFER_ACCEPT,
         UPDATE_METADATA,
-        RESTORE_BACKUP
+        RESTORE_BACKUP,
+        RESYNC,
+        FAILOVER,
     )
 
 
@@ -218,6 +223,20 @@ class Detail(object):
         '032',
         _("Cannot restore a given backup to a target share, not supported by "
           "share driver."))
+    DRIVER_FAILED_REVERTING_TO_SNAPSHOT = (
+        '035',
+        _("Share driver failed to revert the share to the specified snapshot. "
+          "Contact your administrator if the problem persists."))
+    RESYNC_FAILED_RECREATE_REPLICA = (
+        '036',
+        _("Share driver failed to resync the share server replica. "
+          "Please delete this share server replica and create a new "
+          "one to recover."))
+    FAILOVER_FAILED_RECREATE_REPLICA = (
+        '037',
+        _("Share driver failed to process the unplanned failover for the "
+          "share server replica. Please delete this share server replica "
+          "and create a new one to recover."))
 
     ALL = (
         UNKNOWN_ERROR,
@@ -260,6 +279,9 @@ class Detail(object):
         CIFS_SERVER_CERTIFICATE_ERROR,
         UNSUPPORTED_REPLICA_CREATE_CONFIG,
         TARGETED_RESTORE_UNSUPPORTED,
+        DRIVER_FAILED_REVERTING_TO_SNAPSHOT,
+        RESYNC_FAILED_RECREATE_REPLICA,
+        FAILOVER_FAILED_RECREATE_REPLICA,
     )
 
     # Exception and detail mappings

@@ -140,3 +140,10 @@ class SchedulerRpcAPITestCase(test.TestCase):
                                  request_spec='fake_request_spec',
                                  filter_properties='filter_properties',
                                  version='1.11',)
+
+    def test_create_share_server_replica(self):
+        self._test_scheduler_api('create_share_server_replica',
+                                 rpc_method='cast',
+                                 request_spec='fake_request_spec',
+                                 filter_properties='filter_properties',
+                                 version='1.12')
