@@ -73,6 +73,22 @@ SM_PREPARING_STATE = 'preparing'
 SM_TRANSFERRING_STATE = 'transferring'
 SM_FINALIZING_STATE = 'finalizing'
 SM_SYNCHRONIZING_STATE = 'synchronizing'
+SM_EXPANDING_STATE = 'expanding'
+SM_SHRINKING_STATE = 'shrinking'
+SM_BROKEN_OFF_STATE = 'broken_off'
+
+SVM_SUBTYPE_DEFAULT = 'default'
+SVM_SUBTYPE_DP_DESTINATION = 'dp_destination'
+SVM_STATE_RUNNING = 'running'
+
+SMAS_POLICY_NAME = 'AutomatedFailOver'
+SMAS_SUPPORTED_REPLICATION_POLICIES = (SMAS_POLICY_NAME,)
+SMAS_PROTECTION_PROTECTED = 'protected'
+SMAS_PROTECTION_UNPROTECTED = 'unprotected'
+SMAS_MIN_ONTAP_VERSION = (9, 19, 1)
+
+SMAS_DELETE_POLL_INTERVAL = 5
+SMAS_DELETE_POLL_TIMEOUT = 600
 
 
 class NetAppDriverException(exception.ShareBackendException):
