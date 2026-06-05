@@ -2017,6 +2017,52 @@ SERVER_MODEL_UPDATE = {
     'share_updates': {SHARE_INSTANCE['id']: NFS_EXPORTS[0]},
 }
 
+SVM_VOLUMES_WITH_AGGREGATES = {
+    SHARE_NAME: {
+        'name': SHARE_NAME,
+        'uuid': 'fake_volume_uuid',
+        'aggregates': [{'name': AGGREGATE}],
+    },
+}
+
+SVM_VOLUMES_WITHOUT_AGGREGATES = {
+    SHARE_NAME: {
+        'name': SHARE_NAME,
+        'uuid': 'fake_volume_uuid',
+        'aggregates': [],
+    },
+}
+
+VSERVER_INFO_DP_DESTINATION = {
+    'name': VSERVER2,
+    'subtype': 'dp_destination',
+    'operational_state': 'stopped',
+    'state': 'stopped',
+}
+
+VSERVER_INFO_TRANSIENT = {
+    'name': VSERVER2,
+    'subtype': 'default',
+    'operational_state': 'stopped',
+    'state': 'stopped',
+}
+
+SM_REVERSED_RELATIONSHIP = {
+    'state': 'in_sync',
+    'healthy': True,
+    'source': {'path': '%s:' % VSERVER2},
+    'destination': {'path': '%s:' % VSERVER1},
+}
+
+SM_REVERSED_RELATIONSHIP_SYNCHRONIZING = {
+    'state': 'synchronizing',
+    'healthy': False,
+    'unhealthy_reason': [{'code': '6620046',
+                          'message': 'Transfer in progress.'}],
+    'source': {'path': '%s:' % VSERVER2},
+    'destination': {'path': '%s:' % VSERVER1},
+}
+
 
 def get_config_cmode():
     config = na_fakes.create_configuration_cmode()
