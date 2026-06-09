@@ -1142,12 +1142,15 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
 
         query = {
             'efficiency.volume_path': '/vol/%s' % fake.VOLUME_NAMES[0],
-            'fields': 'efficiency.state,efficiency.compression'
+            'fields': 'efficiency.state,'
+                      'efficiency.compression,'
+                      'efficiency.policy'
         }
 
         expected_result = {
             'dedupe': True,
-            'compression': True
+            'compression': True,
+            'policy': None
         }
 
         self.mock_object(self.client, 'send_request',

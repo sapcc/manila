@@ -3415,7 +3415,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         """Update dedupe & compression attributes to match desired values."""
         efficiency_status = self.get_volume_efficiency_status(volume_name)
 
-        # SAPCC Kepp deduplication metadata from filling up the volume
+        # SCI Keep deduplication metadata from filling up the volume
         if cross_dedup_disabled:
             if not efficiency_status['dedupe']:
                 self.enable_dedup(volume_name)
@@ -3429,6 +3429,21 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                     'enable-data-compaction': 'true',
                 })
             return
+
+        # Reset policy to default if it was previously set to inline-only
+        current_policy = efficiency_status.get('policy')
+        LOG.debug('Current deduplication policy for volume %s is %s.',
+                  volume_name, current_policy)
+        if current_policy == 'inline-only':
+            LOG.debug('Resetting deduplication policy for volume %s to auto.',
+                      volume_name)
+            self.set_sis_config(
+                volume_name, {
+                    'policy-name': 'auto',
+                    'enable-cross-volume-background-dedupe': 'true',
+                    'enable-cross-volume-inline-dedupe': 'true',
+                    'enable-data-compaction': 'true',
+                })
 
         # cDOT compression requires dedup to be enabled
         dedup_enabled = dedup_enabled or compression_enabled

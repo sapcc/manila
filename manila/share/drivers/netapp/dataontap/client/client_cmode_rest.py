@@ -1162,10 +1162,13 @@ class NetAppRestClient(object):
         """Get dedupe & compression status for a volume."""
         query = {
             'efficiency.volume_path': f'/vol/{volume_name}',
-            'fields': 'efficiency.state,efficiency.compression'
+            'fields': 'efficiency.state,'
+                      'efficiency.compression,'
+                      'efficiency.policy'
         }
         dedupe = False
         compression = False
+        policy = None
         try:
             response = self.send_request('/storage/volumes', 'get',
                                          query=query)
@@ -1173,6 +1176,7 @@ class NetAppRestClient(object):
                 efficiency = response['records'][0]['efficiency']
                 dedupe = (efficiency['state'] == 'enabled')
                 compression = (efficiency['compression'] != 'none')
+                policy = efficiency.get('policy', {}).get('name')
         except netapp_api.api.NaApiError:
             msg = _('Failed to get volume efficiency status for %s.')
             LOG.error(msg, volume_name)
@@ -1180,6 +1184,7 @@ class NetAppRestClient(object):
         return {
             'dedupe': dedupe,
             'compression': compression,
+            'policy': policy,
         }
 
     @na_utils.trace
@@ -1214,11 +1219,49 @@ class NetAppRestClient(object):
     @na_utils.trace
     def update_volume_efficiency_attributes(self, volume_name, dedup_enabled,
                                             compression_enabled,
+                                            cross_dedup_disabled=False,
                                             is_flexgroup=False,
                                             efficiency_policy=None):
         """Update dedupe & compression attributes to match desired values."""
 
         efficiency_status = self.get_volume_efficiency_status(volume_name)
+
+        # SCI Keep deduplication metadata from filling up the volume
+        if cross_dedup_disabled:
+            volume = self._get_volume_by_args(vol_name=volume_name)
+            uuid = volume['uuid']
+
+            # Enable dedup and compression if not already enabled
+            if not efficiency_status['dedupe']:
+                self.enable_dedupe_async(volume_name)
+            if not efficiency_status['compression']:
+                self.enable_compression_async(volume_name)
+
+            # Set efficiency policy to inline-only & disable cross-volume dedup
+            body = {
+                'efficiency': {
+                    'policy': {'name': 'inline-only'},
+                    'cross_volume_dedupe': 'none',
+                    'compaction': 'inline'
+                }
+            }
+            self.send_request(f'/storage/volumes/{uuid}', 'patch', body=body)
+            return
+
+        # Reset policy to default if it was previously set to inline-only
+        current_policy = efficiency_status.get('policy')
+        if current_policy == 'inline-only':
+            volume = self._get_volume_by_args(vol_name=volume_name)
+            uuid = volume['uuid']
+            body = {
+                'efficiency': {
+                    'policy': {'name': 'auto'},
+                    'cross_volume_dedupe': 'both',
+                    'compaction': 'inline'
+                }
+            }
+            self.send_request(f'/storage/volumes/{uuid}', 'patch', body=body)
+
         # cDOT compression requires dedup to be enabled
         dedup_enabled = dedup_enabled or compression_enabled
         # enable/disable compression if needed

@@ -858,7 +858,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
         mock_allocate_container.assert_called_once_with(
             fake.SHARE, fake.VSERVER1, vserver_client,
-            logical_space_reporting=True)
+            logical_space_reporting=True, cross_dedup_disabled=False)
         mock_create_export.assert_called_once_with(fake.SHARE,
                                                    fake.SHARE_SERVER,
                                                    fake.VSERVER1,
@@ -901,7 +901,6 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
         mock_allocate_container_from_snapshot.assert_called_once_with(
             share, fake.SNAPSHOT, fake.VSERVER1, vserver_client,
-            compression_enabled=True, dedup_enabled=True, policy=None,
             cross_dedup_disabled=False, logical_space_reporting=False)
         mock_create_export.assert_called_once_with(share, fake.SHARE_SERVER,
                                                    fake.VSERVER1,
@@ -1060,8 +1059,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                 self.src_vserver_client, split=False, create_fpolicy=False)
             self.mock_allocate_container.assert_called_once_with(
                 self.fake_share, fake.VSERVER2, self.dest_vserver_client,
-                replica=True, set_qos=False, compression_enabled=True,
-                dedup_enabled=True, policy=None, cross_dedup_disabled=False,
+                replica=True, set_qos=False, cross_dedup_disabled=False,
                 logical_space_reporting=False)
             self.mock_dm_create_snapmirror.assert_called_once()
             self.temp_src_share['replica_state'] = (
@@ -1070,9 +1068,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         else:
             self.mock_allocate_container_from_snapshot.assert_called_once_with(
                 self.fake_share, fake.SNAPSHOT, fake.VSERVER1,
-                self.src_vserver_client, split=True, compression_enabled=True,
-                dedup_enabled=True, policy=None, cross_dedup_disabled=False,
-                logical_space_reporting=False)
+                self.src_vserver_client, split=True,
+                cross_dedup_disabled=False, logical_space_reporting=False)
             state = self.library.STATE_SPLITTING_VOLUME_CLONE
 
             self.temp_src_share['aggregate'] = ([fake.POOL_NAME]
@@ -1127,7 +1124,6 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             self.mock_allocate_container_from_snapshot.assert_called_once_with(
                 self.fake_share, fake.SNAPSHOT, fake.VSERVER1,
                 self.src_vserver_client, split=True,
-                compression_enabled=True, dedup_enabled=True, policy=None,
                 cross_dedup_disabled=False, logical_space_reporting=False)
         else:
             self.mock_generate_uuid.assert_called_once()
@@ -1425,7 +1421,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             self.mock_modify_vol.assert_called_once_with(
                 fake.POOL_NAME, fake.SHARE_NAME,
                 **fake.PROVISIONING_OPTIONS_WITH_QOS,
-                logical_space_reporting=True, policy=None,
+                logical_space_reporting=True,
                 cross_dedup_disabled=False)
             self.mock_pvt_storage_delete.assert_called_once_with(
                 fake.SHARE['id'])
@@ -1535,7 +1531,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             self.mock_modify_vol.assert_called_once_with(
                 fake.POOL_NAME, fake.SHARE_NAME,
                 **fake.PROVISIONING_OPTIONS_WITH_QOS,
-                logical_space_reporting=True, policy=None,
+                logical_space_reporting=True,
                 cross_dedup_disabled=False)
             expect_result['status'] = constants.STATUS_AVAILABLE
             self.mock_pvt_storage_delete.assert_called_once_with(
@@ -5149,9 +5145,6 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.mock_object(
             self.library, '_get_logical_space_options',
             mock.Mock(return_value={'logical_space_reporting': False}))
-        self.mock_object(
-            self.library, '_get_efficiency_options',
-            mock.Mock(return_value={'cross_dedup_disabled': False}))
         self.mock_object(self.client, 'cleanup_demoted_replica')
         self.mock_object(self.library,
                          '_is_readable_replica',
@@ -5223,9 +5216,6 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.mock_object(
             self.library, '_get_logical_space_options',
             mock.Mock(return_value={'logical_space_reporting': False}))
-        self.mock_object(
-            self.library, '_get_efficiency_options',
-            mock.Mock(return_value={'cross_dedup_disabled': False}))
         self.mock_object(
             protocol_helper, 'cleanup_demoted_replica',
             mock.Mock(side_effect=exception.StorageCommunicationException))
@@ -5316,9 +5306,6 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.mock_object(
             self.library, '_get_logical_space_options',
             mock.Mock(return_value={'logical_space_reporting': False}))
-        self.mock_object(
-            self.library, '_get_efficiency_options',
-            mock.Mock(return_value={'cross_dedup_disabled': False}))
         self.mock_object(self.library,
                          '_is_readable_replica',
                          mock.Mock(return_value=False))
@@ -5386,9 +5373,6 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.mock_object(
             self.library, '_get_logical_space_options',
             mock.Mock(return_value={'logical_space_reporting': False}))
-        self.mock_object(
-            self.library, '_get_efficiency_options',
-            mock.Mock(return_value={'cross_dedup_disabled': False}))
         self.mock_object(self.library,
                          '_is_readable_replica',
                          mock.Mock(return_value=False))

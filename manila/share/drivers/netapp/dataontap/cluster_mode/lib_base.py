@@ -882,21 +882,23 @@ class NetAppCmodeFileStorageLibrary(object):
                 src_volume.get('is-space-reporting-logical')
         }
 
-    def _get_efficiency_options(self, vserver_client, share_name,
-                                extra_logging=False):
-        status = vserver_client.get_volume_efficiency_status(share_name)
-        if extra_logging:
-            LOG.debug(f"volume_efficiency_status of share '{share_name}'"
-                      f"is '{status}'")
-        cross_dedup_disabled = (status.get('policy') == 'inline-only'
-                                and status.get('cross_dedup_disabled'))
-        provisioning_opts = {
-            'dedup_enabled': status.get('dedupe'),
-            'compression_enabled': status.get('compression'),
-            'policy': None,
-            'cross_dedup_disabled': cross_dedup_disabled,
-        }
-        return provisioning_opts
+    def _get_cross_volume_dedupe_options(self, share):
+        """Map ``cross_volume_dedupe`` metadata to driver kwargs.
+
+        Reads the ``cross_volume_dedupe`` metadata key (positive form,
+        mirroring the ONTAP field). When metadata sets it to ``false``,
+        cross-volume dedup is disabled (inline-only policy). Any other
+        value (including missing) leaves cross-volume dedup enabled and
+        resets the policy to auto if it was previously inline-only.
+
+        Returns the ``cross_dedup_disabled`` kwarg expected by
+        :meth:`update_volume_efficiency_attributes`.
+        """
+        metadata = share.get('metadata', {})
+        if metadata.get('cross_volume_dedupe') == 'false':
+            return {'cross_dedup_disabled': True}
+        else:
+            return {'cross_dedup_disabled': False}
 
     @na_utils.trace
     def create_share(self, context, share, share_server):
@@ -911,10 +913,9 @@ class NetAppCmodeFileStorageLibrary(object):
             share_types.get_share_type(context, share.get('share_type_id')))
         if share_type['name'].startswith('hypervisor_storage'):
             provisioning_options = {'logical_space_reporting': False}
-        if context.project_domain_name in ['neo']:
-            provisioning_options['dedup_enabled'] = True
-            provisioning_options['compression_enabled'] = True
-            provisioning_options['cross_dedup_disabled'] = True
+
+        provisioning_options.update(
+            self._get_cross_volume_dedupe_options(share))
         self._allocate_container(share, vserver, vserver_client,
                                  **provisioning_options)
         return self._create_export(share, share_server, vserver,
@@ -934,12 +935,14 @@ class NetAppCmodeFileStorageLibrary(object):
             src_vserver, src_vserver_client = self._get_vserver(
                 share_server=share_server)
             # Creating a new share from snapshot in the source share's pool
-            # SAPCC Get attribuets from parent Share and apply.
+            # SCI Get attributes from parent Share and apply.
             src_share_name = self._get_backend_share_name(snapshot['share_id'])
             logical_opts = self._get_logical_space_options(
                 src_vserver_client, src_share_name)
-            effi_opts = self._get_efficiency_options(src_vserver_client,
-                                                     src_share_name)
+
+            # SCI: Apply cross_volume_dedupe based on new share's metadata
+            effi_opts = self._get_cross_volume_dedupe_options(share)
+
             self._allocate_container_from_snapshot(
                 share, snapshot, src_vserver, src_vserver_client,
                 **logical_opts, **effi_opts)
@@ -1025,11 +1028,12 @@ class NetAppCmodeFileStorageLibrary(object):
             parent_aggr = share_utils.extract_host(parent_share['host'],
                                                    level='pool')
 
-        # SAPCC Get attributes from parent share
+        # SCI Get attributes from parent share
         logical_opts = self._get_logical_space_options(src_vserver_client,
                                                        parent_share_name)
-        effi_opts = self._get_efficiency_options(src_vserver_client,
-                                                 parent_share_name)
+
+        # SCI: Apply cross_volume_dedupe based on new share's metadata
+        effi_opts = self._get_cross_volume_dedupe_options(share)
 
         try:
             # NOTE(felipe_rodrigues): no support to move volumes that are
@@ -1267,9 +1271,10 @@ class NetAppCmodeFileStorageLibrary(object):
                 provisioning_options.update(
                     self._get_logical_space_options(src_vserver_client,
                                                     share_name))
+
+                # SCI: Apply cross_volume_dedupe based on share's metadata
                 provisioning_options.update(
-                    self._get_efficiency_options(src_vserver_client,
-                                                 share_name))
+                    self._get_cross_volume_dedupe_options(share))
 
                 qos_type_specs = qos_types.get_specs_from_share(share)
                 qos_type_specs = self._get_normalized_qos_type_specs(
@@ -3210,11 +3215,8 @@ class NetAppCmodeFileStorageLibrary(object):
             share, vserver, vserver_client=vserver_client, set_qos=False)
 
         # SAPCC Keep logical space reporting attributes while update share
-        # SAPCC Keep efficiency attributes while update share
         provisioning_options.update(
             self._get_logical_space_options(vserver_client, share_name))
-        provisioning_options.update(
-            self._get_efficiency_options(vserver_client, share_name))
 
         qos_policy_group_name = self._modify_or_create_qos_for_existing_share(
             share, extra_specs, vserver, vserver_client)
@@ -3225,7 +3227,13 @@ class NetAppCmodeFileStorageLibrary(object):
             vserver_client, share_name)
         provisioning_options.update(snap_attributes)
 
-        metadata = share.get('metadata')
+        # SCI: Metadata explicitly controls cross_volume_dedupe setting
+        provisioning_options.update(
+            self._get_cross_volume_dedupe_options(share))
+
+        # Get metadata from share
+        metadata = share.get('metadata', {})
+        # Apply snapshot_policy from metadata if present
         if metadata:
             snapshot_policy = metadata.get('snapshot_policy')
             if snapshot_policy:
@@ -3839,7 +3847,6 @@ class NetAppCmodeFileStorageLibrary(object):
         # SAPCC Get space logical reporting settings from original replica.
         logical_opts = {}
         is_logical_space_rep = None
-        effi_opts = {}
         orig_active_vserver_client = None
         orig_active_vserver = dm_session.get_vserver_from_share(
             orig_active_replica)
@@ -3860,10 +3867,6 @@ class NetAppCmodeFileStorageLibrary(object):
             logical_opts = self._get_logical_space_options(
                 orig_active_vserver_client, orig_active_replica_name)
             is_logical_space_rep = logical_opts['logical_space_reporting']
-            effi_opts = self._get_efficiency_options(
-                orig_active_vserver_client,
-                orig_active_replica_name,
-                extra_logging=True)
 
         new_replica_list = []
 
@@ -3969,21 +3972,19 @@ class NetAppCmodeFileStorageLibrary(object):
         else:
             LOG.exception(logical_space_error_msg)
 
-        effi_opts_error_msg = (
-            f"With efficiency options '{effi_opts}'"
-            f"could not apply cross_dedup_disabled to the promoted "
-            f"replica."
-        )
-        if effi_opts:
-            if effi_opts['cross_dedup_disabled']:
-                try:
-                    new_active_vserver_cli.update_volume_efficiency_attributes(
-                        new_active_replica_name, True, True,
-                        cross_dedup_disabled=True)
-                except Exception as e:
-                    LOG.exception(f"{effi_opts_error_msg} {e}")
-        else:
-            LOG.exception(effi_opts_error_msg)
+        # SCI: Check metadata to determine if cross-volume dedup should be
+        # disabled on the promoted replica. All replicas of the same share
+        # share the same metadata.
+        metadata = new_active_replica.get('metadata', {})
+        if metadata.get('cross_volume_dedupe') == 'false':
+            try:
+                new_active_vserver_cli.update_volume_efficiency_attributes(
+                    new_active_replica_name, True, True,
+                    cross_dedup_disabled=True)
+            except Exception as e:
+                LOG.exception(
+                    f"Could not disable cross_volume_dedupe on the promoted "
+                    f"replica. {e}")
 
         return new_replica_list
 
@@ -5560,6 +5561,23 @@ class NetAppCmodeFileStorageLibrary(object):
         return pool_name in pools
 
     @na_utils.trace
+    def update_cross_volume_dedupe(self, share, value, share_server=None):
+        """Update cross_volume_dedupe setting for a share."""
+        value = value.lower()
+        if value not in ('true', 'false'):
+            err_msg = _("Invalid cross_volume_dedupe value supplied: %s.")
+            err_msg = err_msg % value
+            raise exception.NetAppException(err_msg)
+
+        vserver, vserver_client = self._get_vserver(share_server=share_server)
+        share_name = self._get_backend_share_name(share['id'])
+
+        # value 'false' (cross-volume dedup disabled) -> inline-only policy
+        # value 'true'  (cross-volume dedup enabled)  -> reset to auto policy
+        vserver_client.update_volume_efficiency_attributes(
+            share_name, True, True, cross_dedup_disabled=(value == 'false'))
+
+    @na_utils.trace
     def create_backup(self, context, share_instance, backup,
                       share_server=None):
         """Create backup for NetApp share"""
@@ -6274,6 +6292,7 @@ class NetAppCmodeFileStorageLibrary(object):
                                    share_server=None):
         metadata_update_func_map = {
             "snapshot_policy": "update_volume_snapshot_policy",
+            "cross_volume_dedupe": "update_cross_volume_dedupe",
         }
 
         for k, v in metadata.items():
