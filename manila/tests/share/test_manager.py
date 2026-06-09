@@ -1001,6 +1001,8 @@ class ShareManagerTestCase(test.TestCase):
             'availability_zone': share_instance.get('availability_zone'),
             'export_locations': share_instance.get('export_locations') or [],
             'qos_type_id': share_instance.get('qos_type_id'),
+            'metadata': share_instance.get('metadata') if isinstance(
+                share_instance.get('metadata'), dict) else {},
         }
         share_type = share_instance.get('share_type')
         if share_type:

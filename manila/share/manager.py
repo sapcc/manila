@@ -644,6 +644,8 @@ class ShareManager(manager.SchedulerDependentManager):
                         {'id': share_instance['id']},
                     )
                     continue
+            else:
+                metadata = {}
 
             # only busy aka shares undergoing a migration might not have
             # their pool fixed, but other skip reasons do not apply
@@ -659,8 +661,7 @@ class ShareManager(manager.SchedulerDependentManager):
                 continue
             share_instance_dict = self._get_share_instance_dict(
                 ctxt, share_instance)
-            if metadata:
-                share_instance_dict.update({'metadata': metadata})
+            share_instance_dict.update({'metadata': metadata})
             update_share_instances.append(share_instance_dict)
 
         do_service_status_update = False
@@ -2599,6 +2600,25 @@ class ShareManager(manager.SchedulerDependentManager):
         if context.project_domain_name is None and request_spec:
             context.project_domain_name = request_spec.get(
                 'project_domain_name')
+
+        # SCI: Disable cross-volume dedup on shares in the neo domain by
+        # setting cross_volume_dedupe=false metadata.
+        if (hasattr(context, 'project_domain_name') and
+                context.project_domain_name in ['neo']):
+            self.db.share_metadata_update(
+                context, share['id'],
+                {'cross_volume_dedupe': 'false'},
+                delete=False)
+            LOG.debug('Set cross_volume_dedupe=false metadata for neo share '
+                      '%s', share['id'])
+            # Refresh share to get the updated metadata
+            share = self.db.share_get(context, share['id'])
+
+        # Add share_metadata to share_instance for driver access
+        share_metadata_list = share.get('share_metadata', [])
+        share_instance['metadata'] = {
+            m['key']: m['value'] for m in share_metadata_list
+        } if share_metadata_list else {}
 
         status = constants.STATUS_AVAILABLE
         try:
@@ -6771,6 +6791,20 @@ class ShareManager(manager.SchedulerDependentManager):
             self.db.share_instance_get_all_by_share_server(
                 context, src_share_server_id, with_share_data=True))
         share_instance_ids = [x.id for x in share_instances]
+
+        # Add metadata dict to share_instances for driver access
+        for instance in share_instances:
+            share_id = instance.get('share_id')
+            if share_id:
+                # Get share to access metadata
+                # (instance.share relationship is detached)
+                share = self.db.share_get(context, share_id)
+                share_metadata_list = share.get('share_metadata', [])
+                instance['metadata'] = {
+                    m['key']: m['value'] for m in share_metadata_list
+                } if share_metadata_list else {}
+            else:
+                instance['metadata'] = {}
 
         snapshot_instances = (
             self.db.share_snapshot_instance_get_all_with_filters(
