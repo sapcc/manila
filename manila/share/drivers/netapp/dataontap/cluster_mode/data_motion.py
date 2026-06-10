@@ -449,6 +449,10 @@ class DataMotionSession(object):
                         undergoing_abort in e.message):
                     raise exception.ReplicationException(
                         reason="Snapmirror relationship is aborting.")
+                elif e.code == netapp_api.EANOTHER_OP_ACTIVE:
+                    raise exception.ReplicationException(
+                        reason="Another operation is active on the snapmirror "
+                               "relationship.")
                 else:
                     raise
 
