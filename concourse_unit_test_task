@@ -14,7 +14,7 @@ source $HOME/.local/tools/bin/activate
 
 uv pip install bindep tox "six>=1.14" > /dev/null 2>&1
 
-git clone -b dev/stable/2025.1-m3 --single-branch https://github.com/sapcc/manila.git --depth=1
+git clone -b stable/2025.1-m3 --single-branch https://github.com/sapcc/manila.git --depth=1
 
 cd manila/
 apt install -y $(bindep -b test) > /dev/null 2>&1
