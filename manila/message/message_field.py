@@ -39,6 +39,7 @@ class Action(object):
     ADD_UPDATE_SECURITY_SERVICE = ('011', _('add or update security service'))
     TRANSFER_ACCEPT = ('026', _('transfer accept'))
     UPDATE_METADATA = ('027', _('update_metadata'))
+    RESTORE_BACKUP = ('028', _('restore share backup'))
     ALL = (
         ALLOCATE_HOST,
         CREATE,
@@ -53,6 +54,7 @@ class Action(object):
         ADD_UPDATE_SECURITY_SERVICE,
         TRANSFER_ACCEPT,
         UPDATE_METADATA,
+        RESTORE_BACKUP
     )
 
 
@@ -212,6 +214,11 @@ class Detail(object):
     FILTER_ANTI_AFFINITY = ('999', FILTER_MSG % 'AntiAffinityFilter')
     # ////////////////////////// SCI custom message //////////////////////////
 
+    TARGETED_RESTORE_UNSUPPORTED = (
+        '032',
+        _("Cannot restore a given backup to a target share, not supported by "
+          "share driver."))
+
     ALL = (
         UNKNOWN_ERROR,
         NO_VALID_HOST,
@@ -251,7 +258,8 @@ class Detail(object):
         UPDATE_METADATA_NOT_DELETED,
         CIFS_SERVER_SETUP_FAILED,
         CIFS_SERVER_CERTIFICATE_ERROR,
-        UNSUPPORTED_REPLICA_CREATE_CONFIG
+        UNSUPPORTED_REPLICA_CREATE_CONFIG,
+        TARGETED_RESTORE_UNSUPPORTED,
     )
 
     # Exception and detail mappings
