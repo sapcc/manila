@@ -86,33 +86,33 @@ class ShareReplicationController(wsgi.Controller, metadata.MetadataController,
         """Returns a detailed list of replicas."""
         return self._get_replicas(req, is_detail=True)
 
-    @wsgi.Controller.api_version("2.89")
+    @wsgi.Controller.api_version("2.95")
     @wsgi.Controller.authorize("get_metadata")
     def index_metadata(self, req, resource_id):
         """Returns the list of metadata for a given share replica."""
         return self._index_metadata(req, resource_id)
 
-    @wsgi.Controller.api_version("2.89")
+    @wsgi.Controller.api_version("2.95")
     @wsgi.Controller.authorize("update_metadata")
     def create_metadata(self, req, resource_id, body):
         return self._create_metadata(req, resource_id, body)
 
-    @wsgi.Controller.api_version("2.89")
+    @wsgi.Controller.api_version("2.95")
     @wsgi.Controller.authorize("update_metadata")
     def update_all_metadata(self, req, resource_id, body):
         return self._update_all_metadata(req, resource_id, body)
 
-    @wsgi.Controller.api_version("2.89")
+    @wsgi.Controller.api_version("2.95")
     @wsgi.Controller.authorize("update_metadata")
     def update_metadata_item(self, req, resource_id, body, key):
         return self._update_metadata_item(req, resource_id, body, key)
 
-    @wsgi.Controller.api_version("2.89")
+    @wsgi.Controller.api_version("2.95")
     @wsgi.Controller.authorize("get_metadata")
     def show_metadata(self, req, resource_id, key):
         return self._show_metadata(req, resource_id, key)
 
-    @wsgi.Controller.api_version("2.89")
+    @wsgi.Controller.api_version("2.95")
     @wsgi.Controller.authorize("delete_metadata")
     def delete_metadata(self, req, resource_id, key):
         return self._delete_metadata(req, resource_id, key)
@@ -181,12 +181,12 @@ class ShareReplicationController(wsgi.Controller, metadata.MetadataController,
     def create(self, req, body):  # pylint: disable=function-redefined  # noqa F811
         return self._create(req, body)
 
-    @wsgi.Controller.api_version("2.67", "2.88") # noqa
+    @wsgi.Controller.api_version("2.67", "2.94") # noqa
     @wsgi.response(202)
     def create(self, req, body): # pylint: disable=function-redefined  # noqa F811
         return self._create(req, body, allow_scheduler_hints=True)
 
-    @wsgi.Controller.api_version("2.89")  # noqa
+    @wsgi.Controller.api_version("2.95")  # noqa
     @wsgi.response(202)
     def create(self, req, body):  # pylint: disable=function-redefined  # noqa F811
         return self._create(req, body, allow_scheduler_hints=True,

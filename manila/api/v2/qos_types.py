@@ -38,7 +38,7 @@ from manila import rpc
 from manila import share
 
 
-MIN_SUPPORTED_API_VERSION = '2.89'
+MIN_SUPPORTED_API_VERSION = '2.94'
 
 
 class QosTypesController(wsgi.Controller, wsgi.AdminActionsMixin):

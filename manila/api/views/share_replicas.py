@@ -91,7 +91,7 @@ class ReplicationViewBuilder(common.ViewBuilder):
             replica_dict['cast_rules_to_readonly'] = replica.get(
                 'cast_rules_to_readonly', False)
 
-    @common.ViewBuilder.versioned_method("2.89")
+    @common.ViewBuilder.versioned_method("2.95")
     def add_metadata(self, context, replica_dict, replica):
         metadata = replica.get('share_instance_metadata', [])
         metadata_dict = {meta['key']: meta['value'] for meta in metadata}

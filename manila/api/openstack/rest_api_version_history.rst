@@ -478,12 +478,9 @@ user documentation.
   Added support for passing share network subnet metadata updates to share
   backend driver.
 
-2.89
+2.90
 ----
   Added ``encryption_key_ref`` option to share create API.
-  Added qos_type and specs APIs.
-  Added Metadata API methods (GET, PUT, POST, DELETE)
-  to Share Replicas.
 
 2.91
 ----
@@ -492,3 +489,12 @@ user documentation.
 2.93
 ----
   Added support for filtering services through the ``ensuring`` field.
+
+2.94
+----
+  Added qos_type and specs APIs.
+
+2.95
+----
+  Added Metadata API methods (GET, PUT, POST, DELETE)
+  to Share Replicas.

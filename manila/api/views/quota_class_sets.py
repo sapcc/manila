@@ -66,6 +66,6 @@ class ViewBuilder(common.ViewBuilder):
         view['backups'] = quota_class_set.get('backups')
         view['backup_gigabytes'] = quota_class_set.get('backup_gigabytes')
 
-    @common.ViewBuilder.versioned_method("2.89")
+    @common.ViewBuilder.versioned_method("2.90")
     def add_encryption_keys_quotas(self, context, view, quota_class_set):
         view['encryption_keys'] = quota_class_set.get('encryption_keys')
