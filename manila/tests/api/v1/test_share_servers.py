@@ -384,7 +384,7 @@ class ShareServerAPITest(test.TestCase):
         self.assertEqual(0, len(result['share_servers']))
 
     @ddt.data({'version': '2.70', 'share_network_name': ''},
-              {'version': '2.89', 'share_network_name': 'fake_sn_name'},
+              {'version': '2.90', 'share_network_name': 'fake_sn_name'},
               {'version': '2.70', 'share_network_name': 'fake_sn_name'},
               {'version': '2.68', 'share_network_name': 'fake_sn_name'})
     @ddt.unpack
@@ -411,7 +411,7 @@ class ShareServerAPITest(test.TestCase):
         else:
             share_server['share_network_name'] = share_network['id']
 
-        if version < '2.89':
+        if version < '2.90':
             share_server.pop('encryption_key_ref')
 
         self.mock_object(db_api, 'share_network_get', mock.Mock(

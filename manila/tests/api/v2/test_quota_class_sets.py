@@ -64,7 +64,7 @@ class QuotaSetsControllerTest(test.TestCase):
         ('', '2.53', quota_class_sets.QuotaClassSetsController),
         ('', '2.62', quota_class_sets.QuotaClassSetsController),
         ('', '2.80', quota_class_sets.QuotaClassSetsController),
-        ('', '2.89', quota_class_sets.QuotaClassSetsController),
+        ('', '2.90', quota_class_sets.QuotaClassSetsController),
     )
     @ddt.unpack
     def test_show_quota(self, url, version, controller):
@@ -102,7 +102,7 @@ class QuotaSetsControllerTest(test.TestCase):
         if req.api_version_request >= api_version.APIVersionRequest("2.80"):
             expected['quota_class_set']['backups'] = 10
             expected['quota_class_set']['backup_gigabytes'] = 1000
-        if req.api_version_request >= api_version.APIVersionRequest("2.89"):
+        if req.api_version_request >= api_version.APIVersionRequest("2.90"):
             expected['quota_class_set']['encryption_keys'] = 100
 
         result = controller().show(req, self.class_name)

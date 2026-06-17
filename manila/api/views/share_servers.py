@@ -102,7 +102,7 @@ class ViewBuilder(common.ViewBuilder):
         share_server_dict['network_allocation_update_support'] = (
             share_server['network_allocation_update_support'])
 
-    @common.ViewBuilder.versioned_method("2.89")
+    @common.ViewBuilder.versioned_method("2.90")
     def add_encryption_key_ref_field(
             self, context, share_server_dict, share_server):
         share_server_dict['encryption_key_ref'] = share_server[

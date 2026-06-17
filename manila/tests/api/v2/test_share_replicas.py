@@ -127,7 +127,7 @@ class ShareReplicasApiTest(test.TestCase):
             expected_replica['cast_rules_to_readonly'] = False
 
         if (api_version.APIVersionRequest(microversion) >=
-                api_version.APIVersionRequest("2.89")):
+                api_version.APIVersionRequest("2.95")):
             expected_replica['metadata'] = {}
 
         return replica, expected_replica
@@ -492,7 +492,7 @@ class ShareReplicasApiTest(test.TestCase):
             share_network)
 
     @ddt.data((True, PRE_GRADUATION_VERSION), (False, GRADUATION_VERSION),
-              (False, "2.72"), (False, "2.89"))
+              (False, "2.72"), (False, "2.95"))
     @ddt.unpack
     def test_create(self, is_admin, microversion):
         fake_replica, expected_replica = self._get_fake_replica(
@@ -510,7 +510,7 @@ class ShareReplicasApiTest(test.TestCase):
         else:
             share_network = db_utils.create_share_network()
 
-        if self.is_microversion_ge(microversion, '2.89'):
+        if self.is_microversion_ge(microversion, '2.95'):
             body["share_replica"].update({"metadata": {"foo": "bar"}})
 
         self.mock_object(share_replicas.db, 'share_get',
@@ -986,7 +986,7 @@ class ShareReplicasApiTest(test.TestCase):
             self.assertTrue(share_api_call.called)
 
     def test_index_metadata(self):
-        req = fakes.HTTPRequest.blank('/share-replicas/', version="2.89")
+        req = fakes.HTTPRequest.blank('/share-replicas/', version="2.95")
         mock_index = self.mock_object(
             self.controller, '_index_metadata',
             mock.Mock(return_value='fake_metadata'))
@@ -997,7 +997,7 @@ class ShareReplicasApiTest(test.TestCase):
         mock_index.assert_called_once_with(req, self.share_replica_id)
 
     def test_create_metadata(self):
-        req = fakes.HTTPRequest.blank('/share-replicas/', version="2.89")
+        req = fakes.HTTPRequest.blank('/share-replicas/', version="2.95")
         mock_index = self.mock_object(
             self.controller, '_create_metadata',
             mock.Mock(return_value={'metadata': 'fake_metadata'}))
@@ -1010,7 +1010,7 @@ class ShareReplicasApiTest(test.TestCase):
         mock_index.assert_called_once_with(req, self.share_replica_id, body)
 
     def test_update_all_metadata(self):
-        req = fakes.HTTPRequest.blank('/share-replicas/', version="2.89")
+        req = fakes.HTTPRequest.blank('/share-replicas/', version="2.95")
 
         mock_index = self.mock_object(
             self.controller, '_update_all_metadata',
@@ -1024,7 +1024,7 @@ class ShareReplicasApiTest(test.TestCase):
         mock_index.assert_called_once_with(req, self.share_replica_id, body)
 
     def test_update_metadata_item(self):
-        req = fakes.HTTPRequest.blank('/share-replicas/', version="2.89")
+        req = fakes.HTTPRequest.blank('/share-replicas/', version="2.95")
         mock_index = self.mock_object(
             self.controller, '_update_metadata_item',
             mock.Mock(return_value={'metadata': 'fake_metadata'}))
@@ -1039,7 +1039,7 @@ class ShareReplicasApiTest(test.TestCase):
                                            body, key)
 
     def test_show_metadata(self):
-        req = fakes.HTTPRequest.blank('/share-replicas/', version="2.89")
+        req = fakes.HTTPRequest.blank('/share-replicas/', version="2.95")
         mock_index = self.mock_object(
             self.controller, '_show_metadata',
             mock.Mock(return_value='fake_metadata'))
@@ -1052,7 +1052,7 @@ class ShareReplicasApiTest(test.TestCase):
         mock_index.assert_called_once_with(req, self.share_replica_id, key)
 
     def test_delete_metadata(self):
-        req = fakes.HTTPRequest.blank('/share-replicas/', version="2.89")
+        req = fakes.HTTPRequest.blank('/share-replicas/', version="2.95")
         mock_index = self.mock_object(
             self.controller, '_delete_metadata',
             mock.Mock(return_value='fake_metadata'))

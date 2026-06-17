@@ -151,7 +151,7 @@ class ShareAPITest(test.TestCase):
             '2.31': {'share_group_id': None,
                      'source_share_group_snapshot_member_id': None},
             '2.32': {'mount_snapshot_support': False},
-            '2.89': {'encryption_key_ref': None},
+            '2.90': {'encryption_key_ref': None},
         }
 
         # Apply all the share transformations
@@ -718,11 +718,11 @@ class ShareAPITest(test.TestCase):
         request_args['share_type'] = 'fake_volume_type_name'
 
         body = {"share": request_args}
-        req = fakes.HTTPRequest.blank('/v2/fake/shares', version='2.89')
+        req = fakes.HTTPRequest.blank('/v2/fake/shares', version='2.90')
         if dhss and encryption_support:
             result = self.controller.create(req, body)
             expected = self._get_expected_share_detailed_response(
-                share, version='2.89')
+                share, version='2.90')
             self.assertEqual(
                 expected['share']['encryption_key_ref'],
                 result['share']['encryption_key_ref'])

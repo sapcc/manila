@@ -24,7 +24,7 @@ from manila.i18n import _
 from manila import rpc
 
 
-MIN_SUPPORTED_API_VERSION = '2.89'
+MIN_SUPPORTED_API_VERSION = '2.94'
 
 
 class QosTypeSpecsController(wsgi.Controller):

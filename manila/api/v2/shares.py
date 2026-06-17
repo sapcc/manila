@@ -194,7 +194,7 @@ class ShareController(wsgi.Controller,
 
         return data
 
-    @wsgi.Controller.api_version("2.89")
+    @wsgi.Controller.api_version("2.90")
     def create(self, req, body):
         if not self.is_valid_body(body, 'share'):
             raise exc.HTTPUnprocessableEntity()
@@ -210,7 +210,7 @@ class ShareController(wsgi.Controller,
             scheduler_hints=scheduler_hints,
             encryption_key_ref=encryption_key_ref)
 
-    @wsgi.Controller.api_version("2.65", "2.88")
+    @wsgi.Controller.api_version("2.65", "2.89")
     def create(self, req, body): # pylint: disable=function-redefined  # noqa F811
         if not self.is_valid_body(body, 'share'):
             raise exc.HTTPUnprocessableEntity()
@@ -623,7 +623,7 @@ class ShareController(wsgi.Controller,
         if req.api_version_request < api_version.APIVersionRequest("2.69"):
             req.GET.pop('is_soft_deleted', None)
 
-        if req.api_version_request < api_version.APIVersionRequest("2.89"):
+        if req.api_version_request < api_version.APIVersionRequest("2.90"):
             req.GET.pop('encryption_key_ref', None)
 
         return self._get_shares(req, is_detail=False)
@@ -644,7 +644,7 @@ class ShareController(wsgi.Controller,
         if req.api_version_request < api_version.APIVersionRequest("2.69"):
             req.GET.pop('is_soft_deleted', None)
 
-        if req.api_version_request < api_version.APIVersionRequest("2.89"):
+        if req.api_version_request < api_version.APIVersionRequest("2.90"):
             req.GET.pop('encryption_key_ref', None)
 
         return self._get_shares(req, is_detail=True)

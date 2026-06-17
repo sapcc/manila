@@ -1,7 +1,7 @@
 ---
 features:
   - |
-    Starting with microversion 2.89, Manila allows end users to provide
+    Starting with microversion 2.90, Manila allows end users to provide
     barbican secret_ref as encryption key reference in share create API. This
     will be used as either share encryption key reference or share server
     encryption key reference, based on backend driver support for share

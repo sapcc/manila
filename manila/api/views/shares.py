@@ -212,7 +212,7 @@ class ViewBuilder(common.ViewBuilder):
     def add_source_backup_id_field(self, context, share_dict, share):
         share_dict['source_backup_id'] = share.get('source_backup_id')
 
-    @common.ViewBuilder.versioned_method("2.89")
+    @common.ViewBuilder.versioned_method("2.90")
     def add_encryption_key_ref_field(self, context, share_dict, share):
         share_dict['encryption_key_ref'] = share.get('instance', {}).get(
             'encryption_key_ref')
