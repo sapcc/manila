@@ -488,3 +488,7 @@ user documentation.
 2.91
 ----
   Added targeted restores to the share backup API
+
+2.93
+----
+  Added support for filtering services through the ``ensuring`` field.
