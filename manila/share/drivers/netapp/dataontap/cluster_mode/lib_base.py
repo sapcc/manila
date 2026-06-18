@@ -3545,6 +3545,50 @@ class NetAppCmodeFileStorageLibrary(object):
             )
             raise exception.NetAppException(msg % msg_args)
 
+        # SnapMirror Synchronous (Sync, StrictSync) does not support fanout:
+        # a source volume can only have a single Sync destination. Async DP
+        # supports fanout up to the platform limit. Reject the create here
+        # rather than letting ONTAP fail the SnapMirror create downstream,
+        # which leaves the destination volume in a DP-protected state and
+        # the wait_for_mount_replica retry loop spinning for 5 minutes on a
+        # doomed mount before surfacing a misleading "snapmirror initialize"
+        # error.
+        if is_sync_policy:
+            existing_sync_dests = [
+                sm for sm in src_client.get_snapmirror_destinations(
+                    source_vserver=src_vserver,
+                    source_volume=src_share_name,
+                    desired_attributes=['policy-type',
+                                        'destination-vserver',
+                                        'destination-volume'])
+                if sm.get('policy-type') in (
+                    na_utils.ZAPI_SYNC_POLICY_TYPE_NAME,
+                    na_utils.ZAPI_STRICT_SYNC_POLICY_TYPE_NAME)
+            ]
+            if existing_sync_dests:
+                msg = _('Could not create replica %(replica_id)s from share '
+                        '%(share_id)s in the destination host %(dest_host)s. '
+                        'SnapMirror Synchronous (%(policy)s) does not support '
+                        'fanout: the source volume already has a synchronous '
+                        'destination. Only one Sync replica per share is '
+                        'supported; use an asynchronous policy '
+                        '(MirrorAllSnapshots) for additional replicas.')
+                msg_args = {
+                    **base_msg_args,
+                    'dest_host': new_replica_host,
+                    'policy': replication_policy,
+                }
+                self.message_api.create(
+                    context,
+                    message_field.Action.CREATE,
+                    context.project_id,
+                    resource_type=message_field.Resource.SHARE_REPLICA,
+                    resource_id=new_replica_id,
+                    detail=(message_field.Detail
+                            .UNSUPPORTED_REPLICA_CREATE_CONFIG)
+                )
+                raise exception.NetAppException(msg % msg_args)
+
         # NOTE(felipe_rodrigues): The FlexGroup replication does not support
         # several replicas (fan-out) in some ONTAP versions, while FlexVol is
         # always supported.

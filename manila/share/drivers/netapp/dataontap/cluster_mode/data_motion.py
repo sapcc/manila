@@ -1011,21 +1011,99 @@ class DataMotionSession(object):
             raise exception.NetAppException(message=msg)
 
     def wait_for_mount_replica(self, vserver_client, share_name, timeout=300):
-        """Mount a replica share that is waiting for snapmirror initialize."""
+        """Mount a replica share that is waiting for snapmirror initialize.
+
+        Polls the SnapMirror relationship state and only retries the mount
+        while the relationship is genuinely still initializing. Fails fast
+        on terminal SnapMirror errors instead of spinning the full timeout
+        on a doomed mount and surfacing a misleading "snapmirror initialize"
+        message.
+
+        Sync (Sync, StrictSync) and async (MirrorAllSnapshots / DP) have
+        different state machines, so each is checked accordingly:
+          - sync: ready when relationship-status == 'insync' and
+            mirror-state == 'snapmirrored'
+          - async DP: ready when relationship-status == 'idle' and
+            mirror-state == 'snapmirrored'
+          - either: still progressing while relationship-status is
+            'transferring' or mirror-state is 'uninitialized' with no
+            last-transfer-error
+        """
 
         interval = 10
         retries = (timeout // interval or 1)
 
+        sm_attrs = ['relationship-status', 'mirror-state', 'policy-type',
+                    'last-transfer-error']
+        sync_policy_types = (na_utils.ZAPI_SYNC_POLICY_TYPE_NAME,
+                             na_utils.ZAPI_STRICT_SYNC_POLICY_TYPE_NAME)
+
+        def _snapmirror_state_says_initializing():
+            """Inspect the SnapMirror relationship targeting this volume.
+
+            Returns (still_initializing, terminal_error_msg). If the state
+            can't be determined (no relationship found, ZAPI failure), both
+            are None and the caller falls back to the mount-error heuristic.
+            """
+            try:
+                snapmirrors = vserver_client.get_snapmirrors(
+                    dest_volume=share_name, desired_attributes=sm_attrs)
+            except netapp_api.NaApiError:
+                return None, None
+            if not snapmirrors:
+                return None, None
+            sm = snapmirrors[0]
+            policy_type = sm.get('policy-type')
+            mirror_state = sm.get('mirror-state')
+            rel_status = sm.get('relationship-status')
+            last_err = sm.get('last-transfer-error')
+
+            if policy_type in sync_policy_types:
+                if rel_status == 'insync' and mirror_state == 'snapmirrored':
+                    return False, None
+                if rel_status in (
+                    'preparing', 'transferring', 'finalizing') or (
+                        mirror_state == 'uninitialized' and not last_err):
+                    return True, None
+                return False, last_err or (
+                    'SnapMirror Sync relationship is in state '
+                    'mirror-state=%s, relationship-status=%s'
+                    % (mirror_state, rel_status))
+            # async DP
+            if rel_status == 'idle' and mirror_state == 'snapmirrored':
+                return False, None
+            if rel_status == 'transferring':
+                return True, None
+            if last_err:
+                return False, last_err
+            return None, None
+
         @utils.retry(exception.ShareBusyException, interval=interval,
                      retries=retries, backoff_rate=1)
         def try_mount_volume():
+            still_initializing, terminal_err = (
+                _snapmirror_state_says_initializing())
+            if terminal_err:
+                msg = _('Unable to mount share %(name)s: SnapMirror '
+                        'relationship is in a terminal state and will not '
+                        'become ready. Detail: %(err)s') % {
+                    'name': share_name, 'err': terminal_err}
+                LOG.error(msg)
+                raise exception.NetAppException(message=msg)
             try:
                 vserver_client.mount_volume(share_name)
             except netapp_api.NaApiError as e:
                 undergoing_snap_init = 'snapmirror initialize'
                 msg_args = {'name': share_name, 'err_msg': e.message}
-                if (e.code == netapp_api.EAPIERROR and
-                        undergoing_snap_init in e.message):
+                # Prefer the SnapMirror state signal over the error string;
+                # fall back to the historical substring match when state is
+                # unknown.
+                is_initializing = (
+                    still_initializing
+                    if still_initializing is not None
+                    else (e.code == netapp_api.EAPIERROR
+                          and undergoing_snap_init in e.message))
+                if is_initializing:
                     msg = _('The share %(name)s is undergoing a snapmirror '
                             'initialize. Will retry the operation.') % msg_args
                     LOG.warning(msg)

@@ -1,0 +1,22 @@
+---
+fixes:
+  - |
+    NetApp ONTAP driver: creating a second share replica with a SnapMirror
+    Synchronous policy (``Sync`` or ``StrictSync``) from the same source
+    share now fails fast at replica-create time with a clear error message.
+    SnapMirror Synchronous does not support fanout — a source volume can
+    only have a single Sync destination — and previously the driver let
+    ONTAP reject the SnapMirror create downstream, leaving the destination
+    volume in a DP-protected state and the mount-wait retry loop spinning
+    for the full ``netapp_mount_replica_timeout`` (1 hour by default)
+    before surfacing a misleading ``snapmirror initialize`` error. Use
+    an asynchronous policy (``MirrorAllSnapshots``) for additional
+    replicas.
+  - |
+    NetApp ONTAP driver: ``wait_for_mount_replica`` now consults the
+    SnapMirror relationship state (``mirror-state`` /
+    ``relationship-status``) instead of pattern-matching on the mount
+    error message. A relationship in a terminal/broken state fails the
+    mount immediately with the underlying SnapMirror error rather than
+    burning the full retry budget. The legacy substring heuristic remains
+    as a fallback when the SnapMirror state cannot be queried.

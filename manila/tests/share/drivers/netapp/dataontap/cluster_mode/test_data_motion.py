@@ -1272,6 +1272,7 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
     def test_wait_for_mount_replica(self):
 
         mock_client = mock.Mock()
+        mock_client.get_snapmirrors.return_value = []
         self.mock_object(time, 'sleep')
         mock_warning_log = self.mock_object(data_motion.LOG, 'warning')
 
@@ -1284,6 +1285,7 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
     def test_wait_for_mount_replica_timeout(self):
 
         mock_client = mock.Mock()
+        mock_client.get_snapmirrors.return_value = []
         self.mock_object(time, 'sleep')
         mock_warning_log = self.mock_object(data_motion.LOG, 'warning')
         undergoing_snapmirror = (
@@ -1302,6 +1304,7 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
     def test_wait_for_mount_replica_api_not_found(self):
 
         mock_client = mock.Mock()
+        mock_client.get_snapmirrors.return_value = []
         self.mock_object(time, 'sleep')
         mock_warning_log = self.mock_object(data_motion.LOG, 'warning')
         na_api_error = netapp_api.NaApiError(code=netapp_api.EOBJECTNOTFOUND)
@@ -1313,6 +1316,78 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
 
         mock_client.mount_volume.assert_called_once_with(fake.SHARE_NAME)
         mock_warning_log.assert_not_called()
+
+    def test_wait_for_mount_replica_sync_in_sync_mounts_immediately(self):
+        """Sync relationship reaching in_sync should mount on first try."""
+
+        mock_client = mock.Mock()
+        self.mock_object(time, 'sleep')
+        mock_client.get_snapmirrors.return_value = [{
+            'policy-type': 'strict_sync_mirror',
+            'mirror-state': 'snapmirrored',
+            'relationship-status': 'insync',
+        }]
+
+        self.dm_session.wait_for_mount_replica(
+            mock_client, fake.SHARE_NAME)
+
+        mock_client.mount_volume.assert_called_once_with(fake.SHARE_NAME)
+
+    def test_wait_for_mount_replica_sync_terminal_fails_fast(self):
+        """A broken/error Sync relationship must NOT spin retries."""
+
+        mock_client = mock.Mock()
+        self.mock_object(time, 'sleep')
+        mock_client.get_snapmirrors.return_value = [{
+            'policy-type': 'strict_sync_mirror',
+            'mirror-state': 'broken-off',
+            'relationship-status': 'broken-off',
+            'last-transfer-error': (
+                'is already the source of an existing SnapMirror '
+                'Synchronous relationship. Fanout is not supported '
+                'for SnapMirror Synchronous relationships.'),
+        }]
+
+        self.assertRaises(exception.NetAppException,
+                          self.dm_session.wait_for_mount_replica,
+                          mock_client, fake.SHARE_NAME, timeout=30)
+        # Mount must NOT have been attempted — we failed fast on the
+        # SnapMirror state instead of grinding through 3 retries.
+        mock_client.mount_volume.assert_not_called()
+
+    def test_wait_for_mount_replica_async_idle_mounts_immediately(self):
+        """Async DP relationship in idle/snapmirrored should mount."""
+
+        mock_client = mock.Mock()
+        self.mock_object(time, 'sleep')
+        mock_client.get_snapmirrors.return_value = [{
+            'policy-type': 'async_mirror',
+            'mirror-state': 'snapmirrored',
+            'relationship-status': 'idle',
+        }]
+
+        self.dm_session.wait_for_mount_replica(
+            mock_client, fake.SHARE_NAME)
+
+        mock_client.mount_volume.assert_called_once_with(fake.SHARE_NAME)
+
+    def test_wait_for_mount_replica_falls_back_when_sm_state_unknown(self):
+        """Legacy substring match still works when SnapMirror lookup fails."""
+
+        mock_client = mock.Mock()
+        self.mock_object(time, 'sleep')
+        mock_client.get_snapmirrors.side_effect = netapp_api.NaApiError(
+            code=netapp_api.EAPIERROR)
+        undergoing_snapmirror = (
+            'The volume is undergoing a snapmirror initialize.')
+        mock_client.mount_volume.side_effect = netapp_api.NaApiError(
+            code=netapp_api.EAPIERROR, message=undergoing_snapmirror)
+
+        self.assertRaises(exception.NetAppException,
+                          self.dm_session.wait_for_mount_replica,
+                          mock_client, fake.SHARE_NAME, timeout=30)
+        # Fell back to the substring heuristic and retried.
+        self.assertEqual(3, mock_client.mount_volume.call_count)
 
     @ddt.data(mock.Mock(),
               mock.Mock(side_effect=netapp_api.NaApiError(

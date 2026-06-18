@@ -195,8 +195,20 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         while next_tag is not None:
             next_api_args = copy.deepcopy(api_args)
             next_api_args['tag'] = next_tag
-            next_result = self.send_request(api_name, next_api_args,
-                                            enable_tunneling=enable_tunneling)
+            try:
+                next_result = self.send_request(
+                    api_name, next_api_args,
+                    enable_tunneling=enable_tunneling)
+            except netapp_api.NaApiError as e:
+                # ONTAP iterator cursor loop (ONTAP bug): treat as end of
+                # iteration and return whatever was collected so far.
+                if (e.code == netapp_api.EAPIERROR and
+                        'Loop detected in next()' in e.message):
+                    LOG.warning('ONTAP iterator loop detected for API %s '
+                                '(tag=%s); returning partial results. '
+                                'Error: %s', api_name, next_tag, e)
+                    break
+                raise
 
             next_attributes_list = next_result.get_child_by_name(
                 'attributes-list') or netapp_api.NaElement('none')

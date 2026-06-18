@@ -4534,6 +4534,121 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                           context, [fake.SHARE, fake.SHARE, fake.SHARE],
                           fake.SHARE, [], [], share_server=None)
 
+    def test_create_replica_raise_sync_fanout_blocked(self):
+        """A second Sync replica from the same source must be rejected."""
+
+        mock_dm_session = mock.Mock()
+        self.mock_object(data_motion, "DataMotionSession",
+                         mock.Mock(return_value=mock_dm_session))
+        self.mock_object(mock_dm_session, 'get_backend_info_for_share',
+                         mock.Mock(return_value=(fake.SHARE_NAME,
+                                                 fake.VSERVER1,
+                                                 fake.BACKEND_NAME)))
+        self.mock_object(self.library, '_is_flexgroup_share',
+                         mock.Mock(return_value=False))
+        self.mock_object(self.library, '_is_flexgroup_pool',
+                         mock.Mock(return_value=False))
+        self.mock_object(mock_dm_session,
+                         'get_policy_from_share_replica_metadata',
+                         mock.Mock(return_value=('StrictSync', True)))
+
+        # Source already has a Sync destination → fanout would fail in ONTAP.
+        mock_src_client = mock.Mock()
+        mock_src_client.get_snapmirror_destinations.return_value = [{
+            'policy-type': na_utils.ZAPI_STRICT_SYNC_POLICY_TYPE_NAME,
+            'destination-vserver': fake.VSERVER2,
+            'destination-volume': 'some_existing_dest',
+        }]
+        self.mock_object(data_motion, 'get_client_for_backend',
+                         mock.Mock(return_value=mock_src_client))
+
+        context = mock.Mock()
+        self.assertRaises(exception.NetAppException,
+                          self.library.create_replica,
+                          context, [fake.SHARE, fake.SHARE],
+                          fake.SHARE, [], [], share_server=None)
+        # SnapMirror create must NOT have been attempted.
+        mock_dm_session.create_snapmirror.assert_not_called()
+
+    def test_create_replica_sync_first_destination_allowed(self):
+        """A Sync replica is fine when the source has no Sync dest yet."""
+
+        self.mock_object(self.library, '_allocate_container')
+        mock_dm_session = mock.Mock()
+        self.mock_object(data_motion, "DataMotionSession",
+                         mock.Mock(return_value=mock_dm_session))
+        self.mock_object(mock_dm_session, 'get_vserver_from_share',
+                         mock.Mock(return_value=fake.VSERVER1))
+        self.mock_object(self.library, '_get_backend_share_name',
+                         mock.Mock(return_value=fake.SHARE_NAME))
+        self.mock_object(self.library, '_is_readable_replica',
+                         mock.Mock(return_value=False))
+        self.mock_object(mock_dm_session, 'get_backend_info_for_share',
+                         mock.Mock(return_value=(fake.SHARE_NAME,
+                                                 fake.VSERVER1,
+                                                 fake.BACKEND_NAME)))
+        self.mock_object(self.library, '_is_flexgroup_share',
+                         mock.Mock(return_value=False))
+        self.mock_object(self.library, '_is_flexgroup_pool',
+                         mock.Mock(return_value=False))
+        self.mock_object(mock_dm_session,
+                         'get_policy_from_share_replica_metadata',
+                         mock.Mock(return_value=('StrictSync', True)))
+
+        mock_src_client = mock.Mock()
+        mock_src_client.get_snapmirror_destinations.return_value = []
+        self.mock_object(data_motion, 'get_client_for_backend',
+                         mock.Mock(return_value=mock_src_client))
+
+        self.library.create_replica(
+            None, [fake.SHARE], fake.SHARE, [], [], share_server=None)
+
+        mock_dm_session.create_snapmirror.assert_called_once()
+
+    def test_create_replica_async_fanout_not_blocked_by_sync_guard(self):
+        """Async (MirrorAllSnapshots) must not query for Sync destinations."""
+
+        self.mock_object(self.library, '_allocate_container')
+        mock_dm_session = mock.Mock()
+        self.mock_object(data_motion, "DataMotionSession",
+                         mock.Mock(return_value=mock_dm_session))
+        self.mock_object(mock_dm_session, 'get_vserver_from_share',
+                         mock.Mock(return_value=fake.VSERVER1))
+        self.mock_object(self.library, '_get_backend_share_name',
+                         mock.Mock(return_value=fake.SHARE_NAME))
+        self.mock_object(self.library, '_is_readable_replica',
+                         mock.Mock(return_value=False))
+        self.mock_object(mock_dm_session, 'get_backend_info_for_share',
+                         mock.Mock(return_value=(fake.SHARE_NAME,
+                                                 fake.VSERVER1,
+                                                 fake.BACKEND_NAME)))
+        self.mock_object(self.library, '_is_flexgroup_share',
+                         mock.Mock(return_value=False))
+        self.mock_object(self.library, '_is_flexgroup_pool',
+                         mock.Mock(return_value=False))
+        self.mock_object(mock_dm_session,
+                         'get_policy_from_share_replica_metadata',
+                         mock.Mock(return_value=('MirrorAllSnapshots',
+                                                 False)))
+
+        mock_src_client = mock.Mock()
+        # Even with existing async destinations, async fanout is allowed.
+        mock_src_client.get_snapmirror_destinations.return_value = [{
+            'policy-type': na_utils.ASYNC_POLICY_TYPE_NAME,
+            'destination-vserver': fake.VSERVER2,
+            'destination-volume': 'some_existing_dest',
+        }]
+        self.mock_object(data_motion, 'get_client_for_backend',
+                         mock.Mock(return_value=mock_src_client))
+
+        self.library.create_replica(
+            None, [fake.SHARE, fake.SHARE], fake.SHARE, [], [],
+            share_server=None)
+
+        mock_dm_session.create_snapmirror.assert_called_once()
+        # The Sync-fanout guard must not even be consulted for async.
+        mock_src_client.get_snapmirror_destinations.assert_not_called()
+
     def test_create_replica_raise_unsupported_policy(self):
 
         mock_dm_session = mock.Mock()
