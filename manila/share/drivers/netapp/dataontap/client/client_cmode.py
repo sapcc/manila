@@ -2115,9 +2115,14 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         # config set 2 (attempt 3-5):  insecure, with pref dc/site (if set)
         # config set 3 (attempt 6-8):  insecure, with dc discovery mode 'all'
         # config set 4 (attempt 9-11): secure, with dc discovery mode 'all'
+        cifs_exc = None
         for attempt in range(12):
-            if try_create_cifs_server():
-                return
+            try:
+                if try_create_cifs_server():
+                    return
+            except exception.CifsServerCertificateError as e:
+                # Defer raising the cert error until all attempts are exhausted
+                cifs_exc = e
             time.sleep(3)
             if attempt == 2:
                 self.configure_cifs_aes_encryption(aes_encryption,
@@ -2129,8 +2134,10 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             if attempt == 8:
                 self.configure_cifs_aes_encryption(aes_encryption,
                                                    secure=True)
-        msg = _('Cannot setup CIFS server after 12 attempts.')
-        raise exception.CifsServerSetupFailed(msg)
+        if cifs_exc:
+            raise cifs_exc
+        raise exception.CifsServerSetupFailed(
+            _('Cannot setup CIFS server after 12 attempts.'))
 
     @na_utils.trace
     def modify_active_directory_security_service(
