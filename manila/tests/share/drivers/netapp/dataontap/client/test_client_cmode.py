@@ -10109,6 +10109,128 @@ class NetAppClientCmodeTestCase(test.TestCase):
                           fake.VSERVER_NAME,
                           False)
 
+    @ddt.data("could not authenticate", "insufficient access")
+    @mock.patch('manila.share.drivers.netapp.dataontap.client'
+                '.client_cmode.time.sleep')
+    def test_configure_active_directory_auth_error_raises_immediately(
+            self, msg, mock_sleep):
+        self.mock_object(self.client, 'send_request',
+                         self._mock_api_error(code=netapp_api.EAPIERROR,
+                                              message=msg))
+        self.mock_object(self.client, 'configure_certificates')
+        self.mock_object(self.client, 'configure_cifs_aes_encryption')
+        self.mock_object(self.client, 'set_preferred_dc')
+        self.mock_object(self.client, '_get_cifs_server_name')
+        self.assertRaises(exception.SecurityServiceFailedAuth,
+                          self.client.configure_active_directory,
+                          fake.CIFS_SECURITY_SERVICE,
+                          fake.VSERVER_NAME,
+                          False)
+        # auth errors must abort immediately, not be retried across 12 attempts
+        cifs_create_calls = [
+            c for c in self.client.send_request.call_args_list
+            if c.args[0] == 'cifs-server-create'
+        ]
+        self.assertEqual(1, len(cifs_create_calls))
+
+    @mock.patch('manila.share.drivers.netapp.dataontap.client'
+                '.client_cmode.time.sleep')
+    def test_configure_active_directory_cert_error_then_success_on_insecure(
+            self, mock_sleep):
+        cert_error = netapp_api.NaApiError(
+            code=netapp_api.EAPIERROR,
+            message="required certificate with ca")
+        self.mock_object(self.client, 'send_request',
+                         mock.Mock(side_effect=[
+                             cert_error,  # attempt 0
+                             cert_error,  # attempt 1
+                             cert_error,  # attempt 2
+                             None,        # attempt 3 — insecure succeeds
+                         ]))
+        self.mock_object(self.client, 'configure_certificates')
+        self.mock_object(self.client, 'configure_cifs_aes_encryption')
+        self.mock_object(self.client, 'set_preferred_dc')
+        self.mock_object(self.client, 'configure_cifs_options')
+        self.mock_object(self.client, 'remove_preferred_dcs')
+        self.mock_object(self.client, 'wait_for_cifs_server')
+        self.mock_object(self.client, 'configure_cifs_signing')
+        self.mock_object(self.client, '_get_cifs_server_name',
+                         mock.Mock(return_value='fake-cifs'))
+
+        self.client.configure_active_directory(
+            fake.CIFS_SECURITY_SERVICE, fake.VSERVER_NAME, False)
+
+        self.assertEqual(4, self.client.send_request.call_count)
+        self.client.configure_cifs_aes_encryption.assert_any_call(
+            False, secure=False)
+
+    @mock.patch('manila.share.drivers.netapp.dataontap.client'
+                '.client_cmode.time.sleep')
+    def test_configure_active_directory_cert_error_all_attempts_raises(
+            self, mock_sleep):
+        # ldaps (secure) raises cert error on attempts 0-2 and 9-11;
+        # insecure attempts 3-8 fail with a generic error (return False).
+        # After all 12 attempts, the deferred cert error must be raised.
+        cert_error = netapp_api.NaApiError(
+            code=netapp_api.EAPIERROR,
+            message="required certificate with ca")
+        generic_error = netapp_api.NaApiError(
+            code=netapp_api.EAPIERROR,
+            message="some transient error")
+        self.mock_object(self.client, 'send_request',
+                         mock.Mock(side_effect=[
+                             cert_error,     # attempt 0  — secure, cert error
+                             cert_error,     # attempt 1  — secure, cert error
+                             cert_error,     # attempt 2  — secure, cert error
+                             generic_error,  # attempt 3  — insecure, other err
+                             generic_error,  # attempt 4  — insecure, other err
+                             generic_error,  # attempt 5  — insecure, other err
+                             generic_error,  # attempt 6  — insecure+dc-all
+                             generic_error,  # attempt 7  — insecure+dc-all
+                             generic_error,  # attempt 8  — insecure+dc-all
+                             cert_error,     # attempt 9  — secure+dc-all
+                             cert_error,     # attempt 10 — secure+dc-all
+                             cert_error,     # attempt 11 — secure+dc-all
+                         ]))
+        self.mock_object(self.client, 'configure_certificates')
+        self.mock_object(self.client, 'configure_cifs_aes_encryption')
+        self.mock_object(self.client, 'set_preferred_dc')
+        self.mock_object(self.client, 'configure_cifs_options')
+        self.mock_object(self.client, 'remove_preferred_dcs')
+        self.mock_object(self.client, '_get_cifs_server_name',
+                         mock.Mock(return_value='fake-cifs'))
+
+        self.assertRaises(exception.CifsServerCertificateError,
+                          self.client.configure_active_directory,
+                          fake.CIFS_SECURITY_SERVICE, fake.VSERVER_NAME,
+                          False)
+        self.assertEqual(12, self.client.send_request.call_count)
+
+    @mock.patch('manila.share.drivers.netapp.dataontap.client'
+                '.client_cmode.time.sleep')
+    def test_configure_active_directory_all_attempts_fail_no_cert(
+            self, mock_sleep):
+        # generic error (return False) on all 12 attempts, no cert error ever
+        # raise CifsServerSetupFailed, not CifsServerCertificateError
+        generic_error = netapp_api.NaApiError(
+            code=netapp_api.EAPIERROR,
+            message="some transient error")
+        self.mock_object(self.client, 'send_request',
+                         mock.Mock(side_effect=[generic_error] * 12))
+        self.mock_object(self.client, 'configure_certificates')
+        self.mock_object(self.client, 'configure_cifs_aes_encryption')
+        self.mock_object(self.client, 'set_preferred_dc')
+        self.mock_object(self.client, 'configure_cifs_options')
+        self.mock_object(self.client, 'remove_preferred_dcs')
+        self.mock_object(self.client, '_get_cifs_server_name',
+                         mock.Mock(return_value='fake-cifs'))
+
+        self.assertRaises(exception.CifsServerSetupFailed,
+                          self.client.configure_active_directory,
+                          fake.CIFS_SECURITY_SERVICE, fake.VSERVER_NAME,
+                          False)
+        self.assertEqual(12, self.client.send_request.call_count)
+
     def test_snapmirror_restore_vol(self):
         self.mock_object(self.client, 'send_request')
         self.client.snapmirror_restore_vol(source_path=fake.SM_SOURCE_PATH,
