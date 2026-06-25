@@ -79,8 +79,13 @@ class PoolWeigherTestCase(test.TestCase):
     def _get_all_hosts(self):
         ctxt = context.get_admin_context()
         host_states = self.host_manager.get_all_host_states_share(ctxt)
+        # host_manager elevates the context for the admin-only DB lookup,
+        # which produces a fresh copy — match on type/admin rather than
+        # object identity.
         db_api.IMPL.service_get_all_by_topic.assert_called_once_with(
-            ctxt, CONF.share_topic, consider_disabled=False)
+            mock.ANY, CONF.share_topic, consider_disabled=False)
+        call_ctx = db_api.IMPL.service_get_all_by_topic.call_args[0][0]
+        self.assertTrue(call_ctx.is_admin)
         return host_states
 
     def test_no_server_pool_mapping(self):

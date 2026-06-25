@@ -653,8 +653,14 @@ class HostManager(object):
     def _update_host_state_map(self, context, consider_disabled=False):
         # Get resource usage across the available share nodes:
         topic = CONF.share_topic
+        # NOTE: service_get_all_by_topic is decorated with
+        # @require_admin_context. The scheduler also serves the cached pool
+        # listing to non-admin callers (e.g. reaching via
+        # /scheduler-stats/pools/detail), so we elevate the context just for
+        # the internal services lookup to avoid an AdminRequired the first
+        # time the cache is populated after a scheduler restart.
         share_services = db.service_get_all_by_topic(
-            context,
+            context.elevated(),
             topic,
             consider_disabled=consider_disabled,
         )
