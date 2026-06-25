@@ -168,8 +168,13 @@ class HostManagerTestCase(test.TestCase):
                 share_node = fakes.SHARE_SERVICES_WITH_POOLS[i]
                 host = share_node['host']
                 self.assertEqual(share_node, host_state_map[host].service)
+            # The DB lookup must run against an elevated (admin) context so
+            # non-admin callers (e.g. via /scheduler-stats) don't trip
+            # require_admin_context when the cache is cold.
+            call_ctx = db.service_get_all_by_topic.call_args[0][0]
+            self.assertTrue(call_ctx.is_admin)
             db.service_get_all_by_topic.assert_called_once_with(
-                fake_context, topic, consider_disabled=False)
+                call_ctx, topic, consider_disabled=False)
 
     def test_get_pools_no_pools(self):
         fake_context = context.RequestContext('user', 'project')

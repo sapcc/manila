@@ -261,8 +261,13 @@ class NetAppAIQWeigherTestCase(test.TestCase):
         fakes.mock_host_manager_db_calls(_mock_service_get_all_by_topic,
                                          disabled=disabled)
         host_states = self.host_manager.get_all_host_states_share(ctxt)
+        # host_manager elevates the context for the admin-only DB lookup,
+        # which produces a fresh copy — match on type/admin rather than
+        # object identity.
         _mock_service_get_all_by_topic.assert_called_once_with(
-            ctxt, CONF.share_topic, consider_disabled=False)
+            mock.ANY, CONF.share_topic, consider_disabled=False)
+        call_ctx = _mock_service_get_all_by_topic.call_args[0][0]
+        self.assertTrue(call_ctx.is_admin)
         return host_states
 
     def test_weigh_objects_netapp_only(self):
