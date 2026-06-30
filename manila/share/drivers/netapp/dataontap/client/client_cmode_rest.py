@@ -1029,14 +1029,19 @@ class NetAppRestClient(object):
             adaptive_qos_policy_group=adaptive_qos_policy_group,
             mount_point_name=mount_point_name, snaplock_type=snaplock_type,
             **options)
-        efficiency_policy = options.get('efficiency_policy', None)
-        self.update_volume_efficiency_attributes(
-            volume_name, dedup_enabled, compression_enabled,
-            efficiency_policy=efficiency_policy
-        )
+        if volume_type != 'dp':
+            # Efficiency settings are meaningless on a data-protection volume:
+            # SnapMirror replicates the source's already-efficient blocks and
+            # ignores destination-side dedup/compression configuration. The
+            # active replica (or promotion) will apply these settings.
+            efficiency_policy = options.get('efficiency_policy', None)
+            self.update_volume_efficiency_attributes(
+                volume_name, dedup_enabled, compression_enabled,
+                efficiency_policy=efficiency_policy
+            )
 
-        if max_files is not None:
-            self.set_volume_max_files(volume_name, max_files)
+            if max_files is not None:
+                self.set_volume_max_files(volume_name, max_files)
 
         if snaplock_type is not None:
             self.set_snaplock_attributes(volume_name, **options)

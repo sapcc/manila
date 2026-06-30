@@ -1422,13 +1422,21 @@ class NetAppCmodeFileStorageLibrary(object):
         timeout = self.configuration.netapp_flexgroup_volume_online_timeout
         self.wait_for_flexgroup_deployment(vserver_client, job_info['jobid'],
                                            timeout)
-        efficiency_policy = provisioning_options.get('efficiency_policy', None)
-
-        vserver_client.update_volume_efficiency_attributes(
-            share_name, dedup_enabled, compression_enabled, is_flexgroup=True,
-            efficiency_policy=efficiency_policy)
 
         if not replica:
+            # Efficiency settings (dedup, compression, efficiency policy) are
+            # write-time properties or local background scanners. On a
+            # data-protection (replica) volume, blocks are written by
+            # SnapMirror from the source, which already carries the source's
+            # efficiency state. Configuring these locally is a no-op at best
+            # and an async-job failure at worst (especially for FlexGroup).
+            # Promotion to active will (re)apply the desired settings.
+            efficiency_policy = provisioning_options.get(
+                'efficiency_policy', None)
+            vserver_client.update_volume_efficiency_attributes(
+                share_name, dedup_enabled, compression_enabled,
+                is_flexgroup=True, efficiency_policy=efficiency_policy)
+
             if provisioning_options.get('max_files_multiplier') is not None:
                 max_files_multiplier = provisioning_options.pop(
                     'max_files_multiplier')
