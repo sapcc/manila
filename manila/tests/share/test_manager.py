@@ -1957,6 +1957,8 @@ class ShareManagerTestCase(test.TestCase):
                          mock.Mock(return_value=replica_list))
         self.mock_object(db, 'share_replica_metadata_get',
                          mock.Mock(return_value=replica_metadata))
+        self.mock_object(db, 'share_get',
+                         mock.Mock(return_value={'share_metadata': []}))
         self.mock_object(self.share_manager.driver, 'promote_replica',
                          mock.Mock(side_effect=exception.ManilaException))
         mock_info_log = self.mock_object(manager.LOG, 'info')
@@ -2014,6 +2016,8 @@ class ShareManagerTestCase(test.TestCase):
             mock.Mock(return_value=snapshots_instances))
         self.mock_object(db, 'share_replica_metadata_get',
                          mock.Mock(return_value=replica_metadata))
+        self.mock_object(db, 'share_get',
+                         mock.Mock(return_value={'share_metadata': []}))
         self.mock_object(
             self.share_manager.driver, 'promote_replica',
             mock.Mock(return_value=retval))
@@ -2091,6 +2095,8 @@ class ShareManagerTestCase(test.TestCase):
             db, 'share_snapshot_instance_update')
         self.mock_object(db, 'share_replica_metadata_get',
                          mock.Mock(return_value=replica_metadata))
+        self.mock_object(db, 'share_get',
+                         mock.Mock(return_value={'share_metadata': []}))
         self.mock_object(
             self.share_manager.driver, 'promote_replica',
             mock.Mock(return_value=updated_replica_list))
@@ -2130,6 +2136,59 @@ class ShareManagerTestCase(test.TestCase):
         ])
         self.assertTrue(mock_info_log.called)
         self.assertFalse(mock_snap_instance_update.called)
+
+    def test_promote_share_replica_share_metadata_wins(self):
+        # Share metadata must win over replica metadata when both define
+        # the same key, so driver-side helpers (e.g. cross_volume_dedupe)
+        # see the share-level value.
+        replica = fake_replica()
+        active_replica = fake_replica(
+            id='current_active_replica',
+            replica_state=constants.REPLICA_STATE_ACTIVE)
+        replica_list = [replica, active_replica]
+        replica_metadata = {
+            'shared_key': 'replica_value',
+            'replica_only': 'r',
+        }
+        share_metadata_rows = [
+            {'key': 'shared_key', 'value': 'share_value'},
+            {'key': 'share_only', 'value': 's'},
+            {'key': 'cross_volume_dedupe', 'value': 'false'},
+        ]
+        self.mock_object(db, 'share_access_get_all_for_share',
+                         mock.Mock(return_value=[]))
+        self.mock_object(db, 'share_replica_get',
+                         mock.Mock(return_value=replica))
+        self.mock_object(self.share_manager, '_get_share_server')
+        self.mock_object(db, 'share_replicas_get_all_by_share',
+                         mock.Mock(return_value=replica_list))
+        self.mock_object(db, 'share_replica_metadata_get',
+                         mock.Mock(return_value=replica_metadata))
+        self.mock_object(
+            db, 'share_get',
+            mock.Mock(return_value={'share_metadata': share_metadata_rows}))
+        self.mock_object(
+            db, 'share_snapshot_instance_get_all_with_filters',
+            mock.Mock(return_value=[]))
+        self.mock_object(db, 'export_locations_update')
+        self.mock_object(db, 'share_replica_update')
+        mock_driver_call = self.mock_object(
+            self.share_manager.driver, 'promote_replica',
+            mock.Mock(return_value=[]))
+
+        self.share_manager.promote_share_replica(self.context, replica)
+
+        _, replica_list_arg, share_replica_arg, _ = (
+            mock_driver_call.call_args.args[:4])
+        expected_metadata = {
+            'shared_key': 'share_value',
+            'replica_only': 'r',
+            'share_only': 's',
+            'cross_volume_dedupe': 'false',
+        }
+        for r in replica_list_arg:
+            self.assertEqual(expected_metadata, r['metadata'])
+        self.assertEqual(expected_metadata, share_replica_arg['metadata'])
 
     @ddt.data('openstack1@watson#_pool0', 'openstack1@newton#_pool0')
     def test_periodic_share_replica_update(self, host):

@@ -3972,19 +3972,18 @@ class NetAppCmodeFileStorageLibrary(object):
         else:
             LOG.exception(logical_space_error_msg)
 
-        # SCI: Check metadata to determine if cross-volume dedup should be
-        # disabled on the promoted replica. All replicas of the same share
-        # share the same metadata.
-        metadata = new_active_replica.get('metadata', {})
-        if metadata.get('cross_volume_dedupe') == 'false':
-            try:
-                new_active_vserver_cli.update_volume_efficiency_attributes(
-                    new_active_replica_name, True, True,
-                    cross_dedup_disabled=True)
-            except Exception as e:
-                LOG.exception(
-                    f"Could not disable cross_volume_dedupe on the promoted "
-                    f"replica. {e}")
+        # SCI: Apply cross_volume_dedupe metadata to the promoted replica.
+        # All replicas of the same share share the same metadata; when the
+        # metadata is missing or not 'false', reset the policy to auto so
+        # a stale inline-only setting from the old source doesn't linger.
+        effi_opts = self._get_cross_volume_dedupe_options(new_active_replica)
+        try:
+            new_active_vserver_cli.update_volume_efficiency_attributes(
+                new_active_replica_name, True, True, **effi_opts)
+        except Exception as e:
+            LOG.exception(
+                f"Could not apply cross_volume_dedupe to the promoted "
+                f"replica. {e}")
 
         return new_replica_list
 
@@ -4915,6 +4914,10 @@ class NetAppCmodeFileStorageLibrary(object):
         snap_attributes = self._get_provisioning_options_for_snap_attributes(
             vserver_client, new_share_volume_name)
         provisioning_options.update(snap_attributes)
+
+        # SCI: Apply cross_volume_dedupe metadata to the destination volume.
+        provisioning_options.update(
+            self._get_cross_volume_dedupe_options(destination_share))
 
         destination_aggregate = share_utils.extract_host(
             destination_share['host'], level='pool')

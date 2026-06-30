@@ -1164,11 +1164,13 @@ class NetAppRestClient(object):
             'efficiency.volume_path': f'/vol/{volume_name}',
             'fields': 'efficiency.state,'
                       'efficiency.compression,'
-                      'efficiency.policy'
+                      'efficiency.policy,'
+                      'efficiency.cross_volume_dedupe'
         }
         dedupe = False
         compression = False
         policy = None
+        cross_dedup_disabled = False
         try:
             response = self.send_request('/storage/volumes', 'get',
                                          query=query)
@@ -1177,6 +1179,8 @@ class NetAppRestClient(object):
                 dedupe = (efficiency['state'] == 'enabled')
                 compression = (efficiency['compression'] != 'none')
                 policy = efficiency.get('policy', {}).get('name')
+                cross_dedup_disabled = (
+                    efficiency.get('cross_volume_dedupe') == 'none')
         except netapp_api.api.NaApiError:
             msg = _('Failed to get volume efficiency status for %s.')
             LOG.error(msg, volume_name)
@@ -1185,6 +1189,7 @@ class NetAppRestClient(object):
             'dedupe': dedupe,
             'compression': compression,
             'policy': policy,
+            'cross_dedup_disabled': cross_dedup_disabled,
         }
 
     @na_utils.trace
@@ -1226,44 +1231,20 @@ class NetAppRestClient(object):
 
         efficiency_status = self.get_volume_efficiency_status(volume_name)
 
-        # SCI Keep deduplication metadata from filling up the volume
+        # cDOT compression requires dedup to be enabled. When cross-volume
+        # dedup is disabled (inline-only policy), both dedup and compression
+        # must be on -- ONTAP rejects the policy otherwise.
         if cross_dedup_disabled:
-            volume = self._get_volume_by_args(vol_name=volume_name)
-            uuid = volume['uuid']
-
-            # Enable dedup and compression if not already enabled
-            if not efficiency_status['dedupe']:
-                self.enable_dedupe_async(volume_name)
-            if not efficiency_status['compression']:
-                self.enable_compression_async(volume_name)
-
-            # Set efficiency policy to inline-only & disable cross-volume dedup
-            body = {
-                'efficiency': {
-                    'policy': {'name': 'inline-only'},
-                    'cross_volume_dedupe': 'none',
-                    'compaction': 'inline'
-                }
-            }
-            self.send_request(f'/storage/volumes/{uuid}', 'patch', body=body)
-            return
-
-        # Reset policy to default if it was previously set to inline-only
-        current_policy = efficiency_status.get('policy')
-        if current_policy == 'inline-only':
-            volume = self._get_volume_by_args(vol_name=volume_name)
-            uuid = volume['uuid']
-            body = {
-                'efficiency': {
-                    'policy': {'name': 'auto'},
-                    'cross_volume_dedupe': 'both',
-                    'compaction': 'inline'
-                }
-            }
-            self.send_request(f'/storage/volumes/{uuid}', 'patch', body=body)
-
-        # cDOT compression requires dedup to be enabled
+            if not dedup_enabled or not compression_enabled:
+                LOG.warning(
+                    'cross_dedup_disabled requested on volume %s but '
+                    'dedup_enabled=%s / compression_enabled=%s; forcing both '
+                    'on because the inline-only policy requires them.',
+                    volume_name, dedup_enabled, compression_enabled)
+            dedup_enabled = True
+            compression_enabled = True
         dedup_enabled = dedup_enabled or compression_enabled
+
         # enable/disable compression if needed
         if compression_enabled and not efficiency_status['compression']:
             self.enable_compression_async(volume_name)
@@ -1275,8 +1256,78 @@ class NetAppRestClient(object):
         elif not dedup_enabled and efficiency_status['dedupe']:
             self.disable_dedupe_async(volume_name)
 
-        self.apply_volume_efficiency_policy(
-            volume_name, efficiency_policy=efficiency_policy)
+        # Decide on the target policy:
+        #   cross_dedup_disabled=True     -> inline-only + cross-vol dedup off
+        #                                    (SCI: keep dedup metadata from
+        #                                    filling up the volume)
+        #   otherwise, when the current policy is inline-only or absent
+        #   (e.g. a SnapMirror destination promoted RW without SIS
+        #   reconfiguration), reset it: use the caller's efficiency_policy
+        #   if provided, else 'auto'. Enable cross-vol dedup iff dedup is on.
+        current_policy = efficiency_status.get('policy')
+        if cross_dedup_disabled:
+            volume = self._get_volume_by_args(vol_name=volume_name)
+            uuid = volume['uuid']
+            # inline-only implies inline dedup is on, but efficiency.policy
+            # and efficiency.dedupe are independent -- set dedupe='inline'
+            # so the volume actually has inline dedup enabled.
+            body = {
+                'efficiency': {
+                    'policy': {'name': 'inline-only'},
+                    'dedupe': 'inline',
+                    'cross_volume_dedupe': 'none',
+                    'compaction': 'inline'
+                }
+            }
+            self.send_request(f'/storage/volumes/{uuid}', 'patch', body=body)
+        elif (current_policy in (None, 'inline-only')
+              or efficiency_status.get('cross_dedup_disabled')):
+            target_policy = efficiency_policy or 'auto'
+            volume = self._get_volume_by_args(vol_name=volume_name)
+            uuid = volume['uuid']
+            # ONTAP validates cross_volume_dedupe against the *current*
+            # inline-dedup state, and setting the policy alone doesn't
+            # atomically flip inline-dedup on. Set efficiency.dedupe='both'
+            # (turns inline-dedupe on) with the target policy first, then
+            # flip cross_volume_dedupe in a second PATCH. Best-effort: some
+            # volumes (paused SIS, mid-scan, etc.) can't be reconciled this
+            # way -- log and move on rather than fail the whole caller. If
+            # step 2 fails while step 1 succeeds, the next ensure/update
+            # run will come back through this branch (policy is now auto,
+            # but cross-vol flags still mismatched) and retry step 2.
+            try:
+                dedupe_value = 'both' if dedup_enabled else 'none'
+                self.send_request(
+                    f'/storage/volumes/{uuid}', 'patch',
+                    body={'efficiency': {
+                        'policy': {'name': target_policy},
+                        'dedupe': dedupe_value,
+                        'compaction': 'inline'}})
+                self.send_request(
+                    f'/storage/volumes/{uuid}', 'patch',
+                    body={'efficiency': {
+                        'cross_volume_dedupe':
+                            'both' if dedup_enabled else 'none'}})
+            except netapp_api.api.NaApiError as e:
+                # "Operation was stopped" (error 40043) is ONTAP's way of
+                # reporting that a related SIS scan was stopped as a side
+                # effect of the config change -- the config change itself
+                # was applied. Treat it as informational; the next ensure/
+                # update run will find the volume in the intended state.
+                if (e.code == netapp_api.api.OPERATION_ALREADY_ENABLED
+                        and 'Operation was stopped' in e.message):
+                    LOG.debug(
+                        'Efficiency PATCH for volume %s reported "Operation '
+                        'was stopped"; treating as informational.',
+                        volume_name)
+                    return
+                LOG.warning(
+                    'Could not reset deduplication policy for volume %s to '
+                    '%s (current policy %s): %s',
+                    volume_name, target_policy, current_policy, e)
+        else:
+            self.apply_volume_efficiency_policy(
+                volume_name, efficiency_policy=efficiency_policy)
 
     @na_utils.trace
     def enable_dedupe_async(self, volume_name):
@@ -2922,7 +2973,8 @@ class NetAppRestClient(object):
                       compression_enabled=False, max_files=None,
                       qos_policy_group=None, hide_snapdir=None,
                       autosize_attributes=None, comment=None,
-                      adaptive_qos_policy_group=None, **options):
+                      adaptive_qos_policy_group=None,
+                      cross_dedup_disabled=False, **options):
         """Update backend volume for a share as necessary.
 
         :param aggregate_name: either a list or a string. List for aggregate
@@ -2996,6 +3048,7 @@ class NetAppRestClient(object):
         # Efficiency options must be handled separately
         self.update_volume_efficiency_attributes(
             volume_name, dedup_enabled, compression_enabled,
+            cross_dedup_disabled=cross_dedup_disabled,
             is_flexgroup=is_flexgroup, efficiency_policy=efficiency_policy
         )
         if self._is_snaplock_enabled_volume(volume_name):
