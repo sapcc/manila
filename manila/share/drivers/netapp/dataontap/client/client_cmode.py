@@ -2676,14 +2676,18 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
 
         self.send_request('volume-create', api_args)
 
-        efficiency_policy = options.get('efficiency_policy', None)
-        self.update_volume_efficiency_attributes(
-            volume_name, dedup_enabled, compression_enabled,
-            cross_dedup_disabled=cross_dedup_disabled,
-            efficiency_policy=efficiency_policy
-        )
-
         if volume_type != 'dp':
+            # Efficiency settings are meaningless on a data-protection volume:
+            # SnapMirror replicates the source's already-efficient blocks and
+            # ignores destination-side dedup/compression configuration. The
+            # active replica (or promotion) will apply these settings.
+            efficiency_policy = options.get('efficiency_policy', None)
+            self.update_volume_efficiency_attributes(
+                volume_name, dedup_enabled, compression_enabled,
+                cross_dedup_disabled=cross_dedup_disabled,
+                efficiency_policy=efficiency_policy
+            )
+
             if options.get('max_files_multiplier') is not None:
                 max_files_multiplier = options.pop('max_files_multiplier')
                 max_files = na_utils.calculate_max_files(size_gb,
