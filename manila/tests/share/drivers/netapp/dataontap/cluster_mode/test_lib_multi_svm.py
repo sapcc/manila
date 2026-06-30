@@ -3816,6 +3816,9 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         mock_modify_volume = self.mock_object(self.mock_dest_client,
                                               'modify_volume')
         fake_provisioning_opts.pop('snapshot_policy', None)
+        # SCI: cross_volume_dedupe metadata is applied on the destination.
+        # fake.SHARE_INSTANCE has no metadata key -> cross_dedup_disabled=False
+        fake_provisioning_opts['cross_dedup_disabled'] = False
 
         self.library._update_share_attributes_after_server_migration(
             fake.SHARE_INSTANCE, self.mock_src_client, fake_aggregate,

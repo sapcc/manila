@@ -2103,6 +2103,23 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                     # Update share attributes according with share extra specs.
                     self._update_share_attributes_after_server_migration(
                         instance, src_client, dest_aggregate, dest_client)
+                else:
+                    # SCI: SVM Migrate copies the volume as-is (including
+                    # dedup and compression state); only reconcile
+                    # cross_volume_dedupe so the policy follows the share
+                    # metadata instead of the source SVM's historical state.
+                    # Go through the efficiency-only helper (not
+                    # modify_volume) to avoid touching unrelated attributes
+                    # like space-guarantee, which ONTAP rejects on volumes
+                    # with compacted data. Pass the current dedup/
+                    # compression status so those aren't touched either.
+                    current = dest_client.get_volume_efficiency_status(
+                        share_name)
+                    dest_client.update_volume_efficiency_attributes(
+                        share_name,
+                        current.get('dedupe', False),
+                        current.get('compression', False),
+                        **self._get_cross_volume_dedupe_options(instance))
 
             except Exception:
                 msg_args = {
@@ -2332,6 +2349,9 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         # have the opportunity to add the snapshot policy after a successful
         # migration.
         provisioning_options.pop('snapshot_policy', None)
+        # SCI: Apply cross_volume_dedupe metadata to the destination volume.
+        provisioning_options.update(
+            self._get_cross_volume_dedupe_options(src_share_instance))
 
         # Modify volume to match extra specs
         dest_client.modify_volume(dest_aggregate, volume_name,

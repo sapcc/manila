@@ -2037,6 +2037,16 @@ class ShareManager(manager.SchedulerDependentManager):
             self._get_migrating_snapshots(context, src_share_instance,
                                           dest_share_instance))
 
+        # SCI: attach share metadata to the share instances so the driver
+        # can act on share-level metadata (e.g. cross_volume_dedupe) when
+        # reconciling the destination volume.
+        share_metadata_list = share_ref.get('share_metadata', [])
+        share_metadata = {
+            m['key']: m['value'] for m in share_metadata_list
+        } if share_metadata_list else {}
+        src_share_instance['metadata'] = share_metadata
+        dest_share_instance['metadata'] = share_metadata
+
         data_updates = self.driver.migration_complete(
             context, src_share_instance, dest_share_instance,
             src_snap_instances, snapshot_mappings, share_server,
@@ -3093,14 +3103,26 @@ class ShareManager(manager.SchedulerDependentManager):
         replica_list = [self._get_share_instance_dict(context, r)
                         for r in replica_list]
 
+        # SCI: Merge share metadata into each replica dict so the driver
+        # can act on share-level metadata (e.g. cross_volume_dedupe) during
+        # promotion. Share metadata wins over replica-specific metadata.
+        share = self.db.share_get(context, share_replica['share_id'])
+        share_metadata_list = share.get('share_metadata', [])
+        share_metadata = {
+            m['key']: m['value'] for m in share_metadata_list
+        } if share_metadata_list else {}
+
         for r in replica_list:
-            r['metadata'] = self.db.share_replica_metadata_get(
+            replica_metadata = self.db.share_replica_metadata_get(
                 context, r["id"]) or {}
+            r['metadata'] = {**replica_metadata, **share_metadata}
 
         share_replica = self._get_share_instance_dict(context, share_replica)
-        share_replica['metadata'] = (
-            self.db.share_replica_metadata_get(
-                context, share_replica_id) or {})
+        share_replica['metadata'] = {
+            **(self.db.share_replica_metadata_get(
+                context, share_replica_id) or {}),
+            **share_metadata,
+        }
 
         try:
             updated_replica_list = (

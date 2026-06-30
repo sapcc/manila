@@ -3438,37 +3438,18 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         """Update dedupe & compression attributes to match desired values."""
         efficiency_status = self.get_volume_efficiency_status(volume_name)
 
-        # SCI Keep deduplication metadata from filling up the volume
+        # cDOT compression requires dedup to be enabled. When cross-volume
+        # dedup is disabled (inline-only policy), both dedup and compression
+        # must be on -- ONTAP rejects the policy otherwise.
         if cross_dedup_disabled:
-            if not efficiency_status['dedupe']:
-                self.enable_dedup(volume_name)
-            if not efficiency_status['compression']:
-                self.enable_compression(volume_name)
-            self.set_sis_config(
-                volume_name, {
-                    'policy-name': 'inline-only',
-                    'enable-cross-volume-background-dedupe': 'false',
-                    'enable-cross-volume-inline-dedupe': 'false',
-                    'enable-data-compaction': 'true',
-                })
-            return
-
-        # Reset policy to default if it was previously set to inline-only
-        current_policy = efficiency_status.get('policy')
-        LOG.debug('Current deduplication policy for volume %s is %s.',
-                  volume_name, current_policy)
-        if current_policy == 'inline-only':
-            LOG.debug('Resetting deduplication policy for volume %s to auto.',
-                      volume_name)
-            self.set_sis_config(
-                volume_name, {
-                    'policy-name': 'auto',
-                    'enable-cross-volume-background-dedupe': 'true',
-                    'enable-cross-volume-inline-dedupe': 'true',
-                    'enable-data-compaction': 'true',
-                })
-
-        # cDOT compression requires dedup to be enabled
+            if not dedup_enabled or not compression_enabled:
+                LOG.warning(
+                    'cross_dedup_disabled requested on volume %s but '
+                    'dedup_enabled=%s / compression_enabled=%s; forcing both '
+                    'on because the inline-only policy requires them.',
+                    volume_name, dedup_enabled, compression_enabled)
+            dedup_enabled = True
+            compression_enabled = True
         dedup_enabled = dedup_enabled or compression_enabled
 
         # enable/disable dedup if needed
@@ -3495,7 +3476,77 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             else:
                 self.disable_compression(volume_name)
 
-        if is_flexgroup:
+        # Decide on the target policy:
+        #   cross_dedup_disabled=True     -> inline-only + cross-vol dedup off
+        #                                    (SCI: keep dedup metadata from
+        #                                    filling up the volume)
+        #   otherwise, when the current policy is inline-only or absent
+        #   (e.g. a SnapMirror destination promoted RW without SIS
+        #   reconfiguration), reset it: use the caller's efficiency_policy
+        #   if provided, else 'auto'. Enable cross-vol dedup iff dedup is on.
+        current_policy = efficiency_status.get('policy')
+        LOG.debug('Current deduplication policy for volume %s is %s.',
+                  volume_name, current_policy)
+        if cross_dedup_disabled:
+            # inline-only implies inline dedup is on, but policy-name and
+            # enable-inline-dedupe are independent SIS flags -- set both.
+            self.set_sis_config(
+                volume_name, {
+                    'policy-name': 'inline-only',
+                    'enable-inline-dedupe': 'true',
+                    'enable-cross-volume-background-dedupe': 'false',
+                    'enable-cross-volume-inline-dedupe': 'false',
+                    'enable-data-compaction': 'true',
+                })
+        elif (current_policy in (None, 'inline-only')
+              or efficiency_status.get('cross_dedup_disabled')):
+            target_policy = efficiency_policy or 'auto'
+            LOG.debug('Resetting deduplication policy for volume %s to %s.',
+                      volume_name, target_policy)
+            # ONTAP validates cross-volume-dedup against the *current*
+            # inline-dedup flag, and setting policy-name alone doesn't
+            # atomically flip inline-dedup on (they're independent SIS
+            # config fields). Enable inline-dedup and set the target policy
+            # in the first call; flip the cross-volume flags in a second
+            # call once inline-dedup is on. Best-effort: some volumes
+            # (paused SIS, mid-scan, etc.) can't be reconciled this way --
+            # log and move on rather than fail the whole caller. If step 2
+            # fails while step 1 succeeds, the next ensure/update run will
+            # come back through this branch (policy is now auto, but
+            # cross-vol flags still mismatched) and retry step 2.
+            try:
+                inline_dedupe = 'true' if dedup_enabled else 'false'
+                self.set_sis_config(
+                    volume_name, {
+                        'policy-name': target_policy,
+                        'enable-inline-dedupe': inline_dedupe,
+                        'enable-data-compaction': 'true',
+                    })
+                cross_vol_dedupe = 'true' if dedup_enabled else 'false'
+                self.set_sis_config(
+                    volume_name, {
+                        'enable-cross-volume-background-dedupe':
+                            cross_vol_dedupe,
+                        'enable-cross-volume-inline-dedupe': cross_vol_dedupe,
+                    })
+            except netapp_api.NaApiError as e:
+                # "Operation was stopped" (error 40043) is ONTAP's way of
+                # reporting that a related SIS scan was stopped as a side
+                # effect of the config change -- the config change itself
+                # was applied. Treat it as informational; the next ensure/
+                # update run will find the volume in the intended state.
+                if (e.code == netapp_api.OPERATION_ALREADY_ENABLED
+                        and 'Operation was stopped' in e.message):
+                    LOG.debug(
+                        'set_sis_config for volume %s reported "Operation '
+                        'was stopped"; treating as informational.',
+                        volume_name)
+                    return
+                LOG.warning(
+                    'Could not reset deduplication policy for volume %s to '
+                    '%s (current policy %s): %s',
+                    volume_name, target_policy, current_policy, e)
+        elif is_flexgroup:
             self.apply_volume_efficiency_policy_async(
                 volume_name, efficiency_policy=efficiency_policy)
         else:

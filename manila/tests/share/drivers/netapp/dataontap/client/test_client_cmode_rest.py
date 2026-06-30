@@ -1191,13 +1191,15 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             'efficiency.volume_path': '/vol/%s' % fake.VOLUME_NAMES[0],
             'fields': 'efficiency.state,'
                       'efficiency.compression,'
-                      'efficiency.policy'
+                      'efficiency.policy,'
+                      'efficiency.cross_volume_dedupe'
         }
 
         expected_result = {
             'dedupe': True,
             'compression': True,
-            'policy': None
+            'policy': None,
+            'cross_dedup_disabled': False,
         }
 
         self.mock_object(self.client, 'send_request',
@@ -2679,6 +2681,7 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             '/storage/volumes/' + volume['uuid'], 'patch', body=body)
         mock_update_volume_efficiency_attributes.assert_called_once_with(
             fake.SHARE_NAME, False, False,
+            cross_dedup_disabled=False,
             is_flexgroup=is_flexgroup, efficiency_policy=None
         )
 
@@ -2736,6 +2739,7 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             '/storage/volumes/' + volume['uuid'], 'patch', body=body)
         mock_update_volume_efficiency_attributes.assert_called_once_with(
             fake.SHARE_NAME, True, False,
+            cross_dedup_disabled=False,
             is_flexgroup=False,
             efficiency_policy=fake.VOLUME_EFFICIENCY_POLICY_NAME
         )
@@ -3238,7 +3242,8 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
     def test_update_volume_efficiency_attributes(self, status):
         response = {
             'dedupe': not status,
-            'compression': not status
+            'compression': not status,
+            'policy': 'auto',
         }
         self.mock_object(self.client, 'get_volume_efficiency_status',
                          mock.Mock(return_value=response))

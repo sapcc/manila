@@ -4359,7 +4359,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
             self.client,
             'get_volume_efficiency_status',
             mock.Mock(return_value={'dedupe': existing_dedupe,
-                                    'compression': existing_compression}))
+                                    'compression': existing_compression,
+                                    'policy': 'auto'}))
         mock_enable_compression = self.mock_object(self.client,
                                                    'enable_compression')
         mock_enable_compression_async = self.mock_object(
