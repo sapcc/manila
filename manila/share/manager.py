@@ -948,6 +948,9 @@ class ShareManager(manager.SchedulerDependentManager):
         share creation, which starts share_server creation.
         For this purpose used shared lock between this method and the one
         with deletion of share_server.
+        Exception: when creating from a snapshot on the same host, the parent
+        share server is already known and is kept alive by the existing share,
+        so the deletion race cannot occur and the lock is skipped.
 
         :param context: Current context
         :param share_network_id: Share network where existing share server
@@ -1027,8 +1030,6 @@ class ShareManager(manager.SchedulerDependentManager):
                             context, self.host, share_network_subnet_id)
                 )
 
-        @utils.synchronized("share_manager_%s" % share_network_subnet_id,
-                            external=True)
         def _wrapped_provide_share_server_for_share():
             try:
                 available_share_servers = get_available_share_servers()
@@ -1154,7 +1155,14 @@ class ShareManager(manager.SchedulerDependentManager):
 
             return compatible_share_server, share_instance_ref
 
-        return _wrapped_provide_share_server_for_share()
+        # When creating from a snapshot on the same host the parent share
+        # server is already known and has an active share, so the race with
+        # share-server deletion cannot occur -- skip the lock.
+        if snapshot and parent_share_same_dest:
+            return _wrapped_provide_share_server_for_share()
+        return utils.synchronized(
+            "share_manager_%s" % share_network_subnet_id,
+            external=True)(_wrapped_provide_share_server_for_share)()
 
     def _build_server_metadata(self, context, host, share_type_id,
                                app_cred=None, encryption_key_ref=None,

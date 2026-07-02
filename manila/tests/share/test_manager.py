@@ -3764,6 +3764,124 @@ class ShareManagerTestCase(test.TestCase):
         db.share_server_get.assert_called_once_with(
             self.context, fake_parent_id)
 
+    def test_provide_share_server_lock_skipped_for_snapshot_create(self):
+        """Lock must be bypassed when creating from a snapshot on same host."""
+        fake_parent_id = "fake_server_id"
+        fake_share_net_subnets = [db_utils.create_share_network_subnet(
+            id='fake_sns_id')]
+        fake_parent_share_server = db_utils.create_share_server(
+            id=fake_parent_id, status=constants.STATUS_ACTIVE,
+            share_network_subnets=fake_share_net_subnets)
+        share = db_utils.create_share()
+        # Use a mock so both dict-style access and attribute access work.
+        fake_snapshot = mock.MagicMock()
+        fake_snapshot['share']['instance']['share_server_id'] = fake_parent_id
+        fake_snapshot['share']['instance']['host'] = share.instance['host']
+
+        self.mock_object(db, 'share_server_get',
+                         mock.Mock(return_value=fake_parent_share_server))
+        self.mock_object(db,
+                         'share_server_get_all_by_host_and_share_subnet_valid',
+                         mock.Mock(return_value=[fake_parent_share_server]))
+        self.mock_object(
+            self.share_manager.driver,
+            'choose_share_server_compatible_with_share',
+            mock.Mock(return_value=fake_parent_share_server))
+        self.mock_object(db, 'share_instance_update',
+                         mock.Mock(return_value=share.instance))
+        mock_synchronized = self.mock_object(utils, 'synchronized')
+
+        self.share_manager._provide_share_server_for_share(
+            self.context, None, share.instance,
+            snapshot=fake_snapshot, create_on_backend=False)
+
+        mock_synchronized.assert_not_called()
+
+    def test_provide_share_server_lock_acquired_for_cross_host_snapshot(self):
+        """Lock must be acquired when snapshot parent is on a different host."""
+        fake_parent_id = "fake_server_id"
+        fake_share_network = db_utils.create_share_network(id='fake_sn_id')
+        fake_share_net_subnets = [db_utils.create_share_network_subnet(
+            id='fake_sns_id', share_network_id=fake_share_network['id'])]
+        fake_parent_share_server = db_utils.create_share_server(
+            id=fake_parent_id, status=constants.STATUS_ACTIVE,
+            share_network_subnets=fake_share_net_subnets)
+        fake_compatible_server = db_utils.create_share_server(id='fake_dest')
+        share = db_utils.create_share()
+
+        fake_snapshot = mock.MagicMock()
+        fake_snapshot['share']['instance']['share_server_id'] = fake_parent_id
+        # Different host → parent_share_same_dest=False → lock required
+        fake_snapshot['share']['instance']['host'] = 'other@host#POOL'
+
+        self.mock_object(db, 'share_server_get',
+                         mock.Mock(return_value=fake_parent_share_server))
+        self.mock_object(
+            db, 'share_network_subnets_get_all_by_availability_zone_id',
+            mock.Mock(return_value=fake_share_net_subnets))
+        self.mock_object(db,
+                         'share_server_get_all_by_host_and_share_subnet_valid',
+                         mock.Mock(return_value=[fake_compatible_server]))
+        self.mock_object(
+            self.share_manager, '_check_share_server_backend_limits',
+            mock.Mock(return_value=[fake_compatible_server]))
+        self.mock_object(
+            self.share_manager.driver,
+            'choose_share_server_compatible_with_share',
+            mock.Mock(return_value=fake_compatible_server))
+        self.mock_object(db, 'share_instance_update',
+                         mock.Mock(return_value=share.instance))
+
+        real_synchronized = utils.synchronized
+        mock_synchronized = mock.Mock(side_effect=real_synchronized)
+        self.mock_object(utils, 'synchronized', mock_synchronized)
+
+        self.share_manager._provide_share_server_for_share(
+            self.context, fake_share_network['id'], share.instance,
+            snapshot=fake_snapshot, create_on_backend=False)
+
+        mock_synchronized.assert_called_once_with(
+            'share_manager_%s' % fake_share_net_subnets[0]['id'],
+            external=True)
+
+    def test_provide_share_server_lock_acquired_for_regular_create(self):
+        """Lock must be acquired for a regular (non-snapshot) share create."""
+        fake_share_network = db_utils.create_share_network(id='fake_sn_id')
+        fake_share_net_subnets = [db_utils.create_share_network_subnet(
+            id='fake_sns_id', share_network_id=fake_share_network['id'])]
+        fake_share_server = db_utils.create_share_server(id='fake')
+        share = db_utils.create_share()
+
+        self.mock_object(
+            db, 'share_network_subnets_get_all_by_availability_zone_id',
+            mock.Mock(return_value=fake_share_net_subnets))
+        self.mock_object(db,
+                         'share_server_get_all_by_host_and_share_subnet_valid',
+                         mock.Mock(return_value=[fake_share_server]))
+        self.mock_object(
+            self.share_manager, '_check_share_server_backend_limits',
+            mock.Mock(return_value=[fake_share_server]))
+        self.mock_object(
+            self.share_manager.driver,
+            'choose_share_server_compatible_with_share',
+            mock.Mock(return_value=fake_share_server))
+        self.mock_object(db, 'share_instance_update',
+                         mock.Mock(return_value=share.instance))
+
+        # Replace utils.synchronized with a pass-through spy so the body still
+        # executes, but we can assert the lock was requested.
+        real_synchronized = utils.synchronized
+        mock_synchronized = mock.Mock(side_effect=real_synchronized)
+        self.mock_object(utils, 'synchronized', mock_synchronized)
+
+        self.share_manager._provide_share_server_for_share(
+            self.context, fake_share_network['id'], share.instance,
+            create_on_backend=False)
+
+        mock_synchronized.assert_called_once_with(
+            'share_manager_%s' % fake_share_net_subnets[0]['id'],
+            external=True)
+
     def test_provide_share_server_for_share_group_incompatible_servers(self):
         fake_exception = exception.ManilaException("fake")
         sg = db_utils.create_share_group()
