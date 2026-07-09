@@ -3753,11 +3753,14 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
                'adaptive_qos_policy_group_name':
                    fake.ADAPTIVE_QOS_POLICY_GROUP_NAME},
               {'mount_point_name': None},
+              {'smas_protection': None},
+              {'smas_protection': netapp_utils.SMAS_PROTECTION_UNPROTECTED},
               )
     @ddt.unpack
     def test_create_volume_clone(self, qos_policy_group_name=None,
                                  adaptive_qos_policy_group_name=None,
-                                 mount_point_name=None):
+                                 mount_point_name=None,
+                                 smas_protection=None):
         self.mock_object(self.client, 'send_request')
 
         if qos_policy_group_name:
@@ -3780,7 +3783,8 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             fake.PARENT_SNAPSHOT_NAME,
             mount_point_name=mount_point_name,
             qos_policy_group=qos_policy_group_name,
-            adaptive_qos_policy_group=adaptive_qos_policy_group_name)
+            adaptive_qos_policy_group=adaptive_qos_policy_group_name,
+            smas_protection=smas_protection)
 
         body = {
             'name': fake.SHARE_NAME,
@@ -3790,6 +3794,8 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             'clone.is_flexclone': 'true',
             'svm.name': 'fake_svm',
         }
+        if smas_protection is not None:
+            body['smas_protection'] = smas_protection
 
         if adaptive_qos_policy_group_name is not None:
             set_qos_adapt_mock.assert_called_once_with(
@@ -4045,18 +4051,90 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
 
         self.assertEqual(test_result, expected_result)
 
-    @ddt.data(True, False)
-    def test_check_volume_clone_split_completed(self, clone):
+    @ddt.data(None, fake.REMOTE_CLUSTER_NAME)
+    def test_get_cluster_peers(self, remote_cluster_name):
+        """Gets one or more cluster peer relationships."""
+
+        return_value = fake.FAKE_GET_CLUSTER_PEERS_REST
+
+        self.mock_object(self.client, 'get_records',
+                         mock.Mock(return_value=return_value))
+
+        result = self.client.get_cluster_peers(
+            remote_cluster_name=remote_cluster_name)
+
+        expected_query = {
+            'fields': 'name,uuid,status.state,remote.name,'
+                      'remote.ip_addresses,remote.serial_number',
+        }
+
+        self.client.get_records.assert_called_once_with(
+            '/cluster/peers', query=expected_query, enable_tunneling=False)
+
+        expected_result = [
+            {
+                'active-addresses': [
+                    fake.CLUSTER_ADDRESS_1,
+                    fake.CLUSTER_ADDRESS_2,
+                ],
+                'peer-addresses': [
+                    fake.CLUSTER_ADDRESS_1,
+                    fake.CLUSTER_ADDRESS_2,
+                ],
+                'availability': 'available',
+                'cluster-name': fake.CLUSTER_NAME,
+                'cluster-uuid': 'fake_uuid',
+                'remote-cluster-name': fake.REMOTE_CLUSTER_NAME,
+                'serial-number': 'fake_serial_number',
+            }
+        ]
+        self.assertEqual(expected_result, result)
+
+    def test_get_cluster_peers_not_found(self):
+        """Returns empty list when no cluster peers found."""
+
+        self.mock_object(self.client, 'get_records',
+                         mock.Mock(return_value={'num_records': 0,
+                                                 'records': []}))
+
+        result = self.client.get_cluster_peers()
+
+        self.assertEqual([], result)
+
+    @ddt.data(
+        ({'split_complete_percent': 100, 'is_flexclone': True}, True),
+        ({'split_complete_percent': 55, 'is_flexclone': True}, False),
+        ({'split_complete_percent': 'not-a-number', 'is_flexclone': True},
+         False),
+        ({'is_flexclone': False}, True),
+        ({'is_flexclone': True}, False),
+    )
+    @ddt.unpack
+    def test_check_volume_clone_split_completed(self, clone, expected):
         mock__get_volume_by_args = self.mock_object(
             self.client, '_get_volume_by_args',
-            mock.Mock(return_value={'clone': {'is_flexclone': clone}}))
+            mock.Mock(return_value={'clone': clone}))
 
         res = self.client.check_volume_clone_split_completed(
             fake.VOLUME_NAMES[0])
 
         mock__get_volume_by_args.assert_called_once_with(
-            vol_name=fake.VOLUME_NAMES[0], fields='clone.is_flexclone')
-        self.assertEqual(not clone, res)
+            vol_name=fake.VOLUME_NAMES[0],
+            fields='clone.is_flexclone,clone.split_complete_percent')
+        self.assertEqual(expected, res)
+
+    def test_check_volume_clone_split_completed_no_clone_key(self):
+        mock__get_volume_by_args = self.mock_object(
+            self.client, '_get_volume_by_args',
+            mock.Mock(return_value={}))
+
+        res = self.client.check_volume_clone_split_completed(
+            fake.VOLUME_NAMES[0])
+
+        mock__get_volume_by_args.assert_called_once_with(
+            vol_name=fake.VOLUME_NAMES[0],
+            fields='clone.is_flexclone,clone.split_complete_percent')
+        self.assertFalse(res)
 
     def test_rehost_volume(self):
         self.mock_object(self.client, 'send_request')
@@ -5471,6 +5549,27 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             fake.VSERVER_NAME)
         self.client.send_request.assert_called_once_with(
             f'/svm/svms/{svm_uuid}', 'patch', body=body)
+
+    @ddt.data(
+        {'smas_protection': netapp_utils.SMAS_PROTECTION_PROTECTED},
+        {'smas_protection': netapp_utils.SMAS_PROTECTION_UNPROTECTED},
+        {'nas': {'path': ''}},
+    )
+    def test_patch_volume(self, body):
+        volume = fake.VOLUME_ITEM_SIMPLE_RESPONSE_REST
+        uuid = volume['uuid']
+        self.mock_object(self.client, '_get_volume_by_args',
+                         mock.Mock(return_value=volume))
+        self.mock_object(self.client, 'send_request')
+
+        self.client.patch_volume(
+            fake.VSERVER_NAME, fake.SHARE_NAME, body)
+
+        self.client._get_volume_by_args.assert_called_once_with(
+            vol_name=fake.SHARE_NAME, vserver=fake.VSERVER_NAME,
+            fields='uuid')
+        self.client.send_request.assert_called_once_with(
+            f'/storage/volumes/{uuid}', 'patch', body=body)
 
     def test_create_network_interface(self):
         api_response = copy.deepcopy(fake.SERVICE_POLICIES_REST)

@@ -895,6 +895,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             self.library,
             '_create_export',
             mock.Mock(return_value='fake_export_location'))
+        mock_verify_smas_protected = self.mock_object(
+            self.library, '_verify_smas_protected', create=True)
 
         result = self.library.create_share_from_snapshot(
             self.context,
@@ -909,6 +911,107 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         mock_create_export.assert_called_once_with(share, fake.SHARE_SERVER,
                                                    fake.VSERVER1,
                                                    vserver_client)
+        self.assertEqual('fake_export_location', result)
+        # Base class defaults _share_server_has_replica to False, so the
+        # SMAS-specific protection verification must not be triggered.
+        mock_verify_smas_protected.assert_not_called()
+
+    def test_create_share_from_snapshot_smas_verifies_protection(self):
+        share = copy.deepcopy(fake.SHARE)
+        vserver_client = mock.Mock()
+        self.mock_object(self.library,
+                         '_get_vserver',
+                         mock.Mock(return_value=(fake.VSERVER1,
+                                                 vserver_client)))
+        mock_allocate_container_from_snapshot = self.mock_object(
+            self.library,
+            '_allocate_container_from_snapshot')
+        self.mock_object(
+            self.library, '_get_logical_space_options',
+            mock.Mock(return_value={'logical_space_reporting': False}))
+        mock_create_export = self.mock_object(
+            self.library,
+            '_create_export',
+            mock.Mock(return_value='fake_export_location'))
+        self.mock_object(
+            self.library, '_share_server_has_replica',
+            mock.Mock(return_value=True))
+        self.mock_object(
+            self.library, '_wait_for_smas_in_sync_or_reject', create=True)
+        mock_verify_smas_protected = self.mock_object(
+            self.library, '_verify_smas_protected', create=True)
+
+        result = self.library.create_share_from_snapshot(
+            self.context,
+            share,
+            fake.SNAPSHOT,
+            share_server=fake.SHARE_SERVER,
+            parent_share=share)
+
+        mock_allocate_container_from_snapshot.assert_called_once_with(
+            share,
+            fake.SNAPSHOT,
+            fake.VSERVER1,
+            vserver_client,
+            cross_dedup_disabled=False, logical_space_reporting=False)
+        mock_create_export.assert_called_once_with(share,
+                                                   fake.SHARE_SERVER,
+                                                   fake.VSERVER1,
+                                                   vserver_client)
+        mock_verify_smas_protected.assert_called_once_with(
+            share, fake.SHARE_SERVER)
+        self.assertEqual('fake_export_location', result)
+
+    def test_create_share_from_snapshot_reject_if_not_in_sync_called(self):
+        share = copy.deepcopy(fake.SHARE)
+        self.mock_object(
+            self.library, '_share_server_has_replica',
+            mock.Mock(return_value=True))
+        mock_reject = self.mock_object(
+            self.library, '_wait_for_smas_in_sync_or_reject',
+            mock.Mock(side_effect=exception.NetAppException('out of sync')),
+            create=True)
+        mock_get_vserver = self.mock_object(self.library, '_get_vserver')
+        mock_allocate = self.mock_object(
+            self.library, '_allocate_container_from_snapshot')
+
+        self.assertRaises(
+            exception.NetAppException,
+            self.library.create_share_from_snapshot,
+            self.context,
+            share,
+            fake.SNAPSHOT,
+            share_server=fake.SHARE_SERVER,
+            parent_share=share)
+
+        mock_reject.assert_called_once_with(share['id'], fake.SHARE_SERVER)
+        mock_get_vserver.assert_not_called()
+        mock_allocate.assert_not_called()
+
+    def test_create_share_from_snapshot_reject_if_not_in_sync_skipped(self):
+        share = copy.deepcopy(fake.SHARE)
+        vserver_client = mock.Mock()
+        self.mock_object(
+            self.library, '_share_server_has_replica',
+            mock.Mock(return_value=False))
+        mock_reject = self.mock_object(
+            self.library, '_wait_for_smas_in_sync_or_reject', create=True)
+        self.mock_object(
+            self.library, '_get_vserver',
+            mock.Mock(return_value=(fake.VSERVER1, vserver_client)))
+        self.mock_object(self.library, '_allocate_container_from_snapshot')
+        self.mock_object(
+            self.library, '_create_export',
+            mock.Mock(return_value='fake_export_location'))
+
+        result = self.library.create_share_from_snapshot(
+            self.context,
+            share,
+            fake.SNAPSHOT,
+            share_server=fake.SHARE_SERVER,
+            parent_share=share)
+
+        mock_reject.assert_not_called()
         self.assertEqual('fake_export_location', result)
 
     def _setup_mocks_for_create_share_from_snapshot(
@@ -1060,7 +1163,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             temp_share["id"] = fake.SHARE_ID5
             self.mock_allocate_container_from_snapshot.assert_called_once_with(
                 temp_share, fake.SNAPSHOT, fake.VSERVER1,
-                self.src_vserver_client, split=False, create_fpolicy=False)
+                self.src_vserver_client, split=False, create_fpolicy=False,
+                create_unprotected=False)
             self.mock_allocate_container.assert_called_once_with(
                 self.fake_share, fake.VSERVER2, self.dest_vserver_client,
                 replica=True, set_qos=False, cross_dedup_disabled=False,
@@ -1073,6 +1177,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             self.mock_allocate_container_from_snapshot.assert_called_once_with(
                 self.fake_share, fake.SNAPSHOT, fake.VSERVER1,
                 self.src_vserver_client, split=True,
+                create_unprotected=False,
                 cross_dedup_disabled=False, logical_space_reporting=False)
             state = self.library.STATE_SPLITTING_VOLUME_CLONE
 
@@ -1089,6 +1194,125 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             expected_return = {'status':
                                constants.STATUS_CREATING_FROM_SNAPSHOT}
             self.assertEqual(expected_return, result)
+
+    def test_create_share_from_snapshot_another_host_smas_rehost_rejected(
+            self):
+        self.library._have_cluster_creds = True
+        self._setup_mocks_for_create_share_from_snapshot(
+            dest_cluster=fake.CLUSTER_NAME, is_flexgroup=False)
+        self.mock_object(
+            self.library, '_share_server_has_replica',
+            mock.Mock(return_value=True))
+        self.mock_object(
+            self.library, '_wait_for_smas_in_sync_or_reject', create=True)
+
+        self.assertRaises(
+            exception.NetAppException,
+            self.library.create_share_from_snapshot,
+            self.context,
+            self.fake_share,
+            fake.SNAPSHOT,
+            share_server=self.fake_share_server,
+            parent_share=self.parent_share)
+
+        self.mock_allocate_container_from_snapshot.assert_not_called()
+        self.mock_allocate_container.assert_not_called()
+
+    def test_create_share_from_snapshot_another_host_smas_no_replica(self):
+        # Same trigger conditions as the rejection test above, except the
+        # destination share server has no SMAS replica -> no rejection,
+        # normal split flow proceeds.
+        self.library._have_cluster_creds = True
+        self._setup_mocks_for_create_share_from_snapshot(
+            dest_cluster=fake.CLUSTER_NAME, is_flexgroup=False)
+        self.mock_object(
+            self.library, '_share_server_has_replica',
+            mock.Mock(return_value=False))
+
+        result = self.library.create_share_from_snapshot(
+            self.context,
+            self.fake_share,
+            fake.SNAPSHOT,
+            share_server=self.fake_share_server,
+            parent_share=self.parent_share)
+
+        self.fake_share['share_server'] = self.fake_share_server
+        self.mock_allocate_container_from_snapshot.assert_called_once_with(
+            self.fake_share, fake.SNAPSHOT, fake.VSERVER1,
+            self.src_vserver_client, split=True, create_unprotected=False,
+            cross_dedup_disabled=False, logical_space_reporting=False)
+        expected_return = {
+            'status': constants.STATUS_CREATING_FROM_SNAPSHOT}
+        self.assertEqual(expected_return, result)
+
+    def test_create_share_from_snapshot_another_host_smas_same_vserver(self):
+        # Same trigger conditions as the rejection test above, except
+        # source and destination share the same vserver (no rehost is
+        # actually needed) -> no rejection. Also verifies that the clone
+        # split off the destination is created unprotected, since it must
+        # be split from its parent to be moved, and a protected volume
+        # can't be split.
+        self.library._have_cluster_creds = True
+        self._setup_mocks_for_create_share_from_snapshot(
+            dest_cluster=fake.CLUSTER_NAME, is_flexgroup=False)
+        self.mock_object(
+            self.library, '_get_vserver',
+            mock.Mock(return_value=(fake.VSERVER1, self.dest_vserver_client)))
+        self.mock_object(
+            self.library, '_share_server_has_replica',
+            mock.Mock(return_value=True))
+        self.mock_object(
+            self.library, '_wait_for_smas_in_sync_or_reject', create=True)
+
+        result = self.library.create_share_from_snapshot(
+            self.context,
+            self.fake_share,
+            fake.SNAPSHOT,
+            share_server=self.fake_share_server,
+            parent_share=self.parent_share)
+
+        self.fake_share['share_server'] = self.fake_share_server
+        self.mock_allocate_container_from_snapshot.assert_called_once_with(
+            self.fake_share, fake.SNAPSHOT, fake.VSERVER1,
+            self.src_vserver_client, split=True, create_unprotected=True,
+            cross_dedup_disabled=False, logical_space_reporting=False)
+        expected_return = {
+            'status': constants.STATUS_CREATING_FROM_SNAPSHOT}
+        self.assertEqual(expected_return, result)
+
+    def test_create_share_from_snapshot_another_host_smas_cross_cluster(self):
+        # Cross-cluster destination falls into the temp-clone/snapmirror
+        # branch instead of the rehost/split branch, so the SMAS NAS
+        # rehost pre-check never triggers even though the destination
+        # share server is SMAS-protected. The temporary clone created on
+        # the source vserver must be created unprotected, since the
+        # source share server (the parent's) is also SMAS-protected here.
+        self.library._have_cluster_creds = True
+        self._setup_mocks_for_create_share_from_snapshot(
+            dest_cluster=fake.CLUSTER_NAME_2, is_flexgroup=False)
+        self.mock_object(
+            self.library, '_share_server_has_replica',
+            mock.Mock(return_value=True))
+        self.mock_object(
+            self.library, '_wait_for_smas_in_sync_or_reject', create=True)
+
+        result = self.library.create_share_from_snapshot(
+            self.context,
+            self.fake_share,
+            fake.SNAPSHOT,
+            share_server=self.fake_share_server,
+            parent_share=self.parent_share)
+
+        self.fake_share['share_server'] = self.fake_share_server
+        temp_share = copy.deepcopy(self.fake_share)
+        temp_share["id"] = fake.SHARE_ID5
+        self.mock_allocate_container_from_snapshot.assert_called_once_with(
+            temp_share, fake.SNAPSHOT, fake.VSERVER1,
+            self.src_vserver_client, split=False, create_fpolicy=False,
+            create_unprotected=True)
+        expected_return = {
+            'status': constants.STATUS_CREATING_FROM_SNAPSHOT}
+        self.assertEqual(expected_return, result)
 
     @ddt.data(True, False)
     def test_create_share_from_snapshot_another_host_driver_error(
@@ -1128,6 +1352,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             self.mock_allocate_container_from_snapshot.assert_called_once_with(
                 self.fake_share, fake.SNAPSHOT, fake.VSERVER1,
                 self.src_vserver_client, split=True,
+                create_unprotected=False,
                 cross_dedup_disabled=False, logical_space_reporting=False)
         else:
             self.mock_generate_uuid.assert_called_once()
@@ -1135,7 +1360,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             temp_share["id"] = fake.SHARE_ID5
             self.mock_allocate_container_from_snapshot.assert_called_once_with(
                 temp_share, fake.SNAPSHOT, fake.VSERVER1,
-                self.src_vserver_client, split=False, create_fpolicy=False)
+                self.src_vserver_client, split=False, create_fpolicy=False,
+                create_unprotected=False)
 
         mock_delete_snapmirror.assert_called_once_with(
             self.temp_src_share, self.fake_share)
@@ -1551,6 +1777,81 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                 {'source_share': json.dumps(self.fake_src_share)}
             )
             self.assertEqual(expect_result, result)
+
+    @ddt.data(True, False)
+    def test__create_from_snapshot_continue_state_splitting_smas(
+            self, share_server_has_replica):
+        # Reaching STATUS_AVAILABLE from STATE_SPLITTING_VOLUME_CLONE (same
+        # host, no move needed) must trigger SMAS re-protection whenever the
+        # share server carries a replica, regardless of the current_state
+        # the transition came from.
+        self._setup_mocks_for_create_from_snapshot_continue(
+            share_internal_state=self.library.STATE_SPLITTING_VOLUME_CLONE)
+        self.mock_object(
+            self.library, '_share_server_has_replica',
+            mock.Mock(return_value=share_server_has_replica))
+        mock_protect = self.mock_object(
+            self.library, '_protect_smas_volume_after_break', create=True)
+
+        result = self.library._create_from_snapshot_continue(
+            fake.SHARE, fake.SHARE_SERVER)
+
+        self.assertEqual(constants.STATUS_AVAILABLE, result['status'])
+        if share_server_has_replica:
+            mock_protect.assert_called_once_with(fake.SHARE,
+                                                 fake.SHARE_SERVER)
+        else:
+            mock_protect.assert_not_called()
+
+    @ddt.data(True, False)
+    def test__create_from_snapshot_continue_state_moving_smas(
+            self, share_server_has_replica):
+        self._setup_mocks_for_create_from_snapshot_continue(
+            share_internal_state=self.library.STATE_MOVING_VOLUME,
+            move_completed_result=True)
+        self.mock_object(
+            self.library, '_share_server_has_replica',
+            mock.Mock(return_value=share_server_has_replica))
+        mock_protect = self.mock_object(
+            self.library, '_protect_smas_volume_after_break', create=True)
+
+        result = self.library._create_from_snapshot_continue(
+            fake.SHARE, fake.SHARE_SERVER)
+
+        self.assertEqual(constants.STATUS_AVAILABLE, result['status'])
+        if share_server_has_replica:
+            mock_protect.assert_called_once_with(fake.SHARE,
+                                                 fake.SHARE_SERVER)
+        else:
+            mock_protect.assert_not_called()
+
+    @ddt.data(True, False)
+    def test__create_from_snapshot_continue_state_snapmirror_smas(
+            self, share_server_has_replica):
+        self._setup_mocks_for_create_from_snapshot_continue(
+            share_internal_state=self.library.STATE_SNAPMIRROR_DATA_COPYING,
+            replica_state=constants.REPLICA_STATE_IN_SYNC)
+        self.mock_object(
+            self.library, '_share_server_has_replica',
+            mock.Mock(return_value=share_server_has_replica))
+        mock_protect = self.mock_object(
+            self.library, '_protect_smas_volume_after_break', create=True)
+        mock_verify = self.mock_object(
+            self.library, '_verify_smas_protected', create=True)
+
+        result = self.library._create_from_snapshot_continue(
+            fake.SHARE, fake.SHARE_SERVER)
+
+        self.assertEqual(constants.STATUS_AVAILABLE, result['status'])
+        if share_server_has_replica:
+            mock_protect.assert_called_once_with(fake.SHARE,
+                                                 fake.SHARE_SERVER)
+        else:
+            mock_protect.assert_not_called()
+        # Regression: _verify_smas_protected is no longer called directly
+        # from _create_from_snapshot_continue; protection is always
+        # (re-)verified indirectly through _protect_smas_volume_after_break.
+        mock_verify.assert_not_called()
 
     def test__create_from_snapshot_continue_state_unknown(self):
         self._setup_mocks_for_create_from_snapshot_continue(
@@ -2438,11 +2739,14 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
               {'provider_location': 'fake_location', 'size': 30,
                'hide_snapdir': False, 'split': True, 'create_fpolicy': True},
               {'provider_location': 'fake_location', 'size': 20,
-               'hide_snapdir': True, 'split': False, 'create_fpolicy': True})
+               'hide_snapdir': True, 'split': False, 'create_fpolicy': True},
+              {'provider_location': None, 'size': 50, 'hide_snapdir': True,
+               'split': None, 'create_fpolicy': False,
+               'create_unprotected': True})
     @ddt.unpack
     def test_allocate_container_from_snapshot(
             self, provider_location, size, hide_snapdir, split,
-            create_fpolicy):
+            create_fpolicy, create_unprotected=False):
         provisioning_options = copy.deepcopy(
             fake.PROVISIONING_OPTIONS_WITH_FPOLICY)
         provisioning_options['hide_snapdir'] = hide_snapdir
@@ -2467,7 +2771,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             vserver,
             vserver_client,
             split=split,
-            create_fpolicy=create_fpolicy)
+            create_fpolicy=create_fpolicy,
+            create_unprotected=create_unprotected)
 
         share_name = self.library._get_backend_share_name(
             fake_share_inst['id'])
@@ -2475,11 +2780,15 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             fake_snapshot['share_id'])
         parent_snapshot_name = self.library._get_backend_snapshot_name(
             fake_snapshot['id']) if not provider_location else 'fake_location'
+        expected_smas_protection = (
+            na_utils.SMAS_PROTECTION_UNPROTECTED if create_unprotected
+            else None)
         mock_get_provisioning_opts.assert_called_once_with(
             fake_share_inst, fake.VSERVER1, vserver_client=vserver_client)
         vserver_client.create_volume_clone.assert_called_once_with(
             share_name, parent_share_name, parent_snapshot_name,
             mount_point_name=fake_share_inst["mount_point_name"],
+            smas_protection=expected_smas_protection,
             **provisioning_options)
         if size > original_snapshot_size:
             vserver_client.set_volume_size.assert_called_once_with(
@@ -2659,9 +2968,118 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             self.library._client.mark_qos_policy_group_for_deletion.called)
         self.assertEqual(1, lib_base.LOG.info.call_count)
 
-    def test_deallocate_container(self):
+    def test_delete_share_clears_private_storage(self):
+        vserver_client = mock.Mock()
+        self.mock_object(
+            self.library,
+            '_get_vserver',
+            mock.Mock(return_value=(fake.VSERVER1,
+                                    vserver_client))
+        )
+        mock_share_exists = self.mock_object(
+            self.library,
+            '_share_exists',
+            mock.Mock(return_value=True)
+        )
+        mock_remove_export = self.mock_object(self.library, '_remove_export')
+        mock_deallocate_container = self.mock_object(self.library,
+                                                     '_deallocate_container')
+        mock_delete_fpolicy = self.mock_object(
+            self.library, '_delete_fpolicy_for_share')
+        mock_get_qos = self.mock_object(
+            self.library,
+            '_get_backend_qos_policy_group_name',
+            mock.Mock(return_value='fake_qos_policy')
+        )
+        mock_mark_qos = self.mock_object(
+            vserver_client,
+            'mark_qos_policy_group_for_deletion'
+        )
+        mock_private_storage_delete = self.mock_object(
+            self.library.private_storage,
+            'delete',
+        )
+        self.mock_object(share_types, 'get_extra_specs_from_share',
+                         mock.Mock(return_value={}))
+        self.library.delete_share(self.context, fake.SHARE,
+                                  share_server=fake.SHARE_SERVER)
+
+        share_name = self.library._get_backend_share_name(fake.SHARE['id'])
+        mock_share_exists.assert_called_once_with(share_name, vserver_client)
+        mock_remove_export.assert_called_once_with(fake.SHARE, vserver_client)
+        mock_deallocate_container.assert_called_once_with(share_name,
+                                                          vserver_client,
+                                                          False)
+        mock_delete_fpolicy.assert_called_once_with(
+            fake.SHARE, fake.VSERVER1, vserver_client)
+        mock_get_qos.assert_called_once_with(
+            fake.SHARE['id'])
+        mock_mark_qos.assert_called_once_with('fake_qos_policy')
+        mock_private_storage_delete.assert_called_once_with(fake.SHARE['id'])
+
+        self.assertEqual(0, lib_base.LOG.info.call_count)
+
+    @ddt.data(True, False)
+    def test_delete_share_force_delete_extra_spec(self, force_delete):
+        vserver_client = mock.Mock()
+        self.mock_object(self.library, '_get_vserver',
+                         mock.Mock(return_value=(fake.VSERVER1,
+                                                 vserver_client)))
+        self.mock_object(self.library, '_share_exists',
+                         mock.Mock(return_value=True))
+        self.mock_object(self.library, '_remove_export')
+        mock_deallocate = self.mock_object(self.library,
+                                           '_deallocate_container')
+        self.mock_object(self.library, '_delete_fpolicy_for_share')
+
+        # force_delete_time is 1 hour; a share younger than that is force
+        # deleted, an older one is not.
+        self.mock_object(lib_base.CONF, 'force_delete_time', 1)
+        share = fake.SHARE.copy()
+        share['duration_seconds'] = 60 if force_delete else 2 * 60 * 60
+
+        self.library.delete_share(self.context, share,
+                                  share_server=fake.SHARE_SERVER)
+
+        share_name = self.library._get_backend_share_name(share['id'])
+        mock_deallocate.assert_called_once_with(share_name, vserver_client,
+                                                force_delete)
+
+    def test_delete_share_nonexistent_does_not_delete_private_storage(self):
+        vserver_client = mock.Mock()
+        self.mock_object(
+            self.library,
+            '_get_vserver',
+            mock.Mock(return_value=(fake.VSERVER1, vserver_client))
+        )
+        mock_share_exists = self.mock_object(
+            self.library,
+            '_share_exists',
+            mock.Mock(return_value=False)
+        )
+        mock_delete_fpolicy = self.mock_object(
+            self.library,
+            '_delete_fpolicy_for_share'
+        )
+        mock_private_storage_delete = self.mock_object(
+            self.library.private_storage, 'delete'
+        )
+        self.mock_object(share_types, 'get_extra_specs_from_share',
+                         mock.Mock(return_value={}))
+        self.library.delete_share(
+            self.context, fake.SHARE, share_server=fake.SHARE_SERVER)
+        share_name = self.library._get_backend_share_name(fake.SHARE['id'])
+        mock_share_exists.assert_called_once_with(
+            share_name, vserver_client)
+        mock_delete_fpolicy.assert_called_once_with(
+            fake.SHARE, fake.VSERVER1, vserver_client)
+        mock_private_storage_delete.assert_called_once_with(
+            fake.SHARE['id'])
+
+    def test_deallocate_container_legacy_client(self):
 
         vserver_client = mock.Mock()
+        self.library.configuration.netapp_use_legacy_client = True
 
         self.library._deallocate_container(fake.SHARE_NAME, vserver_client,
                                            False)
@@ -2669,6 +3087,19 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         vserver_client.unmount_volume.assert_called_with(fake.SHARE_NAME,
                                                          force=True)
         vserver_client.offline_volume.assert_called_with(fake.SHARE_NAME)
+        vserver_client.delete_volume.assert_called_with(fake.SHARE_NAME, False)
+
+    def test_deallocate_container_rest_client(self):
+
+        vserver_client = mock.Mock()
+        self.library.configuration.netapp_use_legacy_client = False
+
+        self.library._deallocate_container(fake.SHARE_NAME, vserver_client,
+                                           False)
+
+        vserver_client.unmount_volume.assert_called_with(fake.SHARE_NAME,
+                                                         force=True)
+        vserver_client.offline_volume.assert_not_called()
         vserver_client.delete_volume.assert_called_with(fake.SHARE_NAME, False)
 
     @ddt.data(None, fake.MANILA_HOST_NAME_2)
