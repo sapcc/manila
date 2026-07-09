@@ -680,6 +680,39 @@ SHARE_SERVER_2 = {
     }]
 }
 
+SMAS_SNAPMIRROR_RELATIONSHIP = {
+    'uuid': 'smas-relationship-uuid',
+    'policy': {
+        'uuid': 'smas-policy-uuid',
+        'name': 'AutomatedFailOver',
+        'type': 'sync',
+    },
+    'state': 'in_sync',
+    'healthy': True,
+}
+
+NON_SMAS_SYNC_SNAPMIRROR_RELATIONSHIP = {
+    'uuid': 'non-smas-sync-relationship-uuid',
+    'policy': {
+        'uuid': 'non-smas-sync-policy-uuid',
+        'name': 'Sync',
+        'type': 'sync',
+    },
+    'state': 'in_sync',
+    'healthy': True,
+}
+
+SMAS_NAMED_ASYNC_SNAPMIRROR_RELATIONSHIP = {
+    'uuid': 'smas-named-async-relationship-uuid',
+    'policy': {
+        'uuid': 'smas-named-async-policy-uuid',
+        'name': 'AutomatedFailOver',
+        'type': 'async',
+    },
+    'state': 'in_sync',
+    'healthy': True,
+}
+
 VSERVER_INFO = {
     'name': 'fake_vserver_name',
     'subtype': 'default',

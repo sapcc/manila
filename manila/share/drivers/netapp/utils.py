@@ -90,6 +90,11 @@ SMAS_MIN_ONTAP_VERSION = (9, 19, 1)
 SMAS_DELETE_POLL_INTERVAL = 5
 SMAS_DELETE_POLL_TIMEOUT = 600
 
+SMAS_PROTECTION_PROTECTED = 'protected'
+SMAS_PROTECTION_UNPROTECTED = 'unprotected'
+SMAS_POLICY_NAME = 'AutomatedFailOver'
+SMAS_IN_SYNC_POLL_INTERVAL = 5
+
 
 class NetAppDriverException(exception.ShareBackendException):
     message = _("NetApp Manila Driver exception.")
