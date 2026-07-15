@@ -2457,7 +2457,10 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                 self.fake_src_share_server['network_allocations'],
             'neutron_subnet_id':
                 self.fake_src_share_server['share_network_subnets'][0].get(
-                    'neutron_subnet_id')
+                    'neutron_subnet_id'),
+            'neutron_net_id':
+                self.fake_src_share_server['share_network_subnets'][0].get(
+                    'neutron_net_id'),
         }
 
         dest_ipspace = ('ipspace_'
@@ -2513,7 +2516,10 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                 self.fake_src_share_server['network_allocations'],
             'neutron_subnet_id':
                 self.fake_src_share_server['share_network_subnets'][0].get(
-                    'neutron_subnet_id')
+                    'neutron_subnet_id'),
+            'neutron_net_id':
+                self.fake_src_share_server['share_network_subnets'][0].get(
+                    'neutron_net_id')
         }
 
         dest_ipspace = ('ipspace_'
@@ -2801,7 +2807,10 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                 server_to_get_network_info['network_allocations'],
             'neutron_subnet_id':
                 server_to_get_network_info['share_network_subnets'][0].get(
-                    'neutron_subnet_id')
+                    'neutron_subnet_id'),
+            'neutron_net_id':
+                server_to_get_network_info['share_network_subnets'][0].get(
+                    'neutron_net_id'),
         }
 
         dest_ipspace = ('ipspace_'
@@ -2861,7 +2870,10 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                 server_to_get_network_info['network_allocations'],
             'neutron_subnet_id':
                 server_to_get_network_info['share_network_subnets'][0].get(
-                    'neutron_subnet_id')
+                    'neutron_subnet_id'),
+            'neutron_net_id':
+                server_to_get_network_info['share_network_subnets'][0].get(
+                    'neutron_net_id')
         }
 
         dest_ipspace = ('ipspace_'
@@ -2912,6 +2924,84 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.assertTrue(mock_get_node_data_port.called)
         self.assertTrue(mock_get_aggregates.called)
         mock_delete_ipspace.assert_called_once_with(dest_ipspace)
+
+    def test__migration_start_using_svm_migrate_passes_neutron_net_id(self):
+        self.fake_dest_share_server['network_allocations'] = None
+
+        expected_neutron_net_id = (
+            self.fake_src_share_server['share_network_subnets'][0][
+                'neutron_net_id'])
+        dest_ipspace = 'ipspace_' + expected_neutron_net_id.replace('-', '_')
+
+        self.mock_object(self.mock_dest_client, 'list_cluster_nodes',
+                         mock.Mock(return_value=fake.CLUSTER_NODES))
+        self.mock_object(self.library, '_get_node_data_port',
+                         mock.Mock(return_value=fake.NODE_DATA_PORT))
+        self.mock_object(self.mock_dest_client,
+                         'get_ipspace_name_for_vlan_port',
+                         mock.Mock(return_value=None))
+        mock_get_or_create_ipspace = self.mock_object(
+            self.library, '_get_or_create_ipspace',
+            mock.Mock(return_value=dest_ipspace))
+        self.mock_object(self.library, '_create_port_and_broadcast_domain')
+        self.mock_object(self.mock_src_client, 'get_cluster_name',
+                         mock.Mock(return_value=fake.CLUSTER_NAME))
+        self.mock_object(self.library, '_find_matching_aggregates',
+                         mock.Mock(return_value=fake.AGGREGATES))
+        self.mock_object(
+            self.mock_dest_client, 'svm_migration_start',
+            mock.Mock(return_value=c_fake.FAKE_MIGRATION_RESPONSE_WITH_JOB))
+        self.mock_object(
+            self.mock_dest_client, 'get_job',
+            mock.Mock(return_value=c_fake.FAKE_JOB_SUCCESS_STATE))
+
+        self.library._migration_start_using_svm_migrate(
+            None, self.fake_src_share_server, self.fake_dest_share_server,
+            self.mock_src_client, self.mock_dest_client)
+
+        actual_network_info = mock_get_or_create_ipspace.call_args[0][0]
+        self.assertEqual(
+            expected_neutron_net_id,
+            actual_network_info.get('neutron_net_id'),
+            'neutron_net_id missing from network_info — SVM migrate would '
+            'use Default IPspace instead of the correct custom IPspace')
+
+    def test__check_compatibility_for_svm_migrate_passes_neutron_net_id(self):
+        expected_neutron_net_id = (
+            self.fake_src_share_server['share_network_subnets'][0][
+                'neutron_net_id'])
+        dest_ipspace = 'ipspace_' + expected_neutron_net_id.replace('-', '_')
+
+        self.mock_object(self.mock_dest_client, 'list_cluster_nodes',
+                         mock.Mock(return_value=fake.CLUSTER_NODES))
+        self.mock_object(self.library, '_get_node_data_port',
+                         mock.Mock(return_value=fake.NODE_DATA_PORT))
+        self.mock_object(self.mock_dest_client,
+                         'get_ipspace_name_for_vlan_port',
+                         mock.Mock(return_value=None))
+        mock_get_or_create_ipspace = self.mock_object(
+            self.library, '_get_or_create_ipspace',
+            mock.Mock(return_value=dest_ipspace))
+        self.mock_object(self.library, '_create_port_and_broadcast_domain')
+        self.mock_object(
+            self.library, '_check_data_lif_count_limit_reached_for_ha_pair')
+        self.mock_object(
+            self.mock_dest_client, 'svm_migration_start',
+            mock.Mock(return_value=c_fake.FAKE_MIGRATION_RESPONSE_WITH_JOB))
+        self.mock_object(self.library, '_get_job_uuid',
+                         mock.Mock(return_value=c_fake.FAKE_JOB_ID))
+        self.mock_object(self.library, '_wait_for_operation_status')
+
+        self.library._check_compatibility_for_svm_migrate(
+            fake.CLUSTER_NAME, fake.VSERVER1, self.fake_src_share_server,
+            fake.AGGREGATES, self.mock_dest_client)
+
+        actual_network_info = mock_get_or_create_ipspace.call_args[0][0]
+        self.assertEqual(
+            expected_neutron_net_id,
+            actual_network_info.get('neutron_net_id'),
+            'neutron_net_id missing from network_info — SVM migrate would '
+            'use Default IPspace instead of the correct custom IPspace')
 
     def test__get_snapmirror_svm(self):
         dm_session_mock = mock.Mock()
