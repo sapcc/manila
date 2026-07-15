@@ -1399,7 +1399,10 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                 source_share_server['network_allocations'],
             'neutron_subnet_id':
                 source_share_server['share_network_subnets'][0].get(
-                    'neutron_subnet_id')
+                    'neutron_subnet_id'),
+            'neutron_net_id':
+                source_share_server['share_network_subnets'][0].get(
+                    'neutron_net_id'),
         }
 
         # Check the LIF creation on destination cluster when
@@ -1686,7 +1689,10 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                 share_server_network_info['network_allocations'],
             'neutron_subnet_id':
                 share_server_network_info['share_network_subnets'][0].get(
-                    'neutron_subnet_id')
+                    'neutron_subnet_id'),
+            'neutron_net_id':
+                share_server_network_info['share_network_subnets'][0].get(
+                    'neutron_net_id'),
         }
 
         # 2. Create new ipspace, port and broadcast domain.
