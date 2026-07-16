@@ -5381,6 +5381,349 @@ class ShareManagerTestCase(test.TestCase):
                                   (['INFO', 'share.extend.start'],
                                    ['INFO', 'share.extend.end']))
 
+    @ddt.data(
+        (constants.STATUS_MIGRATING,
+         constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS,
+         None, constants.STATUS_ACTIVE,
+         constants.STATUS_MIGRATING),
+        (constants.STATUS_SERVER_MIGRATING,
+         None,
+         constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS,
+         constants.STATUS_SERVER_MIGRATING,
+         constants.STATUS_SERVER_MIGRATING),
+    )
+    @ddt.unpack
+    def test_extend_share_preserves_migrating_on_success(
+            self, migrating_status, share_task_state, server_task_state,
+            server_status, expected_status):
+        share_type = db_utils.create_share_type()
+        share = db_utils.create_share(
+            share_type_id=share_type['id'],
+            status=constants.STATUS_EXTENDING,
+            task_state=share_task_state)
+        share_id = share['id']
+        new_size = 123
+        reservations = {}
+        share_server = {
+            'id': 'fake_ss_id',
+            'status': server_status,
+            'task_state': server_task_state,
+        }
+
+        manager = self.share_manager
+        self.mock_object(manager, 'driver')
+        self.mock_object(manager.db, 'share_get',
+                         mock.Mock(return_value=share))
+        self.mock_object(manager.db, 'share_server_get',
+                         mock.Mock(return_value=share_server))
+        self.mock_object(manager.db, 'share_update',
+                         mock.Mock(return_value=share))
+        self.mock_object(quota.QUOTAS, 'commit')
+        self.mock_object(manager.driver, 'extend_share')
+        self.mock_object(manager, '_get_share_server',
+                         mock.Mock(return_value=share_server))
+
+        manager.extend_share(self.context, share_id, new_size, reservations)
+
+        manager.db.share_update.assert_called_once_with(
+            mock.ANY, share_id,
+            {'size': int(new_size), 'status': expected_status})
+
+    @ddt.data(
+        (constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS,
+         None, constants.STATUS_ACTIVE,
+         constants.STATUS_MIGRATING),
+        (None,
+         constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS,
+         constants.STATUS_SERVER_MIGRATING,
+         constants.STATUS_SERVER_MIGRATING),
+    )
+    @ddt.unpack
+    def test_extend_share_preserves_migrating_on_error(
+            self, share_task_state, server_task_state, server_status,
+            expected_status):
+        share_type = db_utils.create_share_type()
+        share = db_utils.create_share(
+            share_type_id=share_type['id'],
+            status=constants.STATUS_EXTENDING,
+            task_state=share_task_state)
+        share_id = share['id']
+        share_server = {
+            'id': 'fake_ss_id',
+            'status': server_status,
+            'task_state': server_task_state,
+        }
+
+        manager = self.share_manager
+        self.mock_object(manager, 'driver')
+        self.mock_object(manager.db, 'share_get',
+                         mock.Mock(return_value=share))
+        self.mock_object(manager.db, 'share_server_get',
+                         mock.Mock(return_value=share_server))
+        mock_update = self.mock_object(manager.db, 'share_update')
+        self.mock_object(quota.QUOTAS, 'rollback')
+        self.mock_object(manager.driver, 'extend_share',
+                         mock.Mock(side_effect=Exception('fake')))
+        self.mock_object(manager, '_get_share_server',
+                         mock.Mock(return_value=share_server))
+
+        self.assertRaises(
+            exception.ShareExtendingError,
+            manager.extend_share, self.context, share_id, 123, {})
+
+        mock_update.assert_called_once_with(
+            mock.ANY, share_id, {'status': expected_status})
+
+    def test_extend_share_migration_finished_midflight_success(self):
+        share_type = db_utils.create_share_type()
+        initial_share = db_utils.create_share(
+            share_type_id=share_type['id'],
+            status=constants.STATUS_EXTENDING,
+            task_state=constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS)
+        share_id = initial_share['id']
+        finished_share = dict(initial_share)
+        finished_share['task_state'] = constants.TASK_STATE_MIGRATION_SUCCESS
+        share_server = {
+            'id': 'fake_ss_id',
+            'status': constants.STATUS_ACTIVE,
+            'task_state': None,
+        }
+
+        manager = self.share_manager
+        self.mock_object(manager, 'driver')
+        self.mock_object(manager.db, 'share_get',
+                         mock.Mock(side_effect=[initial_share,
+                                                finished_share]))
+        self.mock_object(manager.db, 'share_server_get',
+                         mock.Mock(return_value=share_server))
+        mock_update = self.mock_object(manager.db, 'share_update',
+                                       mock.Mock(return_value=finished_share))
+        self.mock_object(quota.QUOTAS, 'commit')
+        self.mock_object(manager.driver, 'extend_share')
+        self.mock_object(manager, '_get_share_server',
+                         mock.Mock(return_value=share_server))
+
+        manager.extend_share(self.context, share_id, 123, {})
+
+        mock_update.assert_called_once_with(
+            mock.ANY, share_id,
+            {'size': 123, 'status': constants.STATUS_AVAILABLE.lower()})
+
+    def test_extend_share_migration_finished_midflight_error(self):
+        share_type = db_utils.create_share_type()
+        initial_share = db_utils.create_share(
+            share_type_id=share_type['id'],
+            status=constants.STATUS_EXTENDING,
+            task_state=constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS)
+        share_id = initial_share['id']
+        finished_share = dict(initial_share)
+        finished_share['task_state'] = constants.TASK_STATE_MIGRATION_SUCCESS
+        share_server = {
+            'id': 'fake_ss_id',
+            'status': constants.STATUS_ACTIVE,
+            'task_state': None,
+        }
+
+        manager = self.share_manager
+        self.mock_object(manager, 'driver')
+        self.mock_object(manager.db, 'share_get',
+                         mock.Mock(side_effect=[initial_share,
+                                                finished_share]))
+        self.mock_object(manager.db, 'share_server_get',
+                         mock.Mock(return_value=share_server))
+        mock_update = self.mock_object(manager.db, 'share_update')
+        self.mock_object(quota.QUOTAS, 'rollback')
+        self.mock_object(manager.driver, 'extend_share',
+                         mock.Mock(side_effect=Exception('fake')))
+        self.mock_object(manager, '_get_share_server',
+                         mock.Mock(return_value=share_server))
+
+        self.assertRaises(
+            exception.ShareExtendingError,
+            manager.extend_share, self.context, share_id, 123, {})
+
+        mock_update.assert_called_once_with(
+            mock.ANY, share_id,
+            {'status': constants.STATUS_EXTENDING_ERROR})
+
+    @ddt.data(
+        (constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS,
+         None, constants.STATUS_ACTIVE,
+         constants.STATUS_MIGRATING),
+        (None,
+         constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS,
+         constants.STATUS_SERVER_MIGRATING,
+         constants.STATUS_SERVER_MIGRATING),
+    )
+    @ddt.unpack
+    def test_shrink_share_preserves_migrating_on_success(
+            self, share_task_state, server_task_state, server_status,
+            expected_status):
+        share_type = db_utils.create_share_type()
+        share = db_utils.create_share(
+            size=5,
+            share_type_id=share_type['id'],
+            status=constants.STATUS_SHRINKING,
+            task_state=share_task_state)
+        share_id = share['id']
+        new_size = 3
+        share_server = {
+            'id': 'fake_ss_id',
+            'status': server_status,
+            'task_state': server_task_state,
+        }
+
+        manager = self.share_manager
+        self.mock_object(manager, 'driver')
+        self.mock_object(manager.db, 'share_get',
+                         mock.Mock(return_value=share))
+        self.mock_object(manager.db, 'share_server_get',
+                         mock.Mock(return_value=share_server))
+        mock_update = self.mock_object(manager.db, 'share_update',
+                                       mock.Mock(return_value=share))
+        self.mock_object(manager.db, 'share_replicas_get_all_by_share',
+                         mock.Mock(return_value=[]))
+        self.mock_object(quota.QUOTAS, 'reserve')
+        self.mock_object(quota.QUOTAS, 'commit')
+        self.mock_object(manager.driver, 'shrink_share')
+        self.mock_object(manager, '_get_share_server',
+                         mock.Mock(return_value=share_server))
+
+        manager.shrink_share(self.context, share_id, new_size)
+
+        mock_update.assert_called_once_with(
+            mock.ANY, share_id,
+            {'size': new_size, 'status': expected_status})
+
+    @ddt.data(
+        (constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS,
+         None, constants.STATUS_ACTIVE,
+         constants.STATUS_MIGRATING),
+        (None,
+         constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS,
+         constants.STATUS_SERVER_MIGRATING,
+         constants.STATUS_SERVER_MIGRATING),
+    )
+    @ddt.unpack
+    def test_shrink_share_preserves_migrating_on_error(
+            self, share_task_state, server_task_state, server_status,
+            expected_status):
+        share_type = db_utils.create_share_type()
+        share = db_utils.create_share(
+            size=5,
+            share_type_id=share_type['id'],
+            status=constants.STATUS_SHRINKING,
+            task_state=share_task_state)
+        share_id = share['id']
+        share_server = {
+            'id': 'fake_ss_id',
+            'status': server_status,
+            'task_state': server_task_state,
+        }
+
+        manager = self.share_manager
+        self.mock_object(manager, 'driver')
+        self.mock_object(manager.db, 'share_get',
+                         mock.Mock(return_value=share))
+        self.mock_object(manager.db, 'share_server_get',
+                         mock.Mock(return_value=share_server))
+        mock_update = self.mock_object(manager.db, 'share_update')
+        self.mock_object(manager.db, 'share_replicas_get_all_by_share',
+                         mock.Mock(return_value=[]))
+        self.mock_object(quota.QUOTAS, 'reserve')
+        self.mock_object(quota.QUOTAS, 'rollback')
+        self.mock_object(manager.driver, 'shrink_share',
+                         mock.Mock(side_effect=Exception('fake')))
+        self.mock_object(manager, '_get_share_server',
+                         mock.Mock(return_value=share_server))
+
+        self.assertRaises(
+            exception.ShareShrinkingError,
+            manager.shrink_share, self.context, share_id, 3)
+
+        mock_update.assert_called_once_with(
+            mock.ANY, share_id, {'status': expected_status})
+
+    def test_shrink_share_migration_finished_midflight_success(self):
+        share_type = db_utils.create_share_type()
+        initial_share = db_utils.create_share(
+            size=5,
+            share_type_id=share_type['id'],
+            status=constants.STATUS_SHRINKING,
+            task_state=constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS)
+        share_id = initial_share['id']
+        finished_share = dict(initial_share)
+        finished_share['task_state'] = constants.TASK_STATE_MIGRATION_SUCCESS
+        share_server = {
+            'id': 'fake_ss_id',
+            'status': constants.STATUS_ACTIVE,
+            'task_state': None,
+        }
+
+        manager = self.share_manager
+        self.mock_object(manager, 'driver')
+        self.mock_object(manager.db, 'share_get',
+                         mock.Mock(side_effect=[initial_share,
+                                                finished_share]))
+        self.mock_object(manager.db, 'share_server_get',
+                         mock.Mock(return_value=share_server))
+        mock_update = self.mock_object(manager.db, 'share_update',
+                                       mock.Mock(return_value=finished_share))
+        self.mock_object(manager.db, 'share_replicas_get_all_by_share',
+                         mock.Mock(return_value=[]))
+        self.mock_object(quota.QUOTAS, 'reserve')
+        self.mock_object(quota.QUOTAS, 'commit')
+        self.mock_object(manager.driver, 'shrink_share')
+        self.mock_object(manager, '_get_share_server',
+                         mock.Mock(return_value=share_server))
+
+        manager.shrink_share(self.context, share_id, 3)
+
+        mock_update.assert_called_once_with(
+            mock.ANY, share_id,
+            {'size': 3, 'status': constants.STATUS_AVAILABLE})
+
+    def test_shrink_share_migration_finished_midflight_error(self):
+        share_type = db_utils.create_share_type()
+        initial_share = db_utils.create_share(
+            size=5,
+            share_type_id=share_type['id'],
+            status=constants.STATUS_SHRINKING,
+            task_state=constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS)
+        share_id = initial_share['id']
+        finished_share = dict(initial_share)
+        finished_share['task_state'] = constants.TASK_STATE_MIGRATION_SUCCESS
+        share_server = {
+            'id': 'fake_ss_id',
+            'status': constants.STATUS_ACTIVE,
+            'task_state': None,
+        }
+
+        manager = self.share_manager
+        self.mock_object(manager, 'driver')
+        self.mock_object(manager.db, 'share_get',
+                         mock.Mock(side_effect=[initial_share,
+                                                finished_share]))
+        self.mock_object(manager.db, 'share_server_get',
+                         mock.Mock(return_value=share_server))
+        mock_update = self.mock_object(manager.db, 'share_update')
+        self.mock_object(manager.db, 'share_replicas_get_all_by_share',
+                         mock.Mock(return_value=[]))
+        self.mock_object(quota.QUOTAS, 'reserve')
+        self.mock_object(quota.QUOTAS, 'rollback')
+        self.mock_object(manager.driver, 'shrink_share',
+                         mock.Mock(side_effect=Exception('fake')))
+        self.mock_object(manager, '_get_share_server',
+                         mock.Mock(return_value=share_server))
+
+        self.assertRaises(
+            exception.ShareShrinkingError,
+            manager.shrink_share, self.context, share_id, 3)
+
+        mock_update.assert_called_once_with(
+            mock.ANY, share_id,
+            {'status': constants.STATUS_SHRINKING_ERROR})
+
     def test_shrink_share_not_supported(self):
         share_type = db_utils.create_share_type()
         share = db_utils.create_share(size=2, share_type_id=share_type['id'])
@@ -6949,6 +7292,11 @@ class ShareManagerTestCase(test.TestCase):
         regular_instance = db_utils.create_share_instance(
             status=constants.STATUS_AVAILABLE,
             share_id='other_id')
+
+        other_share = db_utils.create_share(
+            task_state=None,
+            id='other_id',
+            status=constants.STATUS_AVAILABLE)
         dest_instance = db_utils.create_share_instance(
             share_id='share_id',
             host='fake_host',
@@ -6970,7 +7318,8 @@ class ShareManagerTestCase(test.TestCase):
                          'share_instance_get_all_by_host', mock.Mock(
                              return_value=[regular_instance, src_instance]))
         self.mock_object(self.share_manager.db, 'share_get',
-                         mock.Mock(side_effect=[share, share_cancelled]))
+                         mock.Mock(side_effect=[other_share, share,
+                                                share_cancelled]))
         self.mock_object(api.API, 'get_migrating_instances',
                          mock.Mock(return_value=(
                              src_instance['id'], dest_instance['id'])))
@@ -7054,6 +7403,34 @@ class ShareManagerTestCase(test.TestCase):
 
         (self.share_manager.db.share_snapshot_instance_get_all_with_filters.
             assert_has_calls(snapshot_instance_get_all_calls))
+
+    def test_migration_driver_continue_logs_orphan_task_state(self):
+        orphan_instance = db_utils.create_share_instance(
+            status=constants.STATUS_EXTENDING_ERROR,
+            share_id='orphan_share_id')
+        orphan_share = db_utils.create_share(
+            id='orphan_share_id',
+            task_state=constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS,
+            status=constants.STATUS_EXTENDING_ERROR)
+
+        self.mock_object(manager.LOG, 'warning')
+        self.mock_object(
+            self.share_manager.db, 'share_instance_get_all_by_host',
+            mock.Mock(return_value=[orphan_instance]))
+        self.mock_object(self.share_manager.db, 'share_get',
+                         mock.Mock(return_value=orphan_share))
+
+        self.share_manager.migration_driver_continue(self.context)
+
+        self.assertTrue(manager.LOG.warning.called)
+        warning_call = manager.LOG.warning.call_args
+        self.assertIn('skipped by migration_driver_continue',
+                      warning_call[0][0])
+        self.assertEqual(orphan_instance['id'],
+                         warning_call[0][1]['instance_id'])
+        self.assertEqual(
+            constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS,
+            warning_call[0][1]['task_state'])
 
     @ddt.data({'task_state': constants.TASK_STATE_MIGRATION_DRIVER_PHASE1_DONE,
                'exc': None},
@@ -9568,6 +9945,11 @@ class ShareManagerTestCase(test.TestCase):
         if resource_type == 'share_instance':
             mock_db_instances_status_update = self.mock_object(
                 db, 'share_instance_status_update')
+            self.mock_object(
+                db, 'share_instance_get',
+                mock.Mock(return_value={
+                    'id': 'fakeid1',
+                    'status': constants.STATUS_MIGRATING_TO}))
         else:
             mock_db_instances_status_update = self.mock_object(
                 db, 'share_snapshot_instances_status_update')
@@ -9587,6 +9969,62 @@ class ShareManagerTestCase(test.TestCase):
 
         mock_db_instances_status_update.assert_called_once_with(
             self.context, resource_ids, fields)
+
+    def test__update_resource_status_preserves_extending_error(self):
+        mock_status_update = self.mock_object(
+            db, 'share_instance_status_update')
+        mock_instance_update = self.mock_object(db, 'share_instance_update')
+        self.mock_object(
+            db, 'share_instance_get',
+            mock.Mock(return_value={
+                'id': 'errored-id',
+                'status': constants.STATUS_EXTENDING_ERROR}))
+
+        self.share_manager._update_resource_status(
+            self.context, constants.STATUS_AVAILABLE,
+            task_state=constants.TASK_STATE_MIGRATION_SUCCESS,
+            share_instance_ids=['errored-id'])
+
+        mock_status_update.assert_not_called()
+        mock_instance_update.assert_called_once_with(
+            self.context, 'errored-id',
+            {'task_state': constants.TASK_STATE_MIGRATION_SUCCESS})
+
+    def test__update_resource_status_preserves_shrinking_error(self):
+        mock_status_update = self.mock_object(
+            db, 'share_instance_status_update')
+        self.mock_object(db, 'share_instance_update')
+        self.mock_object(
+            db, 'share_instance_get',
+            mock.Mock(return_value={
+                'id': 'errored-id',
+                'status': constants.STATUS_SHRINKING_ERROR}))
+
+        self.share_manager._update_resource_status(
+            self.context, constants.STATUS_AVAILABLE,
+            share_instance_ids=['errored-id'])
+
+        mock_status_update.assert_not_called()
+
+    def test__update_resource_status_mixed_preserved_and_normal(self):
+        mock_status_update = self.mock_object(
+            db, 'share_instance_status_update')
+        self.mock_object(db, 'share_instance_update')
+        self.mock_object(
+            db, 'share_instance_get',
+            mock.Mock(side_effect=[
+                {'id': 'ok-id', 'status': constants.STATUS_MIGRATING_TO},
+                {'id': 'err-id',
+                 'status': constants.STATUS_EXTENDING_ERROR},
+            ]))
+
+        self.share_manager._update_resource_status(
+            self.context, constants.STATUS_AVAILABLE,
+            share_instance_ids=['ok-id', 'err-id'])
+
+        mock_status_update.assert_called_once_with(
+            self.context, ['ok-id'],
+            {'status': constants.STATUS_AVAILABLE})
 
     def _get_share_server_start_update_calls(
             self, source_share_server, dest_share_server, driver_failed=False):
