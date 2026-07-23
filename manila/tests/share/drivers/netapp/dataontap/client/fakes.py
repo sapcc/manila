@@ -833,10 +833,14 @@ NET_PORT_GET_ITER_RESPONSE = etree.XML("""
 """ % {'node_name': NODE_NAME})
 
 SPEED_SORTED_PORTS = (
-    {'node': NODE_NAME, 'port': 'e0d', 'speed': '10000'},
-    {'node': NODE_NAME, 'port': 'e0c', 'speed': '1000'},
-    {'node': NODE_NAME, 'port': 'e0b', 'speed': '100'},
-    {'node': NODE_NAME, 'port': 'e0a', 'speed': '10'},
+    {'node': NODE_NAME, 'port': 'e0d', 'speed': '10000',
+     'mac-address': '00:0c:29:fc:04:f7'},
+    {'node': NODE_NAME, 'port': 'e0c', 'speed': '1000',
+     'mac-address': '00:0c:29:fc:04:ed'},
+    {'node': NODE_NAME, 'port': 'e0b', 'speed': '100',
+     'mac-address': '00:0c:29:fc:04:e3'},
+    {'node': NODE_NAME, 'port': 'e0a', 'speed': '10',
+     'mac-address': '00:0c:29:fc:04:d9'},
 )
 PORT_NAMES = ('e0a', 'e0b', 'e0c', 'e0d')
 SPEED_SORTED_PORT_NAMES = ('e0d', 'e0c', 'e0b', 'e0a')
@@ -4613,15 +4617,21 @@ FAKE_PEER_GET_RESPONSE = {
 }
 
 REST_SPEED_SORTED_PORTS = [
-    {'node': NODE_NAME, 'port': 'e0d', 'speed': 10000},
-    {'node': NODE_NAME, 'port': 'e0c', 'speed': 1000},
-    {'node': NODE_NAME, 'port': 'e0b', 'speed': 100},
+    {'node': NODE_NAME, 'port': 'e0d', 'speed': 10000,
+     'mac-address': 'aa:bb:cc:dd:ee:04'},
+    {'node': NODE_NAME, 'port': 'e0c', 'speed': 1000,
+     'mac-address': 'aa:bb:cc:dd:ee:03'},
+    {'node': NODE_NAME, 'port': 'e0b', 'speed': 100,
+     'mac-address': 'aa:bb:cc:dd:ee:02'},
 ]
 
 REST_SPEED_NOT_SORTED_PORTS = [
-    {'node': NODE_NAME, 'port': 'e0b', 'speed': 100},
-    {'node': NODE_NAME, 'port': 'e0c', 'speed': 1000},
-    {'node': NODE_NAME, 'port': 'e0d', 'speed': 10000},
+    {'node': NODE_NAME, 'port': 'e0b', 'speed': 100,
+     'mac-address': 'aa:bb:cc:dd:ee:02'},
+    {'node': NODE_NAME, 'port': 'e0c', 'speed': 1000,
+     'mac-address': 'aa:bb:cc:dd:ee:03'},
+    {'node': NODE_NAME, 'port': 'e0d', 'speed': 10000,
+     'mac-address': 'aa:bb:cc:dd:ee:04'},
 ]
 
 REST_ETHERNET_PORTS = {
@@ -4641,6 +4651,7 @@ REST_ETHERNET_PORTS = {
             },
             "state": "up",
             "speed": 10,
+            "mac_address": "aa:bb:cc:dd:ee:01",
         },
         {
             "uuid": "fake_uuid2",
@@ -4657,6 +4668,7 @@ REST_ETHERNET_PORTS = {
             },
             "state": "up",
             "speed": 100,
+            "mac_address": "aa:bb:cc:dd:ee:02",
         },
         {
             "uuid": "fake_uuid3",
@@ -4673,6 +4685,7 @@ REST_ETHERNET_PORTS = {
             },
             "state": "up",
             "speed": 1000,
+            "mac_address": "aa:bb:cc:dd:ee:03",
         },
         {
             "uuid": "fake_uuid4",
@@ -4689,13 +4702,9 @@ REST_ETHERNET_PORTS = {
             },
             "state": "up",
             "speed": 10000,
+            "mac_address": "aa:bb:cc:dd:ee:04",
         }
     ],
-}
-
-SVM_ITEM_SIMPLE_RESPONSE_REST = {
-    "uuid": "fake_uuid",
-    "name": VSERVER_NAME,
 }
 
 FAKE_GET_BROADCAST_DOMAIN = {

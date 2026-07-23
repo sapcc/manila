@@ -5178,7 +5178,7 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             'state': 'up',
             'type': 'physical',
             'broadcast_domain.name': 'Default',
-            'fields': 'node.name,speed,name'
+            'fields': 'node.name,speed,name,mac_address'
         }
 
         query_interfaces = {

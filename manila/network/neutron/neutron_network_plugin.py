@@ -165,6 +165,7 @@ class NeutronNetworkPlugin(network.NetworkBaseAPI):
 
         allocation_count = kwargs.get('count', 1)
         device_owner = kwargs.get('device_owner', 'share')
+        mac_address = kwargs.get('mac_address')
 
         ports = []
         for current_count in range(0, allocation_count):
@@ -175,7 +176,8 @@ class NeutronNetworkPlugin(network.NetworkBaseAPI):
                                   share_network_subnet,
                                   device_owner,
                                   current_count,
-                                  is_external_network=is_external_network),
+                                  is_external_network=is_external_network,
+                                  mac_address=mac_address),
             )
 
         return ports
@@ -348,8 +350,8 @@ class NeutronNetworkPlugin(network.NetworkBaseAPI):
 
     def _get_port_create_args(self, share_server, share_network_subnet,
                               device_owner, count=0,
-                              is_external_network=False):
-        return {
+                              is_external_network=False, mac_address=None):
+        args = {
             "network_id": share_network_subnet['neutron_net_id'],
             "subnet_id": share_network_subnet['neutron_subnet_id'],
             "device_owner": 'manila:' + device_owner,
@@ -360,16 +362,32 @@ class NeutronNetworkPlugin(network.NetworkBaseAPI):
             # neutron creates merely assist in IPAM.
             "admin_state_up": not is_external_network,
         }
+        if mac_address:
+            args["mac_address"] = mac_address
+        return args
 
     def _create_port(self, context, share_server, share_network,
                      share_network_subnet, device_owner, count=0,
-                     is_external_network=False):
+                     is_external_network=False, mac_address=None):
         create_args = self._get_port_create_args(
             share_server, share_network_subnet, device_owner, count,
-            is_external_network=is_external_network)
+            is_external_network=is_external_network,
+            mac_address=mac_address)
 
-        port = self.neutron_api.create_port(
-            share_network['project_id'], **create_args)
+        try:
+            port = self.neutron_api.create_port(
+                share_network['project_id'], **create_args)
+        except exception.MacAddressInUse:
+            LOG.warning('MAC %s already in use on network %s; retrying '
+                        'without MAC (overflow port — real wire MAC recorded '
+                        'in port description).',
+                        mac_address,
+                        share_network_subnet['neutron_net_id'])
+            create_args.pop('mac_address', None)
+            create_args['description'] = (
+                'NetApp LIF; effective wire MAC=%s' % mac_address)
+            port = self.neutron_api.create_port(
+                share_network['project_id'], **create_args)
 
         if is_external_network:
             msg = (
@@ -639,11 +657,12 @@ class NeutronBindNetworkPlugin(NeutronNetworkPlugin):
 
     def _get_port_create_args(self, share_server, share_network_subnet,
                               device_owner, count=0,
-                              is_external_network=False):
+                              is_external_network=False, mac_address=None):
         arguments = super(
             NeutronBindNetworkPlugin, self)._get_port_create_args(
             share_server, share_network_subnet, device_owner, count,
-            is_external_network=is_external_network
+            is_external_network=is_external_network,
+            mac_address=mac_address
         )
         arguments['host_id'] = self.config.neutron_host_id
         arguments['binding:vnic_type'] = self.config.neutron_vnic_type
