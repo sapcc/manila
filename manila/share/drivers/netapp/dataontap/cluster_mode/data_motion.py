@@ -1010,7 +1010,8 @@ class DataMotionSession(object):
                     "Retries exhausted. Aborting") % source_vserver
             raise exception.NetAppException(message=msg)
 
-    def wait_for_mount_replica(self, vserver_client, share_name, timeout=300):
+    def wait_for_mount_replica(self, vserver_client, share_name, timeout=300,
+                               mount_point_name=None):
         """Mount a replica share that is waiting for snapmirror initialize.
 
         Polls the SnapMirror relationship state and only retries the mount
@@ -1078,6 +1079,10 @@ class DataMotionSession(object):
                 return False, last_err
             return None, None
 
+        junction_path = ('/%s' % mount_point_name
+                         if mount_point_name
+                         else None)
+
         @utils.retry(exception.ShareBusyException, interval=interval,
                      retries=retries, backoff_rate=1)
         def try_mount_volume():
@@ -1091,7 +1096,7 @@ class DataMotionSession(object):
                 LOG.error(msg)
                 raise exception.NetAppException(message=msg)
             try:
-                vserver_client.mount_volume(share_name)
+                vserver_client.mount_volume(share_name, junction_path)
             except netapp_api.NaApiError as e:
                 undergoing_snap_init = 'snapmirror initialize'
                 msg_args = {'name': share_name, 'err_msg': e.message}

@@ -1279,7 +1279,7 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
         self.dm_session.wait_for_mount_replica(
             mock_client, fake.SHARE_NAME)
 
-        mock_client.mount_volume.ssert_called_once_with(fake.SHARE_NAME)
+        mock_client.mount_volume.assert_called_once_with(fake.SHARE_NAME, None)
         self.assertEqual(0, mock_warning_log.call_count)
 
     def test_wait_for_mount_replica_timeout(self):
@@ -1314,7 +1314,7 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
                           self.dm_session.wait_for_mount_replica,
                           mock_client, fake.SHARE_NAME, timeout=30)
 
-        mock_client.mount_volume.assert_called_once_with(fake.SHARE_NAME)
+        mock_client.mount_volume.assert_called_once_with(fake.SHARE_NAME, None)
         mock_warning_log.assert_not_called()
 
     def test_wait_for_mount_replica_sync_in_sync_mounts_immediately(self):
@@ -1331,7 +1331,7 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
         self.dm_session.wait_for_mount_replica(
             mock_client, fake.SHARE_NAME)
 
-        mock_client.mount_volume.assert_called_once_with(fake.SHARE_NAME)
+        mock_client.mount_volume.assert_called_once_with(fake.SHARE_NAME, None)
 
     def test_wait_for_mount_replica_sync_terminal_fails_fast(self):
         """A broken/error Sync relationship must NOT spin retries."""
@@ -1369,7 +1369,7 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
         self.dm_session.wait_for_mount_replica(
             mock_client, fake.SHARE_NAME)
 
-        mock_client.mount_volume.assert_called_once_with(fake.SHARE_NAME)
+        mock_client.mount_volume.assert_called_once_with(fake.SHARE_NAME, None)
 
     def test_wait_for_mount_replica_falls_back_when_sm_state_unknown(self):
         """Legacy substring match still works when SnapMirror lookup fails."""
@@ -1388,6 +1388,19 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
                           mock_client, fake.SHARE_NAME, timeout=30)
         # Fell back to the substring heuristic and retried.
         self.assertEqual(3, mock_client.mount_volume.call_count)
+
+    def test_wait_for_mount_replica_custom_mount_point_name(self):
+
+        mock_client = mock.Mock()
+        mock_client.get_snapmirrors.return_value = []
+        self.mock_object(time, 'sleep')
+
+        self.dm_session.wait_for_mount_replica(
+            mock_client, fake.SHARE_NAME,
+            mount_point_name='my-custom-mount')
+
+        mock_client.mount_volume.assert_called_once_with(
+            fake.SHARE_NAME, '/my-custom-mount')
 
     @ddt.data(mock.Mock(),
               mock.Mock(side_effect=netapp_api.NaApiError(
