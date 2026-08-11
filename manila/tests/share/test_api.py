@@ -765,6 +765,23 @@ class ShareAPITestCase(test.TestCase):
         self.assertSubDictMatch(share_data,
                                 db_api.share_create.call_args[0][1])
 
+    def test_update_share_network_subnet_from_metadata_no_servers(self):
+        CONF.set_default('driver_updatable_subnet_metadata', ['showmount'])
+        self.mock_object(
+            db_api, 'share_server_get_all_by_host_and_or_share_subnet',
+            mock.Mock(
+                side_effect=exception.ShareServerNotFoundByFilters(
+                    filters_description='subnet_id=fake_subnet_id')))
+        mock_call = self.mock_object(
+            self.api.share_rpcapi,
+            'update_share_network_subnet_from_metadata')
+
+        self.api.update_share_network_subnet_from_metadata(
+            self.context, 'fake_sn_id', 'fake_subnet_id',
+            {'showmount': None})
+
+        mock_call.assert_not_called()
+
     @ddt.data(
         {},
         {
