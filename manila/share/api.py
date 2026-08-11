@@ -626,11 +626,17 @@ class API(base.Base):
                 driver_metadata.update({k: v})
 
         if driver_metadata:
-            share_servers = (
-                self.db.share_server_get_all_by_host_and_or_share_subnet(
-                    context,
-                    host=None,
-                    share_subnet_id=share_network_subnet_id))
+            try:
+                share_servers = (
+                    self.db.share_server_get_all_by_host_and_or_share_subnet(
+                        context,
+                        host=None,
+                        share_subnet_id=share_network_subnet_id))
+            except exception.ShareServerNotFoundByFilters:
+                LOG.debug('No share servers found for subnet %s, skipping '
+                          'driver metadata update.',
+                          share_network_subnet_id)
+                return
             for share_server in share_servers:
                 self.share_rpcapi.update_share_network_subnet_from_metadata(
                     context,
