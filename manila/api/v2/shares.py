@@ -747,7 +747,10 @@ class ShareController(wsgi.Controller,
         if key in self._conf_admin_only_metadata_keys:
             policy.check_policy(context, 'share',
                                 'update_admin_only_metadata')
-        return self._delete_metadata(req, resource_id, key)
+        result = self._delete_metadata(req, resource_id, key)
+        self.share_api.reset_share_metadata_to_default(
+            context, resource_id, key)
+        return result
 
 
 def create_resource():
