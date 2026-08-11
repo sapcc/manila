@@ -3773,10 +3773,15 @@ class ShareManagerTestCase(test.TestCase):
             id=fake_parent_id, status=constants.STATUS_ACTIVE,
             share_network_subnets=fake_share_net_subnets)
         share = db_utils.create_share()
-        # Use a mock so both dict-style access and attribute access work.
         fake_snapshot = mock.MagicMock()
-        fake_snapshot['share']['instance']['share_server_id'] = fake_parent_id
-        fake_snapshot['share']['instance']['host'] = share.instance['host']
+        fake_snapshot.__getitem__ = mock.Mock(
+            side_effect=lambda k: {
+                'share': {'instance': {
+                    'share_server_id': fake_parent_id,
+                    'host': share.instance['host'],
+                }}
+            }[k])
+        fake_snapshot.instance = None
 
         self.mock_object(db, 'share_server_get',
                          mock.Mock(return_value=fake_parent_share_server))
@@ -3798,7 +3803,7 @@ class ShareManagerTestCase(test.TestCase):
         mock_synchronized.assert_not_called()
 
     def test_provide_share_server_lock_acquired_for_cross_host_snapshot(self):
-        """Lock must be acquired when snapshot parent is on a different host."""
+        """Lock must be acquired when snapshot parent is on a diff. host."""
         fake_parent_id = "fake_server_id"
         fake_share_network = db_utils.create_share_network(id='fake_sn_id')
         fake_share_net_subnets = [db_utils.create_share_network_subnet(
@@ -3810,9 +3815,14 @@ class ShareManagerTestCase(test.TestCase):
         share = db_utils.create_share()
 
         fake_snapshot = mock.MagicMock()
-        fake_snapshot['share']['instance']['share_server_id'] = fake_parent_id
-        # Different host → parent_share_same_dest=False → lock required
-        fake_snapshot['share']['instance']['host'] = 'other@host#POOL'
+        fake_snapshot.__getitem__ = mock.Mock(
+            side_effect=lambda k: {
+                'share': {'instance': {
+                    'share_server_id': fake_parent_id,
+                    'host': 'other@host#POOL',  # Diff. host → lock required
+                }}
+            }[k])
+        fake_snapshot.instance = None
 
         self.mock_object(db, 'share_server_get',
                          mock.Mock(return_value=fake_parent_share_server))
