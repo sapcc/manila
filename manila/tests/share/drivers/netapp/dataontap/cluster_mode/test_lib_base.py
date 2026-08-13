@@ -1213,6 +1213,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         mock_pvt_storage_get = self.mock_object(
             self.library.private_storage, 'get',
             mock.Mock(return_value=json.dumps(copy_fake_src_share)))
+        self.mock_object(share_types, 'get_extra_specs_from_share',
+                         mock.Mock(return_value={}))
         mock__create_continue = self.mock_object(
             self.library, '_create_from_snapshot_continue',
             mock.Mock(side_effect=exception.NetAppException))
@@ -2498,8 +2500,12 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         vserver_client = mock.Mock()
         fake_share = copy.deepcopy(fake.SHARE)
         if force:
-            # assuming CONF.force_delete_time > 0 (which it is by default)
-            fake_share['duration_seconds'] = 0
+            extra_specs = {'netapp:force_delete_time_minutes': '10'}
+            fake_share.update({'duration_seconds': 59})
+        else:
+            extra_specs = {}
+        self.mock_object(share_types, 'get_extra_specs_from_share',
+                         mock.Mock(return_value=extra_specs))
         self.mock_object(self.library,
                          '_get_vserver',
                          mock.Mock(return_value=(fake.VSERVER1,
@@ -2534,6 +2540,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
     def test__delete_share_no_remove_qos_and_export(self):
 
         vserver_client = mock.Mock()
+        self.mock_object(share_types, 'get_extra_specs_from_share',
+                         mock.Mock(return_value={}))
         mock_share_exists = self.mock_object(self.library,
                                              '_share_exists',
                                              mock.Mock(return_value=True))
@@ -2596,6 +2604,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
     def test_delete_share_not_found(self):
 
         vserver_client = mock.Mock()
+        self.mock_object(share_types, 'get_extra_specs_from_share',
+                         mock.Mock(return_value={}))
         self.mock_object(self.library,
                          '_get_vserver',
                          mock.Mock(return_value=(fake.VSERVER1,

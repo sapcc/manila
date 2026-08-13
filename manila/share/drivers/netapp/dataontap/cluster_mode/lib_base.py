@@ -2316,11 +2316,13 @@ class NetAppCmodeFileStorageLibrary(object):
         # Share doesn't need to exist to be assigned to a fpolicy scope
         self._delete_fpolicy_for_share(share, vserver, vserver_client)
 
-        duration_sec = share.get('duration_seconds', 24 * 60 * 60)  # 24 Hrs
-        force_delete_sec = CONF.force_delete_time * 60 * 60
-        force_delete = False
-        if force_delete_sec > 0 and duration_sec < force_delete_sec:
-            force_delete = True
+        duration_sec = share.get(
+            'duration_seconds', constants.ONE_WEEK_IN_SECONDS)
+        extra_specs = share_types.get_extra_specs_from_share(share)
+        force_delete_minutes = int(
+            extra_specs.get('netapp:force_delete_time_minutes', 0))
+        force_delete = (force_delete_minutes > 0
+                        and duration_sec < force_delete_minutes * 60)
         if self._share_exists(share_name, vserver_client):
             clone_status = vserver_client.volume_clone_split_status(share_name)
             if clone_status == 'ongoing':
