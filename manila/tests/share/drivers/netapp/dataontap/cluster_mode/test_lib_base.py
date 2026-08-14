@@ -44,6 +44,7 @@ from manila.share.drivers.netapp.dataontap.protocols import cifs_cmode
 from manila.share.drivers.netapp.dataontap.protocols import nfs_cmode
 from manila.share.drivers.netapp import options as na_opts
 from manila.share.drivers.netapp import utils as na_utils
+from manila.share import qos_types
 from manila.share import share_types
 from manila.share import utils as share_utils
 from manila import test
@@ -8056,6 +8057,295 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
     #             mock.call('share_s_2', True),
     #             mock.call('share_s_3', True),
     #         ])
+
+    def test_ensure_shares(self):
+        share1 = fake_share.fake_share_instance(id='s-1',
+                                                share_server='fake_server_1')
+        share2 = fake_share.fake_share_instance(id='s-2',
+                                                share_server='fake_server_2')
+        share3 = fake_share.fake_share_instance(id='s-3',
+                                                share_server='fake_server_2')
+
+        shares = [share1, share2, share3]
+        self.mock_object(
+            self.library, 'update_share',
+            mock.Mock(side_effect=[
+                [dict(path=(':'.join(['10.10.10.10', 'fake_export_path1'])),
+                      is_admin_only=True, metadata=None),
+                 dict(path=(':'.join(['10.10.10.20', 'fake_export_path1'])),
+                      is_admin_only=False, metadata=None)],
+                [dict(path=(':'.join(['10.10.10.10', 'fake_export_path2'])),
+                      is_admin_only=True, metadata=None),
+                 dict(path=(':'.join(['10.10.10.20', 'fake_export_path2'])),
+                      is_admin_only=False, metadata=None)],
+                [dict(path=(':'.join(['10.10.10.10', 'fake_export_path3'])),
+                      is_admin_only=True, metadata=None),
+                 dict(path=(':'.join(['10.10.10.20', 'fake_export_path3'])),
+                      is_admin_only=False, metadata=None)],
+            ]))
+
+        self.library.ensure_shares(self.context, shares)
+        self.library.update_share.assert_has_calls([
+            mock.call(share1, share_server='fake_server_1'),
+            mock.call(share2, share_server='fake_server_2'),
+            mock.call(share3, share_server='fake_server_2'),
+        ])
+
+    @ddt.data('fake_message', 'Could not find volume')
+    def test_ensure_shares_exception(self, msg):
+        share1 = fake_share.fake_share_instance(id='s-1',
+                                                share_server='fake_server_1')
+        share2 = fake_share.fake_share_instance(id='s-2',
+                                                share_server='fake_server_2')
+        shares = [share1, share2]
+        na_api_error = netapp_api.NaApiError(code=netapp_api.EAPIERROR,
+                                             message=msg)
+        self.mock_object(
+            self.library, 'update_share', mock.Mock(side_effect=na_api_error))
+
+        updates = self.library.ensure_shares(self.context, shares)
+        self.assertEqual(updates, {})
+        if msg.lower().startswith('could not find'):
+            self.assertEqual(2, lib_base.LOG.debug.call_count)
+        else:
+            self.assertEqual(2, lib_base.LOG.warning.call_count)
+
+    def test_update_share(self):
+        vserver_client = mock.Mock()
+        share = fake_share.fake_share_instance(id='s-1',
+                                               share_server=fake.VSERVER1)
+        self.mock_object(
+            self.library, '_get_vserver',
+            mock.Mock(return_value=(fake.VSERVER1, vserver_client)))
+        mock_share_name = self.mock_object(
+            self.library, '_get_backend_share_name',
+            mock.Mock(return_value=fake.SHARE_NAME))
+        self.mock_object(
+            self.library, '_get_backend_share_comment',
+            mock.Mock(return_value='fake_comment'))
+        mock_extract = self.mock_object(
+            share_utils, 'extract_host',
+            mock.Mock(return_value=fake.POOL_NAME))
+        mock_get_extra_specs = self.mock_object(
+            share_types, 'get_extra_specs_from_share',
+            mock.Mock(return_value=fake.EXTRA_SPEC_WITH_QOS))
+        provisioning_options = copy.deepcopy(
+            fake.PROVISIONING_OPTIONS_WITH_FPOLICY)
+        mock_get_provisioning_opts = self.mock_object(
+            self.library, '_get_provisioning_options_for_share',
+            mock.Mock(return_value=provisioning_options))
+        self.mock_object(
+            self.library, '_get_logical_space_options',
+            mock.Mock(return_value={}))
+        mock_qos_type_specs = self.mock_object(
+            qos_types, 'get_specs_from_share',
+            mock.Mock(return_value=None))
+        self.mock_object(
+            self.library, '_get_normalized_qos_type_specs',
+            mock.Mock(return_value=None))
+        mock_modify_create_qos = self.mock_object(
+            self.library, '_modify_or_create_qos_for_existing_share',
+            mock.Mock(return_value=fake.QOS_POLICY_GROUP_NAME))
+        self.mock_object(
+            self.library, '_get_provisioning_options_for_snap_attributes',
+            mock.Mock(return_value={}))
+        self.mock_object(
+            self.library, '_get_cross_volume_dedupe_options',
+            mock.Mock(return_value={}))
+        mock_modify_volume = self.mock_object(
+            vserver_client, 'modify_volume')
+        mock_is_readable_replica = self.mock_object(
+            self.library, '_is_readable_replica', mock.Mock(return_value=True))
+        mock_set_max_files = self.mock_object(
+            vserver_client, 'set_volume_max_files')
+        mock_junction_path = self.mock_object(
+            vserver_client, 'get_volume_junction_path',
+            mock.Mock(return_value='/junction/path'))
+        mock_mount_volume = self.mock_object(vserver_client, 'mount_volume')
+        mock_create_export = self.mock_object(
+            self.library,
+            '_create_export',
+            mock.Mock(return_value='fake_export_location'))
+
+        result = self.library.update_share(share, share_server=fake.VSERVER1)
+
+        self.library._get_vserver.assert_called_once_with(
+            share_server=fake.VSERVER1)
+        mock_share_name.assert_called_once_with(share['id'])
+        mock_extract.assert_called_once_with(share['host'], level='pool')
+        mock_get_extra_specs.assert_called_once_with(share)
+        mock_get_provisioning_opts.assert_called_once_with(
+            share, fake.VSERVER1, vserver_client=vserver_client,
+            set_qos=False)
+        mock_qos_type_specs.assert_called_once_with(share)
+        mock_modify_create_qos.assert_called_once_with(
+            share, fake.EXTRA_SPEC_WITH_QOS,
+            fake.VSERVER1, vserver_client)
+
+        expected_options = copy.deepcopy(provisioning_options)
+        expected_options['qos_policy_group'] = fake.QOS_POLICY_GROUP_NAME
+        mock_modify_volume.assert_called_once_with(
+            fake.POOL_NAME,
+            fake.SHARE_NAME,
+            comment=mock.ANY,
+            **expected_options)
+
+        mock_is_readable_replica.assert_called_once_with(share)
+        mock_set_max_files.assert_not_called()
+        mock_junction_path.assert_called()
+        mock_mount_volume.assert_not_called()
+        mock_create_export.assert_called_once_with(
+            share,
+            fake.VSERVER1,
+            fake.VSERVER1,
+            vserver_client,
+            clear_current_export_policy=False,
+            ensure_share_already_exists=True,
+            replica=True)
+
+        self.assertEqual(result, 'fake_export_location')
+
+    def test_update_share_with_fixed_qos_type(self):
+        vserver_client = mock.Mock()
+        share = fake_share.fake_share_instance(id='s-1',
+                                               share_server=fake.VSERVER1)
+        self.mock_object(
+            self.library, '_get_vserver',
+            mock.Mock(return_value=(fake.VSERVER1, vserver_client)))
+        self.mock_object(
+            self.library, '_get_backend_share_name',
+            mock.Mock(return_value=fake.SHARE_NAME))
+        self.mock_object(
+            self.library, '_get_backend_share_comment',
+            mock.Mock(return_value='fake_comment'))
+        self.mock_object(
+            share_utils, 'extract_host',
+            mock.Mock(return_value=fake.POOL_NAME))
+        self.mock_object(
+            share_types, 'get_extra_specs_from_share',
+            mock.Mock(return_value={}))
+        provisioning_options = {}
+        self.mock_object(
+            self.library, '_get_provisioning_options_for_share',
+            mock.Mock(return_value=provisioning_options))
+        self.mock_object(
+            self.library, '_get_logical_space_options',
+            mock.Mock(return_value={}))
+        self.mock_object(
+            self.library, '_get_provisioning_options_for_snap_attributes',
+            mock.Mock(return_value={}))
+        self.mock_object(
+            self.library, '_get_cross_volume_dedupe_options',
+            mock.Mock(return_value={}))
+
+        qos_type_specs = {'policy_type': 'fixed', 'max_throughput_iops': 3000}
+        normalized_specs = {
+            'policy_type': 'fixed', 'max_throughput_iops': 3000}
+        self.mock_object(
+            qos_types, 'get_specs_from_share',
+            mock.Mock(return_value=qos_type_specs))
+        self.mock_object(
+            self.library, '_get_normalized_qos_type_specs',
+            mock.Mock(return_value=normalized_specs))
+        mock_create_qos_type = self.mock_object(
+            self.library, '_create_qos_type_policy_group',
+            mock.Mock(return_value=fake.QOS_POLICY_GROUP_NAME))
+        mock_modify_create_qos = self.mock_object(
+            self.library, '_modify_or_create_qos_for_existing_share')
+        mock_modify_volume = self.mock_object(vserver_client, 'modify_volume')
+        self.mock_object(
+            self.library, '_is_readable_replica',
+            mock.Mock(return_value=False))
+        self.mock_object(
+            self.library, '_create_export',
+            mock.Mock(return_value='fake_export_location'))
+
+        self.library.update_share(share, share_server=fake.VSERVER1)
+
+        mock_create_qos_type.assert_called_once_with(
+            share, fake.VSERVER1, normalized_specs, vserver_client)
+        mock_modify_create_qos.assert_not_called()
+        expected_options = {'qos_policy_group': fake.QOS_POLICY_GROUP_NAME}
+        mock_modify_volume.assert_called_once_with(
+            fake.POOL_NAME,
+            fake.SHARE_NAME,
+            comment='fake_comment',
+            **expected_options)
+
+    def test_update_share_with_adaptive_qos_type(self):
+        vserver_client = mock.Mock()
+        share = fake_share.fake_share_instance(id='s-1',
+                                               share_server=fake.VSERVER1)
+        self.mock_object(
+            self.library, '_get_vserver',
+            mock.Mock(return_value=(fake.VSERVER1, vserver_client)))
+        self.mock_object(
+            self.library, '_get_backend_share_name',
+            mock.Mock(return_value=fake.SHARE_NAME))
+        self.mock_object(
+            self.library, '_get_backend_share_comment',
+            mock.Mock(return_value='fake_comment'))
+        self.mock_object(
+            share_utils, 'extract_host',
+            mock.Mock(return_value=fake.POOL_NAME))
+        self.mock_object(
+            share_types, 'get_extra_specs_from_share',
+            mock.Mock(return_value={}))
+        provisioning_options = {}
+        self.mock_object(
+            self.library, '_get_provisioning_options_for_share',
+            mock.Mock(return_value=provisioning_options))
+        self.mock_object(
+            self.library, '_get_logical_space_options',
+            mock.Mock(return_value={}))
+        self.mock_object(
+            self.library, '_get_provisioning_options_for_snap_attributes',
+            mock.Mock(return_value={}))
+        self.mock_object(
+            self.library, '_get_cross_volume_dedupe_options',
+            mock.Mock(return_value={}))
+
+        qos_type_specs = {
+            'policy_type': 'adaptive',
+            'peak_iops': 3000,
+            'expected_iops': 1000,
+        }
+        normalized_specs = {
+            'policy_type': 'adaptive',
+            'peak_iops': 3000,
+            'expected_iops': 1000,
+        }
+        self.mock_object(
+            qos_types, 'get_specs_from_share',
+            mock.Mock(return_value=qos_type_specs))
+        self.mock_object(
+            self.library, '_get_normalized_qos_type_specs',
+            mock.Mock(return_value=normalized_specs))
+        mock_create_qos_type = self.mock_object(
+            self.library, '_create_qos_type_policy_group',
+            mock.Mock(return_value=fake.QOS_POLICY_GROUP_NAME))
+        mock_modify_create_qos = self.mock_object(
+            self.library, '_modify_or_create_qos_for_existing_share')
+        mock_modify_volume = self.mock_object(vserver_client, 'modify_volume')
+        self.mock_object(
+            self.library, '_is_readable_replica',
+            mock.Mock(return_value=False))
+        self.mock_object(
+            self.library, '_create_export',
+            mock.Mock(return_value='fake_export_location'))
+
+        self.library.update_share(share, share_server=fake.VSERVER1)
+
+        mock_create_qos_type.assert_called_once_with(
+            share, fake.VSERVER1, normalized_specs, vserver_client)
+        mock_modify_create_qos.assert_not_called()
+        expected_options = {
+            'adaptive_qos_policy_group': fake.QOS_POLICY_GROUP_NAME}
+        mock_modify_volume.assert_called_once_with(
+            fake.POOL_NAME,
+            fake.SHARE_NAME,
+            comment='fake_comment',
+            **expected_options)
 
     def test__check_volume_clone_split_completed(self):
         vserver_client = mock.Mock()

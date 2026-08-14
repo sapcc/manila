@@ -3229,10 +3229,25 @@ class NetAppCmodeFileStorageLibrary(object):
         provisioning_options.update(
             self._get_logical_space_options(vserver_client, share_name))
 
-        qos_policy_group_name = self._modify_or_create_qos_for_existing_share(
-            share, extra_specs, vserver, vserver_client)
-        if qos_policy_group_name:
-            provisioning_options['qos_policy_group'] = qos_policy_group_name
+        qos_type_specs = qos_types.get_specs_from_share(share)
+        qos_type_specs = self._get_normalized_qos_type_specs(qos_type_specs)
+
+        if qos_type_specs:
+            qos_policy_group_name = self._create_qos_type_policy_group(
+                share, vserver, qos_type_specs, vserver_client)
+            if qos_type_specs.get('policy_type') == self.FIXED_QOS_POLICY_TYPE:
+                provisioning_options['qos_policy_group'] = (
+                    qos_policy_group_name)
+            else:
+                provisioning_options['adaptive_qos_policy_group'] = (
+                    qos_policy_group_name)
+        else:
+            qos_policy_group_name = (
+                self._modify_or_create_qos_for_existing_share(
+                    share, extra_specs, vserver, vserver_client))
+            if qos_policy_group_name:
+                provisioning_options['qos_policy_group'] = (
+                    qos_policy_group_name)
 
         snap_attributes = self._get_provisioning_options_for_snap_attributes(
             vserver_client, share_name)
@@ -5179,8 +5194,8 @@ class NetAppCmodeFileStorageLibrary(object):
                 msg = _('Failed to ensure share %(share)s: '
                         '%(exception)s. ') % msg_args
 
-                if (err_msg.startswith('Could not find') or
-                        err_msg.endswith('not found.')):
+                if (err_msg.lower().startswith('could not find') or
+                        err_msg.lower().endswith('not found.')):
                     LOG.debug(msg)
                 else:
                     LOG.warning(msg)
