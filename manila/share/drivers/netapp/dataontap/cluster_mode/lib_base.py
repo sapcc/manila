@@ -3218,6 +3218,10 @@ class NetAppCmodeFileStorageLibrary(object):
         vserver, vserver_client = self._get_vserver(share_server=share_server)
         share_name = self._get_backend_share_name(share['id'])
         aggregate_name = share_utils.extract_host(share['host'], level='pool')
+        replica_state = share.get('replica_state')
+        is_replica = (replica_state is not None and
+                      replica_state != constants.REPLICA_STATE_ACTIVE)
+
         if share_comment is None:
             share_comment = self._get_backend_share_comment(share)
 
@@ -3259,6 +3263,7 @@ class NetAppCmodeFileStorageLibrary(object):
         try:
             vserver_client.modify_volume(aggregate_name, share_name,
                                          comment=share_comment,
+                                         replica=is_replica,
                                          **provisioning_options)
         except netapp_api.NaApiError:
             LOG.warning('update share %(share)s on aggregate %(aggr)s with '
@@ -3268,10 +3273,7 @@ class NetAppCmodeFileStorageLibrary(object):
         # non-active (i.e. 'dr') replicas do not have export locations
         # and cannot have their max files modified
         is_readable_replica = self._is_readable_replica(share)
-        replica_state = share.get('replica_state')
-        if (replica_state is not None and
-                replica_state != constants.REPLICA_STATE_ACTIVE and
-                not is_readable_replica):
+        if (is_replica and not is_readable_replica):
             return []
 
         if not is_readable_replica:

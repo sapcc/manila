@@ -2987,7 +2987,7 @@ class NetAppRestClient(object):
                       language=None, dedup_enabled=False,
                       compression_enabled=False, max_files=None,
                       qos_policy_group=None, hide_snapdir=None,
-                      autosize_attributes=None, comment=None,
+                      autosize_attributes=None, comment=None, replica=False,
                       adaptive_qos_policy_group=None,
                       cross_dedup_disabled=False, **options):
         """Update backend volume for a share as necessary.
@@ -3058,14 +3058,16 @@ class NetAppRestClient(object):
 
         self.send_request('/storage/volumes/' + volume['uuid'],
                           'patch', body=body)
-        # Extract efficiency_policy from provisioning_options
-        efficiency_policy = options.get('efficiency_policy', None)
-        # Efficiency options must be handled separately
-        self.update_volume_efficiency_attributes(
-            volume_name, dedup_enabled, compression_enabled,
-            cross_dedup_disabled=cross_dedup_disabled,
-            is_flexgroup=is_flexgroup, efficiency_policy=efficiency_policy
-        )
+
+        if not replica:
+            # Extract efficiency_policy from provisioning_options
+            efficiency_policy = options.get('efficiency_policy', None)
+            # Efficiency options must be handled separately
+            self.update_volume_efficiency_attributes(
+                volume_name, dedup_enabled, compression_enabled,
+                cross_dedup_disabled=cross_dedup_disabled,
+                is_flexgroup=is_flexgroup, efficiency_policy=efficiency_policy
+            )
         if self._is_snaplock_enabled_volume(volume_name):
             self.set_snaplock_attributes(volume_name, **options)
 
