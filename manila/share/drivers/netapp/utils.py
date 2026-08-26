@@ -77,7 +77,7 @@ SM_SYNCHRONIZING_STATE = 'synchronizing'
 SMAS_PROTECTION_PROTECTED = 'protected'
 SMAS_PROTECTION_UNPROTECTED = 'unprotected'
 SMAS_POLICY_NAME = 'AutomatedFailOver'
-SMAS_DELETE_POLL_INTERVAL = 5
+SMAS_IN_SYNC_POLL_INTERVAL = 5
 
 
 class NetAppDriverException(exception.ShareBackendException):

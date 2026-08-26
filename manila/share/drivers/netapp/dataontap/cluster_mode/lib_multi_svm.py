@@ -1409,6 +1409,367 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         return nfs_config
 
     @na_utils.trace
+    def create_share(self, context, share, share_server):
+        """Enforce SMas protection pre-checks for replicated share servers."""
+        has_replica = self._share_server_has_replica(share_server)
+        if has_replica:
+            share_group_id = share.get('share_group_id')
+            if share_group_id:
+                msg = _("Cannot create share '%(share)s' in share group "
+                        "'%(group)s' because share groups are not "
+                        "supported when the share server is protected "
+                        "using replication.")
+                raise exception.NetAppException(
+                    msg % {'share': share['id'], 'group': share_group_id})
+            self._wait_for_smas_in_sync_or_reject(share['id'], share_server)
+        export = super(NetAppCmodeMultiSVMFileStorageLibrary,
+                       self).create_share(context, share, share_server)
+        if has_replica:
+            self._verify_smas_protected(share, share_server)
+        return export
+
+    @staticmethod
+    def _share_server_has_replica(share_server):
+        """Returns True when the share server has more than one replica."""
+        if not share_server:
+            return False
+        return len(share_server.get('share_server_replica_list') or []) > 1
+
+    @na_utils.trace
+    def _get_smas_relationship_from_share_server(self, share_server,
+                                                 fields=None):
+        """Resolves the SMas SnapMirror relationship via path lookup."""
+        backend_details = share_server.get('backend_details') or {}
+        src_svm = backend_details.get('vserver_name')
+        if not src_svm:
+            return None
+        peer_share_server_replica = self._find_peer_share_server_replica(
+            share_server)
+        if not peer_share_server_replica:
+            return None
+        peer_server = peer_share_server_replica.get('share_server') or {}
+        peer_host = peer_server.get('host')
+        if not peer_host:
+            return None
+        peer_backend = share_utils.extract_host(
+            peer_host, level='backend_name')
+        peer_config = data_motion.get_backend_configuration(peer_backend)
+        peer_client = data_motion.get_client_for_backend(peer_backend)
+        peer_backend_details = peer_server.get('backend_details') or {}
+        dp_dest_svm = (peer_backend_details.get('vserver_name')
+                       or peer_config.netapp_vserver_name_template
+                       % peer_server.get('id'))
+        if not fields:
+            fields = ('uuid,state,policy.uuid,policy.name,policy.type,'
+                      'healthy,unhealthy_reason')
+        else:
+            requested_fields = fields.split(',')
+            for policy_field in ('policy.name', 'policy.type'):
+                if policy_field not in requested_fields:
+                    requested_fields.append(policy_field)
+            fields = ','.join(requested_fields)
+        rels = peer_client.get_snapmirror_relationships(
+            src_svm + ':', dp_dest_svm + ':', fields=fields)
+        for relationship in rels:
+            policy = relationship.get('policy') or {}
+            if (policy.get('name') == na_utils.SMAS_POLICY_NAME
+                    and policy.get('type') == na_utils.SYNC_POLICY_TYPE_NAME):
+                return relationship
+        return None
+
+    @staticmethod
+    def _find_peer_share_server_replica(share_server):
+        """Returns the first non-active entry in share_server.replicas."""
+        for replica in share_server.get('share_server_replica_list') or []:
+            if replica.get('replica_state') != constants.REPLICA_STATE_ACTIVE:
+                return replica
+        return None
+
+    def _wait_for_smas_in_sync_or_reject(self, share_id, share_server):
+        # ONTAP rejects volume ops while the SVM relationship transitions.
+        relationship = self._get_smas_relationship_from_share_server(
+            share_server)
+        if not relationship:
+            msg = _("Cannot perform this operation on share %(share)s: "
+                    "SnapMirror relationship not found for the "
+                    "share-server replica.")
+            raise exception.NetAppException(msg % {'share': share_id})
+        state = relationship.get('state')
+        if state == na_utils.SM_IN_SYNC_STATE:
+            return
+        LOG.debug("Share-server replica for share %(share)s is "
+                  "'%(state)s'; waiting for in_sync.",
+                  {'share': share_id, 'state': state})
+        if self._wait_for_smas_relationship_in_sync(share_server):
+            return
+        peer_replica = self._find_peer_share_server_replica(share_server)
+        replica_id = peer_replica.get('id') if peer_replica else None
+        msg = _("Cannot perform this operation on share %(share)s "
+                "because share-server replica '%(replica)s' was "
+                "'%(state)s' and did not reach in_sync within the "
+                "configured timeout. Retry once it is back in_sync.")
+        raise exception.NetAppException(
+            msg % {'share': share_id, 'replica': replica_id,
+                   'state': state})
+
+    def _verify_smas_protected(self, share, share_server):
+        """Read-back ONTAP smas_protection; raise unless protected.
+
+        Raises if the vserver name is missing, or if the volume did not
+        land ``protected`` so Manila marks the share ``error`` for
+        cleanup. A missing or unexpected value counts as unprotected.
+        """
+        backend_details = share_server.get('backend_details') or {}
+        src_svm = backend_details.get('vserver_name')
+        if not src_svm:
+            msg = _("Cannot verify SMas protection: the share server's "
+                    "backend details are missing the vserver name.")
+            raise exception.VserverNotSpecified(msg)
+        share_name = self._get_backend_share_name(share['id'])
+        volume = self._client.get_volume_details(
+            src_svm, share_name,
+            fields='smas_protection,uuid')
+        if (volume.get('smas_protection')
+                != na_utils.SMAS_PROTECTION_PROTECTED):
+            msg = _("Share was created on the SMas-enabled share server "
+                    "but failed to be protected (the share-server replica "
+                    "may be out of sync, or the SMas expand failed). The "
+                    "share is in error; delete it and retry once the "
+                    "share-server replica is back in_sync.")
+            raise exception.NetAppException(msg)
+
+    @na_utils.trace
+    def _protect_smas_volume_after_break(self, share, share_server):
+        backend_details = share_server.get('backend_details') or {}
+        dest_svm = backend_details.get('vserver_name')
+        if not dest_svm:
+            msg = _("Cannot protect SMas volume: the share server's "
+                    "backend details are missing the destination "
+                    "vserver name.")
+            raise exception.NetAppException(msg)
+        share_name = self._get_backend_share_name(share['id'])
+        self._client.patch_volume(
+            dest_svm, share_name,
+            {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED})
+        self._verify_smas_protected(share, share_server)
+
+    @na_utils.trace
+    def delete_share(self, context, share, share_server=None):
+        """Deletes a share, implicitly unprotecting it first if needed.
+
+        If the share server is replicated and the share is protected,
+        unprotects it, waits for the SMas relationship to settle back
+        to in_sync, and cleans up the destination before deleting.
+        """
+        has_share_server_replica = self._share_server_has_replica(share_server)
+        if has_share_server_replica:
+            self._unprotect_smas_share(share, share_server)
+            self._wait_for_smas_relationship_in_sync_after_unprotect(
+                share, share_server)
+        super(NetAppCmodeMultiSVMFileStorageLibrary, self).delete_share(
+            context, share, share_server=share_server)
+        if has_share_server_replica:
+            self._safety_net_delete_destination_volume(share, share_server)
+
+    @na_utils.trace
+    def _get_peer_share_server_replica_context(self, share_server):
+        """Resolves the peer replica's share server, client and dest SVM.
+
+        Peer is the first non-active entry in ``share_server_replica_list``;
+        host, backend_details and id live on the nested ``share_server``.
+
+        :param share_server: source share server (replicated).
+        :return: tuple ``(peer_server, peer_client, dp_dest_svm)``; any
+            element is ``None`` if it can't be resolved (no peer replica,
+            no host, or the peer backend is unreachable).
+        """
+        peer_replica = self._find_peer_share_server_replica(share_server)
+        if not peer_replica:
+            return None, None, None
+        peer_server = peer_replica.get('share_server') or {}
+        peer_host = peer_server.get('host')
+        if not peer_host:
+            return None, None, None
+        peer_backend = share_utils.extract_host(
+            peer_host, level='backend_name')
+        peer_config = data_motion.get_backend_configuration(peer_backend)
+        peer_details = peer_server.get('backend_details') or {}
+        dp_dest_svm = (peer_details.get('vserver_name')
+                       or peer_config.netapp_vserver_name_template
+                       % peer_server.get('id'))
+        try:
+            peer_client = data_motion.get_client_for_backend(peer_backend)
+        except Exception:
+            return peer_server, None, dp_dest_svm
+        return peer_server, peer_client, dp_dest_svm
+
+    @na_utils.trace
+    def _unprotect_smas_share(self, share, share_server):
+        """Removes the share from its SMas relationship and cleans up.
+
+        :param share: share record being deleted.
+        :param share_server: source share server hosting the share.
+        """
+        backend_details = share_server.get('backend_details') or {}
+        src_svm = backend_details.get('vserver_name')
+        if not src_svm:
+            return
+        share_volume_name = self._get_backend_share_name(share['id'])
+        try:
+            volume = self._client.get_volume_details(
+                src_svm, share_volume_name,
+                fields='smas_protection,uuid')
+        except exception.NetAppException:
+            # Source volume already gone -- nothing to unprotect.
+            return
+        protection = volume.get('smas_protection')
+        if protection != na_utils.SMAS_PROTECTION_PROTECTED:
+            LOG.info("Share %(share)s is already unprotected "
+                     "(smas_protection=%(protection)s); skipping "
+                     "implicit unprotect.",
+                     {'share': share_volume_name, 'protection': protection})
+            return
+
+        # Step 1 (only for protected shares): wait for in_sync.
+        self._wait_for_smas_in_sync_or_reject(share['id'], share_server)
+
+        # Step 2: Unprotect the share.
+        self._client.patch_volume(
+            src_svm, share_volume_name,
+            {'smas_protection': na_utils.SMAS_PROTECTION_UNPROTECTED})
+
+        # Post-job verification (single GET, no poll).
+        vol_info = self._client.get_volume_details(
+            src_svm, share_volume_name, fields='smas_protection,uuid')
+        if (vol_info.get('smas_protection')
+                == na_utils.SMAS_PROTECTION_PROTECTED):
+            msg = _("Implicit unprotect job succeeded but the volume is "
+                    "still reported as protected; aborting destination "
+                    "cleanup. Retry the delete.")
+            raise exception.NetAppException(msg)
+
+        # Step 3 Clear destination junction + delete dest volume.
+        dp_dest_server, dp_dest_client, dp_dest_svm = (
+            self._get_peer_share_server_replica_context(share_server))
+        if not dp_dest_server:
+            return
+        if not dp_dest_client:
+            LOG.warning("Destination cluster unreachable during implicit "
+                        "unprotect for share %s; manual cleanup of the "
+                        "destination volume may be needed.", share['id'])
+            return
+        try:
+            dp_dest_client.patch_volume(
+                dp_dest_svm, share_volume_name, {'nas': {'path': ''}})
+        except (exception.NetAppException, netapp_api.NaApiError) as e:
+            LOG.warning("Could not clear destination junction for share "
+                        "%(id)s on SVM %(svm)s: %(err)s. Continuing.",
+                        {'id': share['id'], 'svm': dp_dest_svm, 'err': e})
+        try:
+            dp_dest_client.delete_volume(share_volume_name)
+        except (exception.NetAppException, netapp_api.NaApiError) as e:
+            LOG.warning("Could not delete destination volume for share "
+                        "%(id)s on SVM %(svm)s: %(err)s. Continuing.",
+                        {'id': share['id'], 'svm': dp_dest_svm, 'err': e})
+
+    @na_utils.trace
+    def _wait_for_smas_relationship_in_sync(self, share_server, timeout=None):
+        """Returns True once the SVM level SMas relationship is in_sync."""
+        if not timeout:
+            timeout = (self.configuration.
+                       netapp_smas_wait_for_insync_timeout)
+        interval = na_utils.SMAS_IN_SYNC_POLL_INTERVAL
+        retries = int(timeout / interval) or 1
+
+        @utils.retry(exception.ShareBackendException, interval=interval,
+                     retries=retries, backoff_rate=1)
+        def wait_for_state():
+            relationship = self._get_smas_relationship_from_share_server(
+                share_server)
+            if not relationship:
+                return
+            state = relationship.get('state')
+            if state == na_utils.SM_IN_SYNC_STATE:
+                return
+
+            msg = _("SnapMirror relationship %(uuid)s hasn't reached "
+                    "in_sync state yet. Current state is "
+                    "%(state)s.") % {'uuid': relationship.get('uuid'),
+                                     'state': state}
+            LOG.debug(msg)
+            raise exception.ShareBackendException(msg)
+
+        try:
+            wait_for_state()
+        except exception.ShareBackendException:
+            return False
+        return True
+
+    @na_utils.trace
+    def _wait_for_smas_relationship_in_sync_after_unprotect(
+            self, share, share_server, timeout=None):
+        """Waits for the SMas relationship to settle back to in_sync.
+
+        Unprotecting leaves the relationship transiently 'shrinking',
+        and ONTAP rejects deleting a volume that is still a SnapMirror
+        source, so callers must wait before deleting the share's volume.
+
+        :param share: share record being deleted.
+        :param share_server: source share server (replicated).
+        :param timeout: how long (in seconds) to wait for the
+            relationship to reach the 'in_sync' state.
+
+        :raises NetAppException: if the relationship doesn't reach
+            'in_sync' within the timeout and
+            ``netapp_smas_require_insync_after_unprotect`` is enabled.
+            By default that option is disabled, so this method instead
+            logs a warning and returns normally, letting the caller
+            proceed with deletion.
+        """
+        if not self._wait_for_smas_relationship_in_sync(share_server,
+                                                        timeout=timeout):
+            if self.configuration.netapp_smas_require_insync_after_unprotect:
+                msg = _("Cannot delete share %(share)s: SnapMirror "
+                        "relationship did not return to in_sync "
+                        "state within the configured timeout "
+                        "after unprotecting share %(share)s on share "
+                        "server %(server)s. Retry the delete once the "
+                        "share-server replica is back in_sync.") % {
+                            'share': share['id'],
+                            'server': share_server.get('id')}
+                raise exception.NetAppException(msg)
+            LOG.warning("SnapMirror relationship did not return to "
+                        "in_sync state within the configured timeout "
+                        "after unprotecting share %(share)s on share "
+                        "server %(server)s; proceeding with share "
+                        "deletion anyway because "
+                        "'netapp_smas_require_insync_after_unprotect' "
+                        "is disabled.",
+                        {'share': share['id'],
+                         'server': share_server.get('id')})
+
+    @na_utils.trace
+    def _safety_net_delete_destination_volume(self, share, share_server):
+        """Best-effort cleanup of a leftover destination volume, if any."""
+        peer_server, peer_client, dp_dest_svm = (
+            self._get_peer_share_server_replica_context(share_server))
+        if not peer_server or not peer_client:
+            return
+        share_name = self._get_backend_share_name(share['id'])
+        try:
+            peer_client.get_volume_details(dp_dest_svm, share_name)
+        except exception.NetAppException:
+            # Destination volume already gone -- nothing to clean up.
+            return
+        try:
+            peer_client.delete_volume(share_name)
+        except (exception.NetAppException, netapp_api.NaApiError) as e:
+            LOG.warning("Could not delete leftover destination volume for "
+                        "share %(id)s on SVM %(svm)s: %(err)s. Manual "
+                        "cleanup of the destination volume is required.",
+                        {'id': share['id'], 'svm': dp_dest_svm, 'err': e})
+
+    @na_utils.trace
     def manage_existing(self, share, driver_options, share_server=None):
 
         # In case NFS config is supported, the share's nfs_config must be the
