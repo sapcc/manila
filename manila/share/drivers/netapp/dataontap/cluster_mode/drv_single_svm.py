@@ -382,3 +382,28 @@ class NetAppCmodeSingleSvmShareDriver(driver.ShareDriver):
                                                   share_network_subnet,
                                                   share_server, metadata):
         raise NotImplementedError
+
+    def create_share_server_replica(self, context, new_share_server_replica,
+                                    share_server_replica_list,
+                                    share_network_details=None):
+        raise NotImplementedError
+
+    def delete_share_server_replica(self, context, share_server_replica,
+                                    share_server_replica_list,
+                                    protected_share_instances=None):
+        raise NotImplementedError
+
+    def promote_share_server_replica(self, context, share_server_replica,
+                                     share_server_replica_list,
+                                     share_server_resources=None,
+                                     network_info_list=None):
+        raise NotImplementedError
+
+    def update_share_server_replica_state(
+            self, context, share_server_replica,
+            share_server_replica_list):
+        raise NotImplementedError
+
+    def check_for_unplanned_share_server_replica_failover(
+            self, context, share_server_replica_list, share_server_resources):
+        raise NotImplementedError
