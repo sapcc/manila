@@ -3817,6 +3817,7 @@ class NetAppRestClient(object):
                             qos_policy_group=None,
                             adaptive_qos_policy_group=None,
                             mount_point_name=None,
+                            smas_protection=None,
                             **options):
         """Create volume clone in the same aggregate as parent volume."""
 
@@ -3828,6 +3829,10 @@ class NetAppRestClient(object):
             'clone.is_flexclone': 'true',
             'svm.name': self.connection.get_vserver(),
         }
+        if smas_protection is not None:
+            # NOTE: Passing 'unprotected' here lets a clone be created
+            # without getting added to SVM protection.
+            body['smas_protection'] = smas_protection
 
         self.send_request('/storage/volumes', 'post', body=body)
 
@@ -4087,10 +4092,23 @@ class NetAppRestClient(object):
     @na_utils.trace
     def check_volume_clone_split_completed(self, volume_name):
         """Check if volume clone split operation already finished."""
-        volume = self._get_volume_by_args(vol_name=volume_name,
-                                          fields='clone.is_flexclone')
+        volume = self._get_volume_by_args(
+            vol_name=volume_name,
+            fields='clone.is_flexclone,clone.split_complete_percent')
 
-        return volume['clone']['is_flexclone'] is False
+        clone_info = volume.get('clone') or {}
+        percent = clone_info.get('split_complete_percent')
+        if percent is not None:
+            # clone.split_complete_percent helps in confirming if the clone
+            # split operation has fully completed. Sometimes the clone flag
+            # can change to False before that copy has actually finished.
+            try:
+                return int(percent) >= 100
+            except (TypeError, ValueError):
+                return False
+
+        # If the percentage is not available, then the clone is already split.
+        return clone_info.get('is_flexclone') is False
 
     @na_utils.trace
     def rehost_volume(self, volume_name, vserver, destination_vserver):
@@ -5648,6 +5666,19 @@ class NetAppRestClient(object):
 
         svm_uuid = self._get_unique_svm_by_name(vserver_name)
         self.send_request(f'/svm/svms/{svm_uuid}', 'patch', body=body)
+
+    @na_utils.trace
+    def patch_volume(self, svm_name, volume_name, body):
+        """Applies a PATCH body to a volume.
+
+        :param svm_name: name of the owning SVM.
+        :param volume_name: name of the volume.
+        :param body: dict forwarded as the PATCH body.
+        """
+        volume = self._get_volume_by_args(vol_name=volume_name,
+                                          vserver=svm_name, fields='uuid')
+        self.send_request('/storage/volumes/' + volume['uuid'],
+                          'patch', body=body)
 
     @na_utils.trace
     def get_vserver_info(self, vserver_name):
