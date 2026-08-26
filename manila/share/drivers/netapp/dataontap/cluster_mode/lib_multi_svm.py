@@ -486,8 +486,13 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         if not desired_client.features.IPSPACES:
             return None
 
-        if (network_info['network_allocations'][0]['network_type']
-                not in SEGMENTED_NETWORK_TYPES):
+        # A share-server replica destination arrives without network
+        # allocations (LIFs are only created on promotion), so fall back to
+        # the top-level network_type when the allocations list is empty.
+        allocations = network_info.get('network_allocations') or []
+        network_type = (allocations[0]['network_type'] if allocations
+                        else network_info.get('network_type'))
+        if network_type not in SEGMENTED_NETWORK_TYPES:
             return client_cmode.DEFAULT_IPSPACE
 
         # NOTE(lseki): If there's already an ipspace created for the same VLAN
@@ -573,8 +578,9 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                 route_gateways.append(net_allocation['gateway'])
 
     @na_utils.trace
-    def _get_node_data_port(self, node):
-        port_names = self._client.list_node_data_ports(node)
+    def _get_node_data_port(self, node, client=None):
+        desired_client = client if client else self._client
+        port_names = desired_client.list_node_data_ports(node)
         pattern = self.configuration.netapp_port_name_search_pattern
         matched_port_names = [port_name for port_name in port_names
                               if re.match(pattern, port_name)]
@@ -629,17 +635,23 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             vserver_name, lif_name)
 
     @na_utils.trace
-    def _create_port_and_broadcast_domain(self, ipspace_name, network_info):
-        nodes = self._client.list_cluster_nodes()
-        node_network_info = zip(nodes, network_info['network_allocations'])
+    def _create_port_and_broadcast_domain(self, ipspace_name, network_info,
+                                          client=None):
+        desired_client = client if client else self._client
 
-        for node_name, network_allocation in node_network_info:
-            port = self._get_node_data_port(node_name)
-            vlan = network_allocation['segmentation_id']
-            network_mtu = network_allocation.get('mtu')
-            mtu = network_mtu or DEFAULT_MTU
+        # segmentation_id and mtu match across allocations (same network
+        # segment); a share-server replica destination has no allocations.
+        allocations = network_info.get('network_allocations') or []
+        if allocations:
+            vlan = allocations[0]['segmentation_id']
+            mtu = allocations[0].get('mtu') or DEFAULT_MTU
+        else:
+            vlan = network_info.get('segmentation_id')
+            mtu = network_info.get('mtu') or DEFAULT_MTU
 
-            self._client.create_port_and_broadcast_domain(
+        for node_name in desired_client.list_cluster_nodes():
+            port = self._get_node_data_port(node_name, client=desired_client)
+            desired_client.create_port_and_broadcast_domain(
                 node_name, port, vlan, mtu, ipspace_name)
 
     @na_utils.trace
@@ -844,6 +856,160 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         if options['ipv6-enabled']:
             versions.append(6)
         return versions
+
+    @na_utils.trace
+    def create_share_server_replica(self, context, new_share_server_replica,
+                                    share_server_replica_list,
+                                    network_info=None):
+        """Creates a replica of a share server on the peer backend.
+
+        :param context: request context.
+        :param new_share_server_replica: the replica to create; metadata may
+            include ``replication_type`` and ``replication_policy``.
+        :param share_server_replica_list: existing replicas; the active one
+            provides the source share server.
+
+        :return: dict with relationship uuid, replica status and
+            backend_details.
+        """
+        properties = new_share_server_replica.get('metadata') or {}
+        replication_policy = (
+            self._validate_share_server_replication_type_and_policy(
+                properties))
+        replication_type = properties.get('replication_type',
+                                          na_utils.SYNC_POLICY_TYPE_NAME)
+
+        source_replica = self.find_active_replica(share_server_replica_list)
+        source_share_server = source_replica['share_server']
+        replica_share_server = new_share_server_replica['share_server']
+
+        destination_ipspace = None
+        if network_info:
+            # only changes network_info if one of networks has metadata set.
+            self._set_network_with_metadata(network_info)
+            vlan = network_info[0]['segmentation_id']
+
+            @utils.synchronized('netapp-VLAN-%s' % vlan, external=True)
+            def setup_replica_network_with_lock():
+                return self._setup_share_server_replica_dest_network(
+                    network_info, replica_share_server)
+
+            destination_ipspace = setup_replica_network_with_lock()
+
+        dm_session = data_motion.DataMotionSession()
+        return dm_session.create_share_server_replica(
+            source_share_server, replica_share_server, replication_type,
+            replication_policy, destination_ipspace=destination_ipspace)
+
+    @na_utils.trace
+    def _setup_share_server_replica_dest_network(self, network_info,
+                                                 replica_share_server):
+        """Provision IPspace, VLAN ports and broadcast domain for a replica."""
+        self._validate_network_type(network_info)
+        self._validate_share_network_subnets(network_info)
+
+        dest_backend = share_utils.extract_host(
+            replica_share_server['host'], level='backend_name')
+        dest_client = data_motion.get_client_for_backend(dest_backend)
+
+        node_name = dest_client.list_cluster_nodes()[0]
+        port = self._get_node_data_port(node_name, client=dest_client)
+        vlan = network_info[0]['segmentation_id']
+        ipspace_name = dest_client.get_ipspace_name_for_vlan_port(
+            node_name, port, vlan)
+
+        if (
+            ipspace_name is None
+            or ipspace_name in client_cmode.CLUSTER_IPSPACES
+        ):
+            ipspace_name = self._create_ipspace(network_info[0],
+                                                client=dest_client)
+
+        # A non-segmented replica network resolves to the cluster default
+        # IPspace, which needs no port or broadcast domain provisioning.
+        if not ipspace_name or ipspace_name in client_cmode.CLUSTER_IPSPACES:
+            return None
+
+        self._create_port_and_broadcast_domain(
+            ipspace_name, network_info[0], client=dest_client)
+        return ipspace_name
+
+    @na_utils.trace
+    def update_share_server_replica_state(self, context,
+                                          share_server_replica,
+                                          share_server_replica_list):
+        """Refreshes the SnapMirror relationship; returns the replica_state.
+
+        :param context: request context.
+        :param share_server_replica: destination share-server replica.
+        :param share_server_replica_list: all replicas; the active entry
+            identifies the source share server.
+
+        :return: the Manila replica_state ('in_sync' or 'out_of_sync').
+        """
+        active = self.find_active_replica(share_server_replica_list)
+        dm_session = data_motion.DataMotionSession()
+        source_share_server = active['share_server']
+        replica_share_server = share_server_replica['share_server']
+
+        src_backend_details = source_share_server.get('backend_details') or {}
+        src_vserver = src_backend_details.get('vserver_name')
+        dest_backend = share_utils.extract_host(
+            replica_share_server['host'], level='backend_name')
+        dest_config = data_motion.get_backend_configuration(dest_backend)
+        dest_client = data_motion.get_client_for_backend(dest_backend)
+        backend_details = replica_share_server.get('backend_details') or {}
+        dp_dest_svm_name = (backend_details.get('vserver_name')
+                            or dest_config.netapp_vserver_name_template
+                            % replica_share_server['id'])
+        src_path = src_vserver + ':'
+        dest_path = dp_dest_svm_name + ':'
+
+        rels = dest_client.get_snapmirror_relationships(
+            src_path, dest_path,
+            fields='uuid,state,healthy,unhealthy_reason')
+        if not rels:
+            msg = _("SnapMirror relationship not found for share-server "
+                    "replica %s. Delete and recreate the replica.")
+            raise exception.NetAppException(
+                msg % replica_share_server['id'])
+        relationship = rels[0]
+        relationship_uuid = relationship['uuid']
+
+        state = relationship.get('state')
+        synced_states = (na_utils.SM_IN_SYNC_STATE,
+                         na_utils.SM_SNAPMIRRORED_STATE)
+        if state in synced_states and relationship.get('healthy'):
+            return dm_session.map_snapmirror_state_to_replica_status(
+                relationship)
+
+        # ONTAP rejects resync mid-transfer; let the next tick observe it.
+        in_progress_states = (na_utils.SM_SYNCHRONIZING_STATE,
+                              na_utils.SM_EXPANDING_STATE,
+                              na_utils.SM_SHRINKING_STATE)
+        if state in in_progress_states:
+            return constants.REPLICA_STATE_OUT_OF_SYNC
+
+        # Stalled (out_of_sync / broken_off / paused / uninitialized) or
+        # synced-but-unhealthy: fire a non-blocking resync; the periodic
+        # task converges later.
+        unhealthy_reason = relationship.get('unhealthy_reason')
+        if unhealthy_reason:
+            reasons = '; '.join(
+                r.get('message', '') for r in unhealthy_reason)
+            LOG.warning("SnapMirror relationship %(uuid)s is "
+                        "%(state)s: %(reason)s.",
+                        {'uuid': relationship_uuid, 'state': state,
+                         'reason': reasons})
+        try:
+            dest_client.update_snapmirror_state(
+                relationship_uuid, state=na_utils.SM_IN_SYNC_STATE)
+        except netapp_api.NaApiError as e:
+            msg = _("snapmirror resync failed for relationship "
+                    "'%(uuid)s': %(err)s. Delete and recreate the replica.")
+            raise exception.NetAppException(
+                msg % {'uuid': relationship_uuid, 'err': e})
+        return constants.REPLICA_STATE_OUT_OF_SYNC
 
     @na_utils.trace
     def create_replica(self, context, replica_list, new_replica,
@@ -2721,3 +2887,469 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                             "data LIF limit {%(lif_limit)s}") % msg_args
                     LOG.error(msg)
                     raise exception.NetAppException(msg)
+
+    @na_utils.trace
+    def _get_vserver_custom_ipspace(self, client, vserver):
+        """Get the custom IPspace name for a Vserver, if any."""
+        ipspaces = client.get_ipspaces(vserver_name=vserver)
+        if ipspaces:
+            return ipspaces[0]['ipspace']
+        return None
+
+    @na_utils.trace
+    def _delete_vserver_custom_ipspace(self, client, ipspace_name):
+        """Delete a custom IPspace and clean up its ports."""
+        ipspace = client.get_ipspaces(ipspace_name=ipspace_name)
+        if not ipspace:
+            return
+
+        ipspace_deleted = client.delete_ipspace(ipspace_name)
+        if ipspace_deleted:
+            # delete_ipspace() already removed the ipspace's ports and
+            # broadcast domains as part of its own cleanup.
+            return
+
+        ports = set(client.get_degraded_ports(
+            ipspace['broadcast-domains'], ipspace_name))
+        self._delete_port_vlans(client, ports)
+
+    @na_utils.trace
+    def delete_share_server_replica(self, context, share_server_replica,
+                                    share_server_replica_list,
+                                    protected_share_instances=None):
+        """Delete a share server replica on the backend.
+
+        Remove the replication relationship and clean up all destination
+        objects.
+        Return None or any exception raised will set the share server
+        replica's ``status`` to ``'error_deleting'`` and its
+        ``replica_state`` to ``'error'``.
+        """
+        dm_session = data_motion.DataMotionSession()
+
+        dest_share_server = share_server_replica['share_server']
+
+        dest_backend_name = share_utils.extract_host(
+            dest_share_server['host'], level='backend_name')
+        try:
+            dest_vserver, dest_client = self._get_vserver(
+                share_server=dest_share_server,
+                backend_name=dest_backend_name)
+        except exception.VserverNotFound:
+            dest_vserver = (share_server_replica.get('backend_details') or
+                            {}).get('vserver_name', '<unknown>')
+            LOG.info('Destination SVM %(dest)s not found on backend '
+                     '%(backend)s; share server replica already deleted.',
+                     {'dest': dest_vserver, 'backend': dest_backend_name})
+            return
+
+        active_replica = self.find_active_replica(share_server_replica_list)
+        share_server = active_replica['share_server']
+        src_backend_name = share_utils.extract_host(
+            share_server['host'], level='backend_name')
+        src_vserver, src_client = self._get_vserver(
+            share_server=share_server, backend_name=src_backend_name)
+
+        LOG.info('Deleting share server replica from source SVM %(src)s '
+                 'to destination SVM %(dest)s.',
+                 {'src': src_vserver, 'dest': dest_vserver})
+
+        # Delete SVM SnapMirror relationship on destination cluster.
+        try:
+            dm_session.delete_svm_snapmirror_relationship(
+                share_server, dest_share_server)
+        except Exception:
+            msg = _('Failed to delete SVM SnapMirror relationship on '
+                    'destination vserver %s.') % dest_vserver
+            LOG.exception(msg)
+            raise
+
+        # SVM break (convert dp-destination to default subtype).
+        try:
+            dm_session.convert_svm_to_default_subtype(
+                dest_vserver, dest_client,
+                timeout=na_utils.SMAS_DELETE_POLL_TIMEOUT)
+            LOG.info('Converted destination SVM %(dest)s to default '
+                     'subtype.', {'dest': dest_vserver})
+        except Exception:
+            LOG.exception('Failed to convert dp-destination SVM %s to '
+                          'default subtype.', dest_vserver)
+            raise
+
+        # FlexClone cleanup on destination SVM.
+        try:
+            self._cleanup_flexclones_on_svm(dest_vserver, dest_client)
+            LOG.info('Completed FlexClone cleanup on destination SVM '
+                     '%(dest)s.', {'dest': dest_vserver})
+        except Exception:
+            LOG.exception('Failed to clean up FlexClones on SVM %s.',
+                          dest_vserver)
+
+        # FlexVol volume cleanup on destination SVM.
+        try:
+            self._cleanup_data_volumes_on_svm(dest_vserver, dest_client)
+            LOG.info('Completed data volume cleanup on destination SVM '
+                     '%(dest)s.', {'dest': dest_vserver})
+        except Exception:
+            LOG.exception('Failed to clean up data volumes on SVM %s.',
+                          dest_vserver)
+
+        # CIFS force-delete on destination SVM.
+        try:
+            self._delete_cifs_service_force(dest_vserver, dest_client)
+            LOG.info('Force-deleted CIFS service on destination SVM '
+                     '%(dest)s.', {'dest': dest_vserver})
+        except Exception:
+            LOG.exception('Failed to force-delete CIFS service on SVM %s.',
+                          dest_vserver)
+
+        # SVM peer delete.
+        try:
+            self._delete_svm_peer(
+                src_vserver, dest_vserver, src_client, dest_client)
+            LOG.info('Deleted SVM peer between source %(src)s and '
+                     'destination %(dest)s.',
+                     {'src': src_vserver, 'dest': dest_vserver})
+        except Exception:
+            LOG.exception('Failed to delete SVM peer between %(src)s and '
+                          '%(dest)s.', {'src': src_vserver,
+                                        'dest': dest_vserver})
+
+        # Fetch destination SVM's custom IPspace name before it is deleted.
+        dest_cluster_client = data_motion.get_client_for_backend(
+            dest_backend_name)
+        dest_ipspace_name = None
+        try:
+            dest_ipspace_name = self._get_vserver_custom_ipspace(
+                dest_cluster_client, dest_vserver)
+        except Exception:
+            LOG.exception('Failed to fetch IPspace info for destination '
+                          'SVM %s.', dest_vserver)
+
+        # Destination SVM delete.
+        try:
+            dest_vserver_client = data_motion.get_client_for_backend(
+                dest_backend_name, vserver_name=dest_vserver)
+            dest_cluster_client.delete_vserver(
+                dest_vserver, dest_vserver_client)
+            LOG.info('Deleted destination SVM %(dest)s.',
+                     {'dest': dest_vserver})
+        except Exception:
+            LOG.exception('Failed to delete destination SVM %s.',
+                          dest_vserver)
+            raise
+
+        # Destination IPspace delete.
+        if dest_ipspace_name:
+            try:
+                self._delete_vserver_custom_ipspace(
+                    dest_cluster_client, dest_ipspace_name)
+                LOG.info('Deleted custom IPspace %(ipspace)s for '
+                         'destination SVM %(dest)s.',
+                         {'ipspace': dest_ipspace_name,
+                          'dest': dest_vserver})
+            except Exception:
+                LOG.exception('Failed to delete custom IPspace '
+                              '%(ipspace)s for destination SVM %(dest)s.',
+                              {'ipspace': dest_ipspace_name,
+                               'dest': dest_vserver})
+
+        LOG.info('Successfully deleted share server replica (SVM %s).',
+                 dest_vserver)
+
+    @na_utils.trace
+    def _cleanup_flexclones_on_svm(self, vserver_name, client):
+        """Delete all FlexClone volumes on the SVM."""
+        flexclones = client._get_volumes_on_svm(
+            vserver_name, is_root=False, is_flexclone=True)
+        if not flexclones:
+            LOG.debug('No FlexClone volumes found on SVM %(svm)s.',
+                      {'svm': vserver_name})
+            return
+
+        clone_uuids = [vol['uuid'] for vol in flexclones]
+        LOG.info('Deleting %(count)d FlexClone volume(s) on SVM %(svm)s.',
+                 {'count': len(clone_uuids), 'svm': vserver_name})
+        client.delete_volumes_by_uuids(clone_uuids)
+
+    @na_utils.trace
+    def _cleanup_data_volumes_on_svm(self, vserver_name, client):
+        """Delete all non-root data volumes on the destination SVM."""
+        volumes = client._get_volumes_on_svm(vserver_name, is_root=False)
+        if not volumes:
+            LOG.debug('No data volumes found on SVM %(svm)s.',
+                      {'svm': vserver_name})
+            return
+
+        vol_uuids = [vol['uuid'] for vol in volumes]
+        LOG.debug('Deleting %(count)d data volume(s) on SVM %(svm)s.',
+                  {'count': len(vol_uuids), 'svm': vserver_name})
+        client.delete_volumes_by_uuids(vol_uuids)
+
+    @na_utils.trace
+    def _delete_cifs_service_force(self, vserver_name, client):
+        """Force-delete CIFS service on the destination SVM."""
+        client.delete_cifs_service_force(vserver_name)
+
+    @na_utils.trace
+    def _delete_svm_peer(self, src_vserver, dest_vserver,
+                         src_client, dest_client):
+        """Delete SVM peer relationships between source and destination."""
+        peers = dest_client.get_vserver_peers(
+            vserver_name=dest_vserver, peer_vserver_name=src_vserver)
+        if not peers:
+            LOG.info('No SVM peer relationship found between %(dest)s '
+                     'and %(src)s.',
+                     {'dest': dest_vserver, 'src': src_vserver})
+            return
+
+        try:
+            dest_client.delete_vserver_peer(dest_vserver, src_vserver)
+        except netapp_api.NaApiError:
+            LOG.info('SVM peer between %(dest)s and %(src)s already '
+                     'removed.', {'dest': dest_vserver,
+                                  'src': src_vserver})
+
+    @na_utils.trace
+    def _resolve_replica_pair_endpoints(self, source_share_server,
+                                        dest_share_server):
+        """Returns the vservers and cluster clients of a replica pair."""
+        src_vserver = (source_share_server.get('backend_details') or
+                       {}).get('vserver_name')
+        dest_vserver = (dest_share_server.get('backend_details') or
+                        {}).get('vserver_name')
+
+        if not src_vserver or not dest_vserver:
+            msg = _('Cannot resolve share server replica endpoints: '
+                    'vserver name is absent in backend details '
+                    '(src=%(src)s, dest=%(dest)s).') % {
+                        'src': src_vserver, 'dest': dest_vserver}
+            raise exception.NetAppException(message=msg)
+
+        src_backend_name = share_utils.extract_host(
+            source_share_server['host'], level='backend_name')
+        dest_backend_name = share_utils.extract_host(
+            dest_share_server['host'], level='backend_name')
+
+        src_cluster_client = data_motion.get_client_for_backend(
+            src_backend_name)
+        dest_cluster_client = data_motion.get_client_for_backend(
+            dest_backend_name)
+
+        return (src_vserver, dest_vserver, src_cluster_client,
+                dest_cluster_client)
+
+    @na_utils.trace
+    def _map_volume_names_to_instance_ids(self, protected_share_instances):
+        """Maps backend volume names to their share instance IDs."""
+        return {
+            self._get_backend_share_name(i['id']): i['id']
+            for i in (protected_share_instances or [])
+        }
+
+    @na_utils.trace
+    def _build_share_pool_mappings(self, vserver, client,
+                                   volume_names_to_instance_ids):
+        """Maps share instance IDs to their pool, plus volumes not found."""
+        share_pool_mappings = {}
+        missing = []
+        if not volume_names_to_instance_ids:
+            return share_pool_mappings, missing
+
+        volumes = client.get_svm_volumes_with_aggregates(vserver)
+        for vol_name, instance_id in volume_names_to_instance_ids.items():
+            record = volumes.get(vol_name)
+            if not record or not record.get('aggregates'):
+                missing.append((vol_name, instance_id))
+                continue
+            # FlexVol shares occupy a single aggregate.
+            share_pool_mappings[instance_id] = record['aggregates'][0]['name']
+
+        return share_pool_mappings, missing
+
+    @na_utils.trace
+    def _validate_protected_volumes_match(
+            self, src_vserver, src_cluster_client, protected_share_instances):
+        """SVM protected share instances check with ONTAP
+
+        Queries Site A for volumes with smas_protection=protected and performs
+        a bidirectional comparison against Manila's tracked protected
+        instances.
+        Raises NetAppException if any divergence is detected.
+        """
+        expected_names_from_manila_driver = (
+            self._map_volume_names_to_instance_ids(protected_share_instances))
+
+        ontap_protected_names = set(
+            src_cluster_client.get_smas_protected_volumes(src_vserver))
+
+        manila_driver_but_not_ontap = {
+            n: sid for n, sid in expected_names_from_manila_driver.items()
+            if n not in ontap_protected_names
+        }
+
+        if manila_driver_but_not_ontap:
+            msg = _(
+                'Protected volume mismatch detected on SVM %(svm)s. '
+                'Volumes tracked by Manila driver but not protected in ONTAP: '
+                '%(manila_extra)s. '
+            ) % {
+                'svm': src_vserver,
+                'manila_extra': sorted(manila_driver_but_not_ontap.keys())
+            }
+            raise exception.NetAppException(message=msg)
+
+        return expected_names_from_manila_driver
+
+    @na_utils.trace
+    def promote_share_server_replica(self, context, share_server_replica,
+                                     share_server_replica_list,
+                                     share_server_resources=None,
+                                     network_info_list=None):
+        """Promote a share server replica to active.
+
+        Performs a failover of SnapMirror relationship by swapping endpoints.
+        The promoted replica's SVM becomes the new active
+        (source) SVM; the previously active SVM becomes the destination
+        (dp_destination).
+
+        :param context: request context.
+        :param share_server_replica: the replica to promote to active.
+        :param share_server_replica_list: all replicas of the share server.
+        :param share_server_resources: dict of resources hosted on the
+            replica's share server. Recognized key:
+            ``protected_share_instances`` — list of share instances on the
+            active share server that are SMAS-protected in ONTAP.
+        :param network_info_list: optional list of network info dicts for
+            the source share server. Not currently used by this driver.
+        :returns: dict with keys ``replica_list`` and
+            ``share_pool_mappings``.
+        :raises exception.NetAppException
+        """
+        protected_share_instances = (share_server_resources or {}).get(
+            'protected_share_instances', [])
+        active_replica = self.find_active_replica(share_server_replica_list)
+        if share_server_replica['id'] == active_replica['id']:
+            msg = _('Cannot promote share server replica %(id)s as it is '
+                    'already the active replica.') % {
+                        'id': share_server_replica['id']}
+            raise exception.NetAppException(message=msg)
+
+        source_share_server = active_replica['share_server']
+        promoted_share_server = share_server_replica['share_server']
+
+        (src_vserver, dest_vserver, src_cluster_client,
+         dest_cluster_client) = self._resolve_replica_pair_endpoints(
+            source_share_server, promoted_share_server)
+
+        LOG.info('Promoting share server replica %(dest_svm)s to active '
+                 '(current active: %(src_svm)s).',
+                 {'dest_svm': dest_vserver, 'src_svm': src_vserver})
+
+        # SnapMirror relationship state check.
+        relationships = dest_cluster_client.get_snapmirror_relationships(
+            src_vserver + ':', dest_vserver + ':',
+            fields='uuid,state,healthy,unhealthy_reason')
+        if not relationships:
+            msg = _('No SVM SnapMirror relationship found between '
+                    '%(src)s and %(dest)s.') % {
+                        'src': src_vserver, 'dest': dest_vserver}
+            raise exception.NetAppException(message=msg)
+
+        rel = relationships[0]
+        rel_state = rel.get('state')
+        rel_healthy = rel.get('healthy')
+        if rel_state != na_utils.SM_IN_SYNC_STATE or not rel_healthy:
+            unhealthy_reasons = rel.get('unhealthy_reason') or []
+            reason_str = '; '.join(
+                '[%(code)s] %(message)s' % r for r in unhealthy_reasons
+            ) if unhealthy_reasons else 'unknown reason'
+            msg = _('SnapMirror relationship between %(src)s and %(dest)s '
+                    'is not ready for failover: state=%(state)s, '
+                    'healthy=%(healthy)s (%(reason)s).') % {
+                        'src': src_vserver, 'dest': dest_vserver,
+                        'state': rel_state, 'healthy': rel_healthy,
+                        'reason': reason_str}
+            raise exception.NetAppException(message=msg)
+
+        # Mediator connectivity check.
+        dest_cluster_name = dest_cluster_client.get_cluster_name()
+        mediators = src_cluster_client.get_cluster_mediators(
+            peer_cluster_name=dest_cluster_name)
+        data_motion.validate_mediator_reachable(dest_cluster_name, mediators)
+
+        # Proctected share server instance check
+        expected_names_from_manila_driver = (
+            self._validate_protected_volumes_match(
+                src_vserver, src_cluster_client, protected_share_instances))
+        LOG.debug('Pre-check validations completed '
+                  '(SnapMirror, mediator, and protected-volume checks).')
+
+        # Trigger failover by swapping SnapMirror endpoints.
+        rel_uuid = rel['uuid']
+        LOG.debug(
+            'Triggering failover: swapping SnapMirror endpoints '
+            '(new_src=%(new_src)s, new_dest=%(new_dest)s, rel=%(rel)s).',
+            {'new_src': dest_vserver, 'new_dest': src_vserver,
+             'rel': rel_uuid})
+        dest_cluster_client.failover_svm_snapmirror(
+            rel_uuid,
+            source_path='%s:' % dest_vserver,
+            destination_path='%s:' % src_vserver)
+        LOG.info('Failover request completed for '
+                 'SnapMirror relationship %(rel)s.', {'rel': rel_uuid})
+
+        # SVM subtype/state verification (secondary check).
+        promoted_info = dest_cluster_client.get_vserver_info(dest_vserver)
+        old_active_info = src_cluster_client.get_vserver_info(src_vserver)
+
+        promoted_subtype = (promoted_info or {}).get('subtype')
+        promoted_state = (promoted_info or {}).get('state')
+        if (promoted_subtype != na_utils.SVM_SUBTYPE_DEFAULT
+                or promoted_state != na_utils.SVM_STATE_RUNNING):
+            msg = _('Promoted SVM %(svm)s is not in the expected state after '
+                    'failover: subtype=%(subtype)s, state=%(state)s.') % {
+                        'svm': dest_vserver, 'subtype': promoted_subtype,
+                        'state': promoted_state}
+            raise exception.NetAppException(message=msg)
+
+        old_active_subtype = (old_active_info or {}).get('subtype')
+        if old_active_subtype != na_utils.SVM_SUBTYPE_DP_DESTINATION:
+            LOG.warning('Demoted SVM %(svm)s subtype is %(subtype)s after '
+                        'failover; expected dp_destination. ONTAP may '
+                        'still be converging.',
+                        {'svm': src_vserver, 'subtype': old_active_subtype})
+        LOG.debug('Post-failover SnapMirror and SVM '
+                  'state verification completed.')
+
+        # Build return value.
+        # Build share_pool_mappings via a single bulk volume GET on Site B.
+        # Values are pool (aggregate) names only, keyed by share instance id.
+        share_pool_mappings, missing_on_dest_svm = (
+            self._build_share_pool_mappings(
+                dest_vserver, dest_cluster_client,
+                expected_names_from_manila_driver))
+        for vol_name, instance_id in missing_on_dest_svm:
+            LOG.warning('Volume %(vol)s protected on src SVM was not '
+                        'found on dest SVM after failover; host mapping '
+                        'skipped for instance %(sid)s.',
+                        {'vol': vol_name, 'sid': instance_id})
+
+        # Build replica_list: promoted replica -> active,
+        # all others -> out_of_sync.
+        replica_list = []
+        for replica in share_server_replica_list:
+            updated = {'replica_id': replica['id']}
+            if replica['id'] == share_server_replica['id']:
+                updated['replica_state'] = constants.REPLICA_STATE_ACTIVE
+            else:
+                updated['replica_state'] = constants.REPLICA_STATE_OUT_OF_SYNC
+            replica_list.append(updated)
+
+        LOG.info('Successfully promoted share server replica %(dest)s '
+                 'to active (was %(src)s).',
+                 {'dest': dest_vserver, 'src': src_vserver})
+        return {
+            'replica_list': replica_list,
+            'share_pool_mappings': share_pool_mappings,
+        }

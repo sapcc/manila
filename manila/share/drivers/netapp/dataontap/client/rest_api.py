@@ -21,6 +21,7 @@ import re
 
 from oslo_log import log
 from oslo_serialization import jsonutils
+from oslo_utils import netutils
 import requests
 from requests.adapters import HTTPAdapter
 from requests import auth
@@ -37,6 +38,7 @@ EREST_ENTRY_NOT_FOUND = '4'
 EREST_NOT_AUTHORIZED = '6'
 EREST_SNAPMIRROR_INITIALIZING = '917536'
 EREST_VSERVER_NOT_FOUND = '13434920'
+EREST_VSERVER_NAME_IN_USE = '13434908'
 EREST_ANOTHER_VOLUME_OPERATION = '13107406'
 EREST_LICENSE_NOT_INSTALLED = '1115127'
 EREST_SNAPSHOT_NOT_SPECIFIED = '1638515'
@@ -56,6 +58,9 @@ EREST_VSERVER_MIGRATION_TO_NON_AFF_CLUSTER = '13172984'
 EREST_UNMOUNT_FAILED_LOCK = '917536'
 EREST_CANNOT_MODITY_OFFLINE_VOLUME = '917533'
 EREST_CANNOT_MODITY_SPECIFIED_FIELD = '917628'
+EREST_VOLDEL_NOT_ALLOW_BY_CLONE = '524615'
+EREST_SNAPSHOT_NOT_FOUND = '542797'
+EREST_SVM_DR_OPERATION_NOT_PERMITTED = '2621570'
 
 
 class NaRetryableError(api.NaApiError):
@@ -72,11 +77,12 @@ class RestNaServer(object):
     HTTPS_PORT = '443'
     TUNNELING_HEADER_KEY = "X-Dot-SVM-Name"
 
-    def __init__(self, host, transport_type=TRANSPORT_TYPE_HTTP,
+    def __init__(self, host, transport_type=TRANSPORT_TYPE_HTTPS,
                  ssl_cert_path=None, username=None, password=None, port=None,
                  trace=False, api_trace_pattern=utils.API_TRACE_PATTERN,
                  private_key_file=None, certificate_file=None,
-                 ca_certificate_file=None, certificate_host_validation=None):
+                 ca_certificate_file=None, certificate_host_validation=None,
+                 ssl_cert_verify=True):
         self._host = host
         if private_key_file and certificate_file:
             transport_type = RestNaServer.TRANSPORT_TYPE_HTTPS
@@ -88,7 +94,9 @@ class RestNaServer(object):
         self._api_trace_pattern = api_trace_pattern
         self._timeout = None
 
-        if ssl_cert_path is not None:
+        if not ssl_cert_verify:
+            self._ssl_verify = False
+        elif ssl_cert_path is not None:
             self._ssl_verify = ssl_cert_path
         else:
             # Note(felipe_rodrigues): it will verify with the mozila CA roots,
@@ -202,9 +210,7 @@ class RestNaServer(object):
 
     def _get_base_url(self):
         """Get the base URL for REST requests."""
-        host = self._host
-        if ':' in host:
-            host = '[%s]' % host
+        host = netutils.escape_ipv6(self._host)
         return f'{self._protocol}://{host}:{self._port}/api'
 
     def _build_session(self, headers):

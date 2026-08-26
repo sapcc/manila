@@ -3444,6 +3444,44 @@ class NetAppCmodeFileStorageLibrary(object):
         return replication_policy in self.SUPPORTED_REPLICATION_POLICIES
 
     @na_utils.trace
+    def _validate_share_server_replication_type_and_policy(
+            self, properties):
+        """Validates the share-server-replica replication type and policy.
+
+        :param properties: the ``--property`` key/value pairs for the
+            share-server replica. ``replication_type`` defaults to
+            ``sync`` when absent; ``replication_policy`` defaults to
+            ``AutomatedFailOver``.
+
+        :return: the resolved replication policy.
+        """
+        # TODO(kumart): Update when async relationships are supported.
+        properties = properties or {}
+        replication_type = properties.get('replication_type', 'sync')
+        if replication_type == 'async':
+            msg = _("Async replication (SVM-DR) is not yet supported for "
+                    "share server replication. Please use 'sync' policy "
+                    "(AutomatedFailOver) instead.")
+            raise exception.NetAppException(msg)
+
+        if replication_type != 'sync':
+            msg = _("Unsupported share server replication type: "
+                    "'%(type)s'. Supported types: 'sync'.")
+            raise exception.NetAppException(
+                msg % {'type': replication_type})
+
+        replication_policy = properties.get(
+            'replication_policy', na_utils.SMAS_POLICY_NAME)
+
+        supported = na_utils.SMAS_SUPPORTED_REPLICATION_POLICIES
+        if replication_policy not in supported:
+            msg = _("Only 'AutomatedFailOver' policy is supported for "
+                    "SM-as NAS sync replication.")
+            raise exception.NetAppException(msg)
+
+        return replication_policy
+
+    @na_utils.trace
     def create_replica(self, context, replica_list, new_replica,
                        access_rules, share_snapshots, share_server=None):
         """Creates the new replica on this backend and sets up SnapMirror."""

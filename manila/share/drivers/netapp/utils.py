@@ -74,6 +74,11 @@ SM_TRANSFERRING_STATE = 'transferring'
 SM_FINALIZING_STATE = 'finalizing'
 SM_SYNCHRONIZING_STATE = 'synchronizing'
 
+SMAS_PROTECTION_PROTECTED = 'protected'
+SMAS_PROTECTION_UNPROTECTED = 'unprotected'
+SMAS_POLICY_NAME = 'AutomatedFailOver'
+SMAS_DELETE_POLL_INTERVAL = 5
+
 
 class NetAppDriverException(exception.ShareBackendException):
     message = _("NetApp Manila Driver exception.")

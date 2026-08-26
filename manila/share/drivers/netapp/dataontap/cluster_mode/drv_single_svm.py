@@ -42,7 +42,7 @@ class NetAppCmodeSingleSvmShareDriver(driver.ShareDriver):
         self.library.do_setup(context)
 
     def check_for_setup_error(self):
-        self.library.check_for_setup_error(self.ensure)
+        self.library.check_for_setup_error()
 
     def get_pool(self, share):
         return self.library.get_pool(share)
@@ -153,16 +153,13 @@ class NetAppCmodeSingleSvmShareDriver(driver.ShareDriver):
 
     def update_replica_state(self, context, replica_list, replica,
                              access_rules, replica_snapshots,
-                             share_server=None,
-                             skip_conf_snapmirror_schedule=False):
-        return self.library.update_replica_state(
-            context,
-            replica_list,
-            replica,
-            access_rules,
-            replica_snapshots,
-            share_server=share_server,
-            skip_conf_snapmirror_schedule=skip_conf_snapmirror_schedule)
+                             share_server=None):
+        return self.library.update_replica_state(context,
+                                                 replica_list,
+                                                 replica,
+                                                 access_rules,
+                                                 replica_snapshots,
+                                                 share_server=share_server)
 
     def create_replicated_snapshot(self, context, replica_list,
                                    replica_snapshots, share_server=None):
@@ -278,10 +275,6 @@ class NetAppCmodeSingleSvmShareDriver(driver.ShareDriver):
     def ensure_shares(self, context, shares):
         return self.library.ensure_shares(context, shares)
 
-    def ensure_share_server(self, context, share_server, network_info):
-        return self.library.ensure_share_server(
-            context, share_server, network_info)
-
     def get_share_server_network_info(
             self, context, share_server, identifier, driver_options):
         raise NotImplementedError
@@ -381,4 +374,29 @@ class NetAppCmodeSingleSvmShareDriver(driver.ShareDriver):
                                                   share_network,
                                                   share_network_subnet,
                                                   share_server, metadata):
+        raise NotImplementedError
+
+    def create_share_server_replica(self, context, new_share_server_replica,
+                                    share_server_replica_list,
+                                    share_network_details=None):
+        raise NotImplementedError
+
+    def delete_share_server_replica(self, context, share_server_replica,
+                                    share_server_replica_list,
+                                    protected_share_instances=None):
+        raise NotImplementedError
+
+    def promote_share_server_replica(self, context, share_server_replica,
+                                     share_server_replica_list,
+                                     share_server_resources=None,
+                                     network_info_list=None):
+        raise NotImplementedError
+
+    def update_share_server_replica_state(
+            self, context, share_server_replica,
+            share_server_replica_list):
+        raise NotImplementedError
+
+    def check_for_unplanned_share_server_replica_failover(
+            self, context, share_server_replica_list, share_server_resources):
         raise NotImplementedError
