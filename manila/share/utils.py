@@ -20,6 +20,7 @@ from oslo_config import cfg
 
 from manila.common import constants
 from manila.db import migration
+from manila import exception
 from manila import rpc
 from manila import utils
 
@@ -173,3 +174,160 @@ def is_az_subnets_compatible(subnet_list, new_subnet_list):
             return False
 
     return True
+
+
+def is_active_share_server_replica(server):
+    """Return whether the given share server row is an active replica."""
+
+    return (
+        not server.get('source_share_server_id') and
+        server.get('replica_state') == constants.REPLICA_STATE_ACTIVE
+    )
+
+
+def is_share_server_replica(server):
+    """Return whether the given share server row is a replica."""
+
+    return (
+        bool(server.get('source_share_server_id')) and
+        bool(server.get('replica_state'))
+    )
+
+
+def get_share_server_replicas(context, db, source_share_server_id):
+    """Return replica members for a given source share server id."""
+
+    replicas = db.share_server_get_all_with_filters(
+        context, {'source_share_server_id': source_share_server_id})
+    return [
+        server for server in replicas
+        if is_share_server_replica(server)
+    ]
+
+
+def get_share_server_availability_zone(context, db, server):
+    """Extract availability zone for a share server replica."""
+
+    for subnet in server.get('share_network_subnets') or []:
+        az = subnet.get('availability_zone')
+        if az:
+            return az
+
+    service_host = extract_host(server.get('host') or '')
+    if not service_host:
+        return None
+
+    try:
+        service = db.service_get_by_args(context, service_host, 'manila-share')
+    except exception.NotFound:
+        return None
+
+    service_az = service.availability_zone
+    return service_az.name if service_az else None
+
+
+def build_share_server_replica_row(context, db, server,
+                                   source_share_server_id,
+                                   metadata_data=None,
+                                   replica_state=None):
+    """Build normalized API row for a share server replica."""
+
+    row = dict(server)
+    share_network_id = server.get('share_network_id')
+    share_network_name = server.get('share_network_name')
+    availability_zone = get_share_server_availability_zone(context, db, server)
+    row['share_server_id'] = server['id']
+    row['source_share_server_id'] = source_share_server_id
+    row['share_network_id'] = share_network_id
+    row['share_network_name'] = share_network_name
+    row['availability_zone'] = availability_zone
+    row['replica_state'] = (
+        replica_state if replica_state is not None
+        else server.get('replica_state')
+    )
+    if (row.get('replica_state') == constants.REPLICA_STATE_ACTIVE and
+            row.get('status') == constants.STATUS_ACTIVE):
+        row['status'] = constants.STATUS_AVAILABLE
+    row['metadata'] = metadata_data or {}
+    return row
+
+
+def build_share_server_replica_rows(context, db, active_share_server_replica,
+                                    all_share_server_replicas):
+    """Build API rows for one active source and its replica members."""
+
+    replicas = [build_share_server_replica_row(
+        context,
+        db,
+        active_share_server_replica,
+        source_share_server_id=active_share_server_replica['id'],
+        metadata_data={},
+        replica_state=(active_share_server_replica.get('replica_state') or
+                       constants.REPLICA_STATE_ACTIVE),
+    )]
+
+    for replica in all_share_server_replicas:
+        replicas.append(build_share_server_replica_row(
+            context,
+            db,
+            replica,
+            source_share_server_id=replica.get('source_share_server_id'),
+            metadata_data=db.share_server_replica_metadata_get(
+                context, replica['id']),
+        ))
+
+    return replicas
+
+
+def is_share_server_replication_enabled(context, db, share_server):
+    """Check if share server replication is enabled."""
+
+    share_server_replicas = db.share_server_get_all_with_filters(
+        context, {'source_share_server_id': share_server['id']})
+    return any(r.get('replica_state') for r in share_server_replicas)
+
+
+def is_share_protected_via_share_server_replica(context, db, share):
+    """Return whether a share is protected by share server replication."""
+
+    share_server_id = (
+        share.get('instance', {}).get('share_server_id') or
+        share.get('share_server_id')
+    )
+
+    if not share_server_id:
+        instances = share.get('instances') or []
+        for instance in instances:
+            share_server_id = instance.get('share_server_id')
+            if share_server_id:
+                break
+
+    if not share_server_id:
+        return False
+
+    try:
+        share_server = db.share_server_get(context, share_server_id)
+    except (exception.ShareServerNotFound, exception.NotFound):
+        return False
+
+    return is_share_server_replication_enabled(context, db, share_server)
+
+
+def build_share_server_replica_payload(replica_server, include_metadata=False,
+                                       metadata=None):
+    """Build a normalized replica payload for share server replica flows."""
+    status = replica_server.get('status')
+    if status in (constants.STATUS_INACTIVE, constants.STATUS_ACTIVE):
+        status = constants.STATUS_AVAILABLE
+
+    payload = {
+        'id': replica_server['id'],
+        'status': status,
+        'replica_state': replica_server.get('replica_state'),
+        'share_server': replica_server,
+    }
+
+    if include_metadata:
+        payload['metadata'] = metadata or {}
+
+    return payload

@@ -797,13 +797,6 @@ class ShareDriver(object):
         """
         raise NotImplementedError()
 
-    def ensure_share_server(self, context, share_server, network_info):
-        """Invoked to ensure that share server is exported.
-
-        :return: None or backend details
-        """
-        raise NotImplementedError()
-
     def allow_access(self, context, share, access, share_server=None):
         """Allow access to the share."""
         raise NotImplementedError()
@@ -1378,6 +1371,7 @@ class ShareDriver(object):
                 self.share_replicas_migration_support),
             encryption_support=self.encryption_support,
             qos_type_support=self.qos_type_support,
+            snapshot_inherit_share_access_support=False,
         )
         if isinstance(data, dict):
             common.update(data)
@@ -2211,8 +2205,7 @@ class ShareDriver(object):
 
     def update_replica_state(self, context, replica_list, replica,
                              access_rules, replica_snapshots,
-                             share_server=None,
-                             skip_conf_snapmirror_schedule=False):
+                             share_server=None):
         """Update the replica_state of a replica.
 
         .. note::
@@ -2339,9 +2332,6 @@ class ShareDriver(object):
              ]
 
         :param share_server: <models.ShareServer> or None
-        :param: skip_conf_snapmirror_schedule: True or False
-            Default to False, Setting to True, the driver will skip the
-            snapmirror schedule defined in conf file.
         :return: replica_state: a str value denoting the replica_state.
             Valid values are 'in_sync' and 'out_of_sync' or None (to leave the
             current replica_state unchanged).
@@ -3788,5 +3778,95 @@ class ShareDriver(object):
         :param share_server: share-server model.
         :param metadata: Dict contains key-value pair where driver will
             perform necessary action based on key.
+        """
+        raise NotImplementedError()
+
+    def create_share_server_replica(self, context, new_share_server_replica,
+                                    share_server_replica_list,
+                                    share_network_details=None):
+        """Create a destination share server replica in the backend.
+
+        :param context: The ``context.RequestContext`` object for the request.
+        :param new_share_server_replica: Dict for destination replica.
+        :param share_server_replica_list: List of topology members.
+        :param share_network_details: Optional destination share-network
+            context.
+        :return: Optional dict with model updates for the destination server,
+            typically ``backend_details``.
+
+        Shared example payload for these methods::
+
+            share_server_replica = {
+                'id': 'replica-server-id',
+                'status': 'inactive',
+                'replica_state': 'out_of_sync',
+                'share_server': <ShareServer-like object>,
+                'metadata': {...},
+            }
+            share_server_replica_list = [
+                {'id': 'source-server-id', 'replica_state': 'active'},
+                share_server_replica,
+            ]
+        """
+        raise NotImplementedError()
+
+    def delete_share_server_replica(self, context, share_server_replica,
+                                    share_server_replica_list):
+        """Delete a destination share server replica in the backend.
+
+        :param context: The ``context.RequestContext`` object for the request.
+        :param share_server_replica: Dict for the replica being deleted.
+        :param share_server_replica_list: List of all topology members.
+        :return: None.
+        :raises: Exception when backend deletion fails.
+        """
+        raise NotImplementedError()
+
+    def promote_share_server_replica(self, context, share_server_replica,
+                                     share_server_replica_list,
+                                     share_server_resources=None,
+                                     network_info_list=None):
+        """Promote a non-active share server replica to active.
+
+        :param context: The ``context.RequestContext`` object for the request.
+        :param share_server_replica: Dict for the replica being promoted.
+        :param share_server_replica_list: List of all topology members.
+        :param share_server_resources: Optional payload with share server
+            resources (for example, protected share instances).
+        :param network_info_list: Optional list of network context dicts.
+        :return: Dict with promotion updates ``replica_list`` and
+            ``share_pool_mappings``.
+        """
+        raise NotImplementedError()
+
+    def update_share_server_replica_state(
+            self, context, share_server_replica,
+            share_server_replica_list):
+        """Update backend sync state for a non-active server replica.
+
+        :param context: The ``context.RequestContext`` object for the request.
+        :param share_server_replica: Dict for the replica to be checked.
+        :param share_server_replica_list: List of all topology members.
+        :return: Replica state string or None.
+            Valid states are ``constants.REPLICA_STATE_IN_SYNC`` and
+            ``constants.REPLICA_STATE_OUT_OF_SYNC``. Returning ``None`` keeps
+            the current state unchanged.
+        """
+        raise NotImplementedError()
+
+    def check_for_unplanned_share_server_replica_failover(
+            self, context, share_server_replica_list,
+            share_server_resources=None):
+        """Detect unplanned storage-side failover for server replicas.
+
+        :param context: The ``context.RequestContext`` object for the request.
+        :param share_server_replica_list: List of all topology members.
+        :param share_server_resources: Optional payload with share server
+            resources (for example, protected share instances).
+        :return: Dict with failover decision and optional promotion updates.
+            If no action is needed, return ``{'promote_required': False}``.
+            If failover is required, return ``{'promote_required': True}``
+            plus promotion fields consumed by manager (for example,
+            ``replica_list`` and ``share_pool_mappings``).
         """
         raise NotImplementedError()

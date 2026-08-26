@@ -19,6 +19,7 @@ class Resource(object):
     SHARE = 'SHARE'
     SHARE_GROUP = 'SHARE_GROUP'
     SHARE_REPLICA = 'SHARE_REPLICA'
+    SHARE_SERVER_REPLICA = 'SHARE_SERVER_REPLICA'
     SHARE_SNAPSHOT = 'SHARE_SNAPSHOT'
     SECURITY_SERVICE = 'SECURITY_SERVICE'
     SHARE_NETWORK_SUBNET = 'SHARE_NETWORK_SUBNET'
@@ -40,6 +41,8 @@ class Action(object):
     TRANSFER_ACCEPT = ('026', _('transfer accept'))
     UPDATE_METADATA = ('027', _('update_metadata'))
     RESTORE_BACKUP = ('028', _('restore share backup'))
+    RESYNC = ('029', _('resync'))
+    FAILOVER = ('030', _('failover'))
     ALL = (
         ALLOCATE_HOST,
         CREATE,
@@ -54,7 +57,9 @@ class Action(object):
         ADD_UPDATE_SECURITY_SERVICE,
         TRANSFER_ACCEPT,
         UPDATE_METADATA,
-        RESTORE_BACKUP
+        RESTORE_BACKUP,
+        RESYNC,
+        FAILOVER,
     )
 
 
@@ -171,6 +176,10 @@ class Detail(object):
         '031',
         _("Metadata delete operation includes driver updatable metadata, and "
           "it is not passed to share driver to perform required operation."))
+    TARGETED_RESTORE_UNSUPPORTED = (
+        '032',
+        _("Cannot restore a given backup to a target share, not supported by "
+          "share driver."))
     NEUTRON_SUBNET_FULL = (
         '033',
         _("Share Driver failed to create share server on share network "
@@ -184,40 +193,16 @@ class Detail(object):
         _("Share driver has failed to create share replica "
           "because of unsupported configuration options. "
           "Please try again with a different configuration."))
-
-    # SCI: Keep the SCI CUSTOM MESSAGE at the end of list and count backwards
-
-    CIFS_SERVER_CERTIFICATE_ERROR = (
-        '993',
-        _("Share Driver failed to setup the CIFS server due to a TLS/SSL "
-          "certificate error. Either the CA certificate used to sign the "
-          "Active Directory domain controller certificate is not in the list "
-          "of allowed CAs, or the domain controller hostname does not match "
-          "the certificate. Please refer to the documentation for the list "
-          "of allowed CAs."))
-    CIFS_SERVER_SETUP_FAILED = (
-        '994',
-        _("Failed to setup the CIFS/Active Directory server after multiple "
-          "attempts. Please contact your administrator to check the storage "
-          "backend logs for details."))
-    EXTERNAL_SCHEDULER_FILTERED_ALL_HOSTS = (
-        '995',
-        _("External scheduler API has filtered out all hosts."))
-    # 996: NEUTRON_SUBNET_FULL moved to 033 upstream
-    DRIVER_FAILED_DELETE_SHARE_SNAPMIRROR = (
-        '997',
-        _("Share Driver failed to delete the share. A backup SnapMirror "
-          "configuration exist in the backend that has to be removed first in "
-          "order to delete the share. Please contact Storage Team via SNOW "
-          "ticket."))
-    FILTER_AFFINITY = ('998', FILTER_MSG % 'AffinityFilter')
-    FILTER_ANTI_AFFINITY = ('999', FILTER_MSG % 'AntiAffinityFilter')
-    # ////////////////////////// SCI custom message //////////////////////////
-
-    TARGETED_RESTORE_UNSUPPORTED = (
-        '032',
-        _("Cannot restore a given backup to a target share, not supported by "
-          "share driver."))
+    RESYNC_FAILED_RECREATE_REPLICA = (
+        '035',
+        _("Share driver failed to resync the share server replica. "
+          "Please delete this share server replica and create a new "
+          "one to recover."))
+    FAILOVER_FAILED_RECREATE_REPLICA = (
+        '036',
+        _("Share driver failed to process the unplanned failover for the "
+          "share server replica. Please delete this share server replica "
+          "and create a new one to recover."))
 
     ALL = (
         UNKNOWN_ERROR,
@@ -226,10 +211,6 @@ class Detail(object):
         NO_SHARE_SERVER,
         NO_ACTIVE_AVAILABLE_REPLICA,
         NO_ACTIVE_REPLICA,
-        NEUTRON_SUBNET_FULL,
-        EXTERNAL_SCHEDULER_FILTERED_ALL_HOSTS,
-        FILTER_AFFINITY,
-        FILTER_ANTI_AFFINITY,
         FILTER_AVAILABILITY,
         FILTER_CAPABILITIES,
         FILTER_CAPACITY,
@@ -243,7 +224,6 @@ class Detail(object):
         DRIVER_FAILED_CREATING_FROM_SNAP,
         DRIVER_REFUSED_SHRINK,
         DRIVER_FAILED_SHRINK,
-        DRIVER_FAILED_DELETE_SHARE_SNAPMIRROR,
         FORBIDDEN_CLIENT_ACCESS,
         UNSUPPORTED_CLIENT_ACCESS,
         UNSUPPORTED_ADD_UDPATE_SECURITY_SERVICE,
@@ -256,10 +236,11 @@ class Detail(object):
         UPDATE_METADATA_SUCCESS,
         UPDATE_METADATA_FAILURE,
         UPDATE_METADATA_NOT_DELETED,
-        CIFS_SERVER_SETUP_FAILED,
-        CIFS_SERVER_CERTIFICATE_ERROR,
-        UNSUPPORTED_REPLICA_CREATE_CONFIG,
         TARGETED_RESTORE_UNSUPPORTED,
+        NEUTRON_SUBNET_FULL,
+        UNSUPPORTED_REPLICA_CREATE_CONFIG,
+        RESYNC_FAILED_RECREATE_REPLICA,
+        FAILOVER_FAILED_RECREATE_REPLICA,
     )
 
     # Exception and detail mappings
@@ -270,9 +251,6 @@ class Detail(object):
     # Use special code for each filter rather then categorize all as
     # NO_VALID_HOST
     FILTER_DETAIL_MAPPINGS = {
-        'AffinityFilter': FILTER_AFFINITY,
-        'AntiAffinityFilter': FILTER_ANTI_AFFINITY,
-        'call_external_scheduler_api': EXTERNAL_SCHEDULER_FILTERED_ALL_HOSTS,
         'AvailabilityZoneFilter': FILTER_AVAILABILITY,
         'CapabilitiesFilter': FILTER_CAPABILITIES,
         'CapacityFilter': FILTER_CAPACITY,

@@ -317,6 +317,7 @@ class Share(BASE, ManilaBase):
     revert_to_snapshot_support = Column(Boolean, default=False)
     replication_type = Column(String(255), nullable=True)
     mount_snapshot_support = Column(Boolean, default=False)
+    snapshot_inherit_share_access_support = Column(Boolean, default=False)
     share_proto = Column(String(255))
     is_public = Column(Boolean, default=False)
     share_group_id = Column(String(36),
@@ -1081,7 +1082,6 @@ class ShareNetworkSubnet(BASE, ManilaBase):
     share_servers = orm.relationship(
         "ShareServer",
         secondary="share_server_share_network_subnet_mappings",
-        backref="share_network_subnets",
         lazy='immediate',
         primaryjoin="and_(ShareNetworkSubnet.id == "
                     "%(cls_name)s.share_network_subnet_id, "
@@ -1090,7 +1090,8 @@ class ShareNetworkSubnet(BASE, ManilaBase):
         secondaryjoin='and_('
                       'ShareServer.id == '
                       'ShareServerShareNetworkSubnetMapping.share_server_id,'
-                      'ShareServerShareNetworkSubnetMapping.deleted == 0)'
+                      'ShareServerShareNetworkSubnetMapping.deleted == 0)',
+        back_populates="share_network_subnets",
     )
 
     _availability_zone = orm.relationship(
@@ -1168,15 +1169,18 @@ class ShareServer(BASE, ManilaBase):
         Boolean, nullable=False, default=False)
     encryption_key_ref = Column(String(36), nullable=True)
     application_credential_id = Column(String(36), nullable=True)
+    replica_state = Column(String(32), nullable=True)
     status = Column(Enum(
         constants.STATUS_INACTIVE, constants.STATUS_ACTIVE,
-        constants.STATUS_ERROR, constants.STATUS_DELETING,
+        constants.STATUS_ERROR, constants.STATUS_ERROR_DELETING,
+        constants.STATUS_DELETING,
         constants.STATUS_CREATING, constants.STATUS_DELETED,
         constants.STATUS_MANAGING, constants.STATUS_UNMANAGING,
         constants.STATUS_UNMANAGE_ERROR, constants.STATUS_MANAGE_ERROR,
         constants.STATUS_SERVER_MIGRATING,
         constants.STATUS_SERVER_MIGRATING_TO,
-        constants.STATUS_SERVER_NETWORK_CHANGE),
+        constants.STATUS_SERVER_NETWORK_CHANGE,
+        constants.STATUS_REPLICATION_CHANGE),
         default=constants.STATUS_INACTIVE)
     network_allocations = orm.relationship(
         "NetworkAllocation",
@@ -1215,6 +1219,22 @@ class ShareServer(BASE, ManilaBase):
                     'ShareServerShareNetworkSubnetMapping.share_server_id,'
                     'ShareServerShareNetworkSubnetMapping.deleted == 0)')
 
+    share_network_subnets = orm.relationship(
+        "ShareNetworkSubnet",
+        secondary="share_server_share_network_subnet_mappings",
+        lazy='joined',
+        primaryjoin="and_("
+                    "ShareServer.id == "
+                    "ShareServerShareNetworkSubnetMapping.share_server_id, "
+                    "ShareServerShareNetworkSubnetMapping.deleted == 0)",
+        secondaryjoin=(
+            "and_("
+            "ShareNetworkSubnet.id == "
+            "ShareServerShareNetworkSubnetMapping.share_network_subnet_id, "
+            "ShareNetworkSubnet.deleted == 'False')"),
+        back_populates="share_servers",
+    )
+
     @property
     def backend_details(self):
         return {model['key']: model['value']
@@ -1229,6 +1249,25 @@ class ShareServer(BASE, ManilaBase):
     def share_network_id(self):
         return (self.share_network_subnets[0]['share_network_id']
                 if self.share_network_subnets else None)
+
+    @property
+    def share_network(self):
+        try:
+            return self.share_network_subnets[0]['share_network']
+        except (IndexError, KeyError, AttributeError):
+            return None
+
+    @property
+    def project_id(self):
+        if not self.share_network:
+            return ''
+        return self.share_network['project_id']
+
+    @property
+    def share_network_name(self):
+        if not self.share_network:
+            return ''
+        return self.share_network['name'] or self.share_network['id']
 
     _extra_keys = ['backend_details', 'share_network_subnet_ids']
 
@@ -1664,6 +1703,32 @@ class QosTypeSpecs(BASE, ManilaBase):
         primaryjoin='and_('
         'QosTypeSpecs.qos_type_id == QosTypes.id,'
         'QosTypeSpecs.deleted == "False")'
+    )
+
+
+class ShareServerMetadata(BASE, ManilaBase):
+    """Represents metadata key/value pairs for a share server."""
+
+    __tablename__ = 'share_server_metadata'
+
+    id = Column(Integer, primary_key=True, nullable=False)
+    deleted = Column(String(36), default='False')
+    share_server_id = Column(
+        String(36), ForeignKey('share_servers.id'),
+        nullable=False, index=True,
+    )
+    key = Column(String(255), nullable=False)
+    value = Column(String(1023), nullable=False)
+
+    share_server = orm.relationship(
+        "ShareServer",
+        foreign_keys=share_server_id,
+        backref='share_server_metadata',
+        primaryjoin='and_('
+                    'ShareServerMetadata.'
+                    'share_server_id == '
+                    'ShareServer.id,'
+                    'ShareServerMetadata.deleted == "False")',
     )
 
 

@@ -27,6 +27,7 @@ class ViewBuilder(common.ViewBuilder):
         "add_share_replica_quotas",
         "add_share_group_quotas",
         "add_share_backup_quotas",
+        "add_share_server_replica_quotas",
     ]
 
     def build(self, request, rate_limits, absolute_limits):
@@ -139,3 +140,11 @@ class ViewBuilder(common.ViewBuilder):
         limit_names["in_use"]["backups"] = ["totalShareBackupsUsed"]
         limit_names["in_use"]["backup_gigabytes"] = (
             ["totalBackupGigabytesUsed"])
+
+    @common.ViewBuilder.versioned_method("2.100")
+    def add_share_server_replica_quotas(self, request, limit_names,
+                                        absolute_limits):
+        limit_names["limit"]["share_server_replicas"] = (
+            ["maxTotalShareServerReplicas"])
+        limit_names["in_use"]["share_server_replicas"] = (
+            ["totalShareServerReplicasUsed"])
