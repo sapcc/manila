@@ -22,6 +22,7 @@ import ddt
 
 from manila.common import constants
 from manila import exception
+from manila.share.drivers.netapp.dataontap.client import api as netapp_api
 from manila.share.drivers.netapp.dataontap.protocols import cifs_cmode
 from manila import test
 from manila.tests.share.drivers.netapp.dataontap.protocols \
@@ -86,6 +87,24 @@ class NetAppClusteredCIFSHelperTestCase(test.TestCase):
                           self.helper.create_share,
                           fake.CIFS_SHARE, fake.SHARE_NAME,
                           ensure_share_already_exists=True)
+
+    def test_create_share_junction_path_retry(self):
+        """CIFS create_share retries on transient NaApiError 13001."""
+        self.mock_client.cifs_share_exists.return_value = False
+        self.mock_client.get_volume_junction_path.side_effect = [
+            netapp_api.NaApiError(code='13001',
+                                  message="MSID entry doesn't exist"),
+            fake.CIFS_SHARE_PATH,
+        ]
+
+        result = self.helper.create_share(fake.CIFS_SHARE, fake.SHARE_NAME)
+
+        self.assertEqual(2,
+                         self.mock_client.get_volume_junction_path.call_count)
+        export_path = result(fake.SHARE_ADDRESS_1)
+        self.assertEqual(
+            r'\\%s%s' % (fake.SHARE_ADDRESS_1, fake.CIFS_SHARE_PATH_PARSED),
+            export_path)
 
     def test_delete_share(self):
 

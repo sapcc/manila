@@ -20,8 +20,10 @@ import re
 from manila.common import constants
 from manila import exception
 from manila.i18n import _
+from manila.share.drivers.netapp.dataontap.client import api as netapp_api
 from manila.share.drivers.netapp.dataontap.protocols import base
 from manila.share.drivers.netapp import utils as na_utils
+from manila import utils
 
 
 class NetAppCmodeCIFSHelper(base.NetAppBaseHelper):
@@ -45,8 +47,12 @@ class NetAppCmodeCIFSHelper(base.NetAppBaseHelper):
         :param is_flexgroup: whether the share is a FlexGroup or not.
         """
 
+        @utils.retry(retry_param=netapp_api.NaApiError, retries=5)
+        def _get_volume_junction_path(share_name):
+            return self._client.get_volume_junction_path(share_name)
+
         cifs_exist = self._client.cifs_share_exists(share_name)
-        export_path = self._client.get_volume_junction_path(share_name)
+        export_path = _get_volume_junction_path(share_name)
         if ensure_share_already_exists and not cifs_exist:
             msg = _("The expected CIFS share %(share_name)s was not found.")
             msg_args = {'share_name': share_name}
