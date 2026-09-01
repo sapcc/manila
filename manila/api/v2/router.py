@@ -22,19 +22,16 @@ WSGI middleware for OpenStack Share API v2.
 
 from manila.api import extensions
 import manila.api.openstack
-from manila.api.v1 import limits
-from manila.api.v1 import scheduler_stats
-from manila.api.v1 import security_service
-from manila.api.v1 import share_manage
-from manila.api.v1 import share_types_extra_specs
-from manila.api.v1 import share_unmanage
 from manila.api.v2 import availability_zones
+from manila.api.v2 import limits
 from manila.api.v2 import messages
 from manila.api.v2 import qos_type_specs
 from manila.api.v2 import qos_types
 from manila.api.v2 import quota_class_sets
 from manila.api.v2 import quota_sets
 from manila.api.v2 import resource_locks
+from manila.api.v2 import scheduler_stats
+from manila.api.v2 import security_service
 from manila.api.v2 import services
 from manila.api.v2 import share_access_metadata
 from manila.api.v2 import share_accesses
@@ -46,10 +43,12 @@ from manila.api.v2 import share_group_types
 from manila.api.v2 import share_groups
 from manila.api.v2 import share_instance_export_locations
 from manila.api.v2 import share_instances
+from manila.api.v2 import share_manage
 from manila.api.v2 import share_network_subnets
 from manila.api.v2 import share_networks
 from manila.api.v2 import share_replica_export_locations
 from manila.api.v2 import share_replicas
+from manila.api.v2 import share_server_replicas
 from manila.api.v2 import share_servers
 from manila.api.v2 import share_snapshot_export_locations
 from manila.api.v2 import share_snapshot_instance_export_locations
@@ -57,6 +56,8 @@ from manila.api.v2 import share_snapshot_instances
 from manila.api.v2 import share_snapshots
 from manila.api.v2 import share_transfer
 from manila.api.v2 import share_types
+from manila.api.v2 import share_types_extra_specs
+from manila.api.v2 import share_unmanage
 from manila.api.v2 import shares
 from manila.api import versions
 
@@ -165,6 +166,15 @@ class APIRouter(manila.api.openstack.APIRouter):
                         controller=self.resources["shares"],
                         collection={"detail": "GET"},
                         member={"action": "POST"})
+
+        for path_prefix in ['/{project_id}', '']:
+            # project_id is optional
+            mapper.connect("shares",
+                           "%s/shares/{id}/migration-progress"
+                           % path_prefix,
+                           controller=self.resources["shares"],
+                           action="migration_progress_show",
+                           conditions={"method": ["GET"]})
 
         for path_prefix in ['/{project_id}', '']:
             # project_id is optional
@@ -782,3 +792,49 @@ class APIRouter(manila.api.openstack.APIRouter):
                 controller=self.resources["qos_type_specs"],
                 action="update",
                 conditions={"method": ["PUT"]})
+
+        self.resources['share-server-replicas'] = (
+            share_server_replicas.create_resource())
+        mapper.resource("share-server-replica", "share-server-replicas",
+                        controller=self.resources['share-server-replicas'],
+                        collection={'detail': 'GET'},
+                        member={'action': 'POST'})
+
+        for path_prefix in ['/{project_id}', '']:
+            # project_id is optional
+            mapper.connect("share_server_replica_metadata",
+                           "%s/share-server-replicas/{resource_id}/metadata"
+                           % path_prefix,
+                           controller=self.resources["share-server-replicas"],
+                           action="create_metadata",
+                           conditions={"method": ["POST"]})
+            mapper.connect("share_server_replica_metadata",
+                           "%s/share-server-replicas/{resource_id}/metadata"
+                           % path_prefix,
+                           controller=self.resources["share-server-replicas"],
+                           action="update_all_metadata",
+                           conditions={"method": ["PUT"]})
+            mapper.connect("share_server_replica_metadata",
+                           "%s/share-server-replicas/{resource_id}"
+                           "/metadata/{key}" % path_prefix,
+                           controller=self.resources["share-server-replicas"],
+                           action="update_metadata_item",
+                           conditions={"method": ["POST"]})
+            mapper.connect("share_server_replica_metadata",
+                           "%s/share-server-replicas/{resource_id}/metadata"
+                           % path_prefix,
+                           controller=self.resources["share-server-replicas"],
+                           action="index_metadata",
+                           conditions={"method": ["GET"]})
+            mapper.connect("share_server_replica_metadata",
+                           "%s/share-server-replicas/{resource_id}"
+                           "/metadata/{key}" % path_prefix,
+                           controller=self.resources["share-server-replicas"],
+                           action="show_metadata",
+                           conditions={"method": ["GET"]})
+            mapper.connect("share_server_replica_metadata",
+                           "%s/share-server-replicas/{resource_id}"
+                           "/metadata/{key}" % path_prefix,
+                           controller=self.resources["share-server-replicas"],
+                           action="delete_metadata",
+                           conditions={"method": ["DELETE"]})

@@ -74,3 +74,10 @@ class ChanceScheduler(base.Scheduler):
             filter_properties,
             snapshot_id
         )
+
+    def select_share_server_replica_host(self, context, request_spec,
+                                         filter_properties=None):
+        """Picks a host that is up at random."""
+        topic = CONF.share_topic
+        return self._schedule(context, topic, request_spec,
+                              filter_properties=filter_properties)

@@ -44,9 +44,10 @@ class SchedulerAPI(object):
         1.9  - Add cached parameter to get_pools method
         1.10 - Add timestamp to update_service_capabilities
         1.11 - Add extend_share
+        1.12 - Add select_share_server_replica_host
     """
 
-    RPC_API_VERSION = '1.11'
+    RPC_API_VERSION = '1.12'
 
     def __init__(self):
         super(SchedulerAPI, self).__init__()
@@ -159,3 +160,14 @@ class SchedulerAPI(object):
         }
 
         return call_context.cast(context, 'extend_share', **msg_args)
+
+    def select_share_server_replica_host(self, context, request_spec=None,
+                                         filter_properties=None):
+        request_spec_p = jsonutils.to_primitive(request_spec)
+        call_context = self.client.prepare(version='1.12')
+        return call_context.call(
+            context,
+            'select_share_server_replica_host',
+            request_spec=request_spec_p,
+            filter_properties=filter_properties,
+        )

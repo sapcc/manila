@@ -25,15 +25,12 @@ import functools
 import hashlib
 import json
 from operator import xor
-import os
 
 from keystoneauth1 import loading as ks_loading
 from oslo_config import cfg
 from oslo_log import log
 from oslo_serialization import jsonutils
-from oslo_service import loopingcall
 from oslo_service import periodic_task
-from oslo_service import threadgroup
 from oslo_utils import excutils
 from oslo_utils import importutils
 from oslo_utils import timeutils
@@ -52,8 +49,6 @@ from manila import quota
 from manila.share import access
 from manila.share import api
 from manila.share import configuration
-# ccloud: try to avoid pulling in driver code
-from manila.share.drivers.netapp.dataontap.client import api as netapp_api
 from manila.share import drivers_private_data
 from manila.share import migration
 from manila.share import rpcapi as share_rpcapi
@@ -76,26 +71,10 @@ share_manager_opts = [
                 help='Driver(s) to perform some additional actions before and '
                      'after share driver actions and on a periodic basis. '
                      'Default is [].'),
-    cfg.IntOpt('ensure_driver_resources_interval',
-               default=-1,
-               help='This value, specified in seconds, determines how often '
-                    'the share manager will run periodic tasks that ensure '
-                    'driver resources.'),
     cfg.BoolOpt('delete_share_server_with_last_share',
                 default=False,
                 help='Whether share servers will '
                      'be deleted on deletion of the last share.'),
-    cfg.IntOpt('force_delete_time',
-               default=2,
-               min=0,
-               max=12,
-               help='Maximum time diff in hours to decide whether share will '
-                    'be deleted or force deleted. If time difference between '
-                    'share deletion time and creation time is less than '
-                    'force_delete_time, share will be force deleted. In case '
-                    'force delete fails, volume will be deleted in regular '
-                    'way and it will stay in recovery queue for some time. '
-                    'Value of 0 indicates disable force-delete feature.'),
     cfg.BoolOpt('unmanage_remove_access_rules',
                 default=False,
                 help='If set to True, then manila will deny access and remove '
@@ -124,6 +103,17 @@ share_manager_opts = [
                help='This value, specified in seconds, determines how often '
                     'the share manager will poll for the health '
                     '(replica_state) of each replica instance.'),
+    cfg.IntOpt('share_server_replica_state_update_interval',
+               default=300,
+               help='This value, specified in seconds, determines how often '
+                    'the share manager will poll for the health '
+                    '(replica_state) of each share server replica.'),
+    cfg.IntOpt('share_server_replica_failover_check_interval',
+               default=300,
+               help='This value, specified in seconds, determines how often '
+                    'the share manager will poll each non-active share '
+                    'server replica to detect an unplanned storage-side '
+                    'failover.'),
     cfg.IntOpt('migration_driver_continue_update_interval',
                default=60,
                help='This value, specified in seconds, determines how often '
@@ -188,14 +178,18 @@ share_manager_opts = [
                help='This value, specified in seconds, determines how often '
                     'the share manager will try to delete the share and share '
                     'snapshots in backend driver.'),
-    cfg.IntOpt('share_service_concurrency',
+    cfg.IntOpt('share_server_replica_cleanup_retry_interval',
+               default=2,
+               help='This value, specified in seconds, determines the '
+                    'interval between retries when waiting for share '
+                    'server replicas to '
+                    'be cleaned up during replica deletion.'),
+    cfg.IntOpt('share_server_replica_cleanup_max_retries',
                default=10,
-               min=1,
-               max=100,
-               help='Maximum number of concurrent share operations that can '
-                    'execute in parallel. Increase this value to improve '
-                    'throughput for I/O-bound operations (especially NetApp '
-                    'backend calls). Default is 10.'),
+               help='This value specifies the maximum number of retries '
+                    'when waiting for share server replicas to be cleaned '
+                    'up during '
+                    'replica deletion.'),
 ]
 
 
@@ -281,31 +275,6 @@ def locked_share_network_operation(operation):
     return wrapped
 
 
-def run_concurrently(f):
-    """Decorator to enable concurrent execution of RPC methods.
-
-    Executes the decorated method in a green thread from the thread group,
-    allowing multiple RPC calls to run concurrently. This improves throughput
-    for I/O-bound operations that wait on backend responses.
-
-    The method still returns its result synchronously (blocks the caller),
-    but multiple concurrent calls execute in parallel green threads.
-
-    Uses oslo_service.threadgroup.ThreadGroup for green thread management.
-    Exceptions are propagated via Thread.wait() to maintain RPC semantics.
-    """
-    @functools.wraps(f)
-    def wrapper(self, *args, **kwargs):
-        # Fallback to direct execution if thread group is not available
-        if not hasattr(self, '_thread_group'):
-            return f(self, *args, **kwargs)
-
-        thread = self._thread_group.add_thread(f, self, *args, **kwargs)
-        return thread.wait()  # Wait for result and propagate exceptions
-
-    return wrapper
-
-
 def add_hooks(f):
     """Hook decorator to perform action before and after a share method call
 
@@ -341,7 +310,7 @@ def add_hooks(f):
 class ShareManager(manager.SchedulerDependentManager):
     """Manages NAS storages."""
 
-    RPC_API_VERSION = '1.30'
+    RPC_API_VERSION = '1.31'
 
     def __init__(self, share_driver=None, service_name=None, *args, **kwargs):
         """Load the driver from args, or from flags."""
@@ -391,9 +360,6 @@ class ShareManager(manager.SchedulerDependentManager):
         self._init_hook_drivers()
         self.service_id = None
 
-        self._thread_group = threadgroup.ThreadGroup(
-            thread_pool_size=self.configuration.share_service_concurrency)
-
     def _init_hook_drivers(self):
         # Try to initialize hook driver(s).
         hook_drivers = self.configuration.safe_get("hook_drivers")
@@ -430,16 +396,10 @@ class ShareManager(manager.SchedulerDependentManager):
         return pool
 
     @add_hooks
-    def init_host(self, service_id=None, reexport=False):
+    def init_host(self, service_id=None):
         """Initialization for a standalone service."""
 
         self.service_id = service_id
-        # mark service alive by creating a probe
-        try:
-            open('/etc/manila/probe', 'a')
-        except Exception as e:
-            LOG.error("Probe not created: %(e)s", {'e': str(e)})
-
         ctxt = context.get_admin_context()
         driver_host_pair = "{}@{}".format(
             self.driver.__class__.__name__,
@@ -452,7 +412,6 @@ class ShareManager(manager.SchedulerDependentManager):
                      infinite=True, backoff_sleep_max=600)
         def _driver_setup():
             self.driver.initialized = False
-            self.driver.ensure = reexport
             LOG.debug("Start initialization of driver: '%s'", driver_host_pair)
             try:
                 self.driver.do_setup(ctxt)
@@ -460,13 +419,6 @@ class ShareManager(manager.SchedulerDependentManager):
             except Exception:
                 LOG.exception("Error encountered during initialization of "
                               "driver %s", driver_host_pair)
-                # init failed, mark service dead by removing the probe
-                try:
-                    os.remove('/etc/manila/probe')
-                except Exception as e:
-                    LOG.error("Not removed: %(e)s", {'e': str(e)})
-                # we don't want to continue since we failed
-                # to initialize the driver correctly.
                 raise
             else:
                 self.driver.initialized = True
@@ -477,42 +429,13 @@ class ShareManager(manager.SchedulerDependentManager):
             (self.driver.service_instance_manager.network_helper.
              setup_connectivity_with_service_instances())
 
-        if self.driver.ensure:
-            # NOTE(chuan137) To be compatible with the old behavior, we run
-            # ensure_driver_resources only once when its interval is set to
-            # ngeative.
-            if CONF.ensure_driver_resources_interval < 0:
-                self.ensure_driver_resources(ctxt)
-            else:
-                reexport_task = loopingcall.FixedIntervalLoopingCall(
-                    self.ensure_driver_resources, ctxt)
-                reexport_task.start(
-                    interval=CONF.ensure_driver_resources_interval,
-                    initial_delay=30,
-                    stop_on_exception=False)
-        else:
-            self.publish_service_capabilities(ctxt)
+        self.ensure_driver_resources(ctxt)
 
+        self.publish_service_capabilities(ctxt)
         LOG.info("Finished initialization of driver: '%(driver)s"
                  "@%(host)s'",
                  {"driver": self.driver.__class__.__name__,
                   "host": self.host})
-        # init done, mark service ready
-        try:
-            with open('/etc/manila/probe', 'w+') as f:
-                f.write('ready\n')
-        except Exception as e:
-            LOG.error("Probe not written: %(e)s", {'e': str(e)})
-
-    def stop(self):
-        """Stop share manager gracefully.
-
-        Waits for thread group to complete pending tasks before shutdown.
-        This ensures in-flight operations complete cleanly.
-        """
-        if hasattr(self, '_thread_group'):
-            LOG.info("Stopping share manager, waiting for thread group...")
-            self._thread_group.stop(graceful=True)
 
     def is_service_ready(self):
         """Return if Manager is ready to accept requests.
@@ -561,69 +484,12 @@ class ShareManager(manager.SchedulerDependentManager):
                     {'host': self.host})
                 return
 
-        share_servers = self.db.share_server_get_all_by_host(ctxt, self.host)
-        LOG.debug("Re-exporting %s share servers", len(share_servers))
-        for share_server in share_servers:
-            if share_server['status'] != constants.STATUS_ACTIVE:
-                LOG.info(
-                    "Share server %(id)s: skipping export, "
-                    "because it has '%(status)s' status.",
-                    {'id': share_server['id'],
-                     'status': share_server['status']},
-                )
-                continue
-
-            server_details = share_server.backend_details
-            if 'skip_ensure' in server_details:
-                if server_details['skip_ensure'] == 'yes':
-                    LOG.info(
-                        "Share server %(id)s: skipping export, "
-                        "because it has skip_ensure flag set with reason "
-                        "'%(reason)s'.",
-                        {'id': share_server['id'],
-                         'reason': server_details.get('skip_ensure_comment')},
-                    )
-                    continue
-
-            share_network = self.db.share_network_get(
-                ctxt, share_server.share_network_id)
-
-            share_network_subnets = (
-                self.db.share_network_subnet_get_all_by_share_server_id(
-                    ctxt, share_server['id']))
-
-            network_info_list = self._form_server_setup_info(
-                ctxt, share_server, share_network, share_network_subnets,
-                add_gateways=True)
-
-            server_info = self.driver.ensure_share_server(
-                ctxt, share_server, network_info_list)
-            if server_info:
-                LOG.debug(
-                    ("Adding server_info %(server_info)s to share server "
-                     "%(share_server)s"),
-                    {'server_info': server_info,
-                     'share_server': share_server['id']})
-                self.db.share_server_backend_details_set(
-                    ctxt, share_server['id'], server_info)
-
-            # update share server by driver capabilities
-            server_specs = {
-                'share_replicas_migration_support': (
-                    self.driver.share_replicas_migration_support
-                ),
-            }
-            self.db.share_server_update(ctxt, share_server['id'], server_specs)
-
         share_instances = self.db.share_instance_get_all_by_host(
             ctxt, self.host)
         LOG.debug("Re-exporting %s shares", len(share_instances))
 
         for share_instance in share_instances:
-            try:
-                share_ref = self.db.share_get(ctxt, share_instance['share_id'])
-            except exception.NotFound:
-                continue
+            share_ref = self.db.share_get(ctxt, share_instance['share_id'])
 
             if share_ref.is_busy:
                 LOG.info(
@@ -634,34 +500,23 @@ class ShareManager(manager.SchedulerDependentManager):
                 )
                 continue
 
-            metadata = share_ref.get('share_metadata')
-            if metadata:
-                metadata = {item['key']: item['value'] for item in metadata}
-                if 'snapmirror' in metadata and metadata['snapmirror'] == '1':
-                    LOG.info(
-                        "Share instance %(id)s: skipping export, "
-                        "because it has snapmirror flag.",
-                        {'id': share_instance['id']},
-                    )
-                    continue
-            else:
-                metadata = {}
+            # If the share's status is 'ensuring', we must allow re-doing the
+            # ensuring operation otherwise it will be stuck
+            if (share_instance['status'] not in
+                    [constants.STATUS_AVAILABLE, constants.STATUS_ENSURING]):
+                LOG.info(
+                    "Share instance %(id)s: skipping export, "
+                    "because it has '%(status)s' status.",
+                    {'id': share_instance['id'],
+                     'status': share_instance['status']},
+                )
+                continue
 
-            # only busy aka shares undergoing a migration might not have
-            # their pool fixed, but other skip reasons do not apply
             self._ensure_share_instance_has_pool(ctxt, share_instance)
-
-            if self._skip_ensure_by_status(share_instance):
-                continue
-
-            try:
-                share_instance = self.db.share_instance_get(
-                    ctxt, share_instance['id'], with_share_data=True)
-            except exception.NotFound:
-                continue
+            share_instance = self.db.share_instance_get(
+                ctxt, share_instance['id'], with_share_data=True)
             share_instance_dict = self._get_share_instance_dict(
                 ctxt, share_instance)
-            share_instance_dict.update({'metadata': metadata})
             update_share_instances.append(share_instance_dict)
 
         do_service_status_update = False
@@ -709,15 +564,6 @@ class ShareManager(manager.SchedulerDependentManager):
         for share_instance in share_instances:
             if share_instance['id'] not in update_share_instances:
                 continue
-            # reload to get latest data
-            try:
-                share_instance = self.db.share_instance_get(
-                    ctxt, share_instance['id'], with_share_data=False)
-            except exception.NotFound:
-                continue
-            if self._skip_ensure_by_status(share_instance):
-                continue
-
             share_instance_update_dict = (
                 update_share_instances[share_instance['id']]
             )
@@ -742,23 +588,10 @@ class ShareManager(manager.SchedulerDependentManager):
                 share_instance_update_dict.get('export_locations')
             )
             if update_export_locations:
-                LOG.debug(
-                    "Share instance %(id)s: updating export "
-                    "location '%(export_location)s'.",
-                    {'id': share_instance['id'],
-                     'export_location': update_export_locations},
-                )
                 self.db.export_locations_update(
                     ctxt, share_instance['id'], update_export_locations)
 
-            try:
-                share_server = self._get_share_server(ctxt, share_instance)
-            except exception.ShareServerNotFound:
-                LOG.warning("Share server corresponding to share instance "
-                            " %s not found. Continuing to next share "
-                            "instance ", share_instance['id'])
-                continue
-
+            share_server = self._get_share_server(ctxt, share_instance)
             driver_has_to_reapply_access_rules = (
                 share_instance_update_dict.get('reapply_access_rules') is True
             )
@@ -768,8 +601,6 @@ class ShareManager(manager.SchedulerDependentManager):
             )
             if (driver_has_to_reapply_access_rules or
                     share_instance_has_pending_rules):
-                err_msg = ("'%(error_n)s' error occurred while updating "
-                           "access rules for share instance %(s_id)s.")
                 try:
                     # Cast any existing 'applying' rules to 'new'
                     self.access_helper.reset_rules_to_queueing_states(
@@ -777,21 +608,12 @@ class ShareManager(manager.SchedulerDependentManager):
                         reset_active=driver_has_to_reapply_access_rules)
                     self.access_helper.update_access_rules(
                         ctxt, share_instance['id'], share_server=share_server)
-                except netapp_api.NaApiError as e:
-                    failed_sid = 'Failed to resolve the security identifier'
-                    if (e.code == netapp_api.EAPIERROR and
-                            failed_sid in e.message):
-                        LOG.warning(err_msg, {
-                            'error_n': failed_sid,
-                            's_id': share_instance['id']})
-                    else:
-                        LOG.error(err_msg, {
-                            'error_n': 'NaApiError',
-                            's_id': share_instance['id']})
                 except Exception:
-                    LOG.exception(err_msg, {
-                        'error_n': 'Unexpected',
-                        's_id': share_instance['id']})
+                    LOG.exception(
+                        ("Unexpected error occurred while updating access "
+                         "rules for share instance %(s_id)s."),
+                        {'s_id': share_instance['id']},
+                    )
 
             snapshot_instances = (
                 self.db.share_snapshot_instance_get_all_with_filters(
@@ -828,9 +650,6 @@ class ShareManager(manager.SchedulerDependentManager):
         if do_service_status_update:
             self.db.service_update(ctxt, service['id'], {'ensuring': False})
 
-        LOG.debug("ensure_driver_resources loop completed for host %s.",
-                  self.host)
-
     def _ensure_share(self, ctxt, share_instance):
         export_locations = None
         try:
@@ -852,25 +671,6 @@ class ShareManager(manager.SchedulerDependentManager):
             ctxt, share_instance['id'],
             {'status': constants.STATUS_AVAILABLE}
         )
-
-    def _skip_ensure_by_status(self, share_instance):
-        skip_by_status = True
-
-        if share_instance['status'] == constants.STATUS_CREATING:
-            skip_by_status = not share_instance['share_server_id']
-        elif share_instance['status'] in (constants.STATUS_AVAILABLE,
-                                          constants.STATUS_ENSURING):
-            skip_by_status = False
-
-        if skip_by_status:
-            LOG.info(
-                "Share instance %(id)s on share server '%(server_id)s': "
-                "skipping export, because it has '%(status)s' status.",
-                {'id': share_instance['id'],
-                 'server_id': share_instance['share_server_id'],
-                 'status': share_instance['status']}
-            )
-        return skip_by_status
 
     def _check_share_server_backend_limits(
             self, context, available_share_servers, share_instance=None):
@@ -948,9 +748,6 @@ class ShareManager(manager.SchedulerDependentManager):
         share creation, which starts share_server creation.
         For this purpose used shared lock between this method and the one
         with deletion of share_server.
-        Exception: when creating from a snapshot on the same host, the parent
-        share server is already known and is kept alive by the existing share,
-        so the deletion race cannot occur and the lock is skipped.
 
         :param context: Current context
         :param share_network_id: Share network where existing share server
@@ -1030,6 +827,8 @@ class ShareManager(manager.SchedulerDependentManager):
                             context, self.host, share_network_subnet_id)
                 )
 
+        @utils.synchronized("share_manager_%s" % share_network_subnet_id,
+                            external=True)
         def _wrapped_provide_share_server_for_share():
             try:
                 available_share_servers = get_available_share_servers()
@@ -1155,14 +954,7 @@ class ShareManager(manager.SchedulerDependentManager):
 
             return compatible_share_server, share_instance_ref
 
-        # When creating from a snapshot on the same host the parent share
-        # server is already known and has an active share, so the race with
-        # share-server deletion cannot occur -- skip the lock.
-        if snapshot and parent_share_same_dest:
-            return _wrapped_provide_share_server_for_share()
-        return utils.synchronized(
-            "share_manager_%s" % share_network_subnet_id,
-            external=True)(_wrapped_provide_share_server_for_share)()
+        return _wrapped_provide_share_server_for_share()
 
     def _build_server_metadata(self, context, host, share_type_id,
                                app_cred=None, encryption_key_ref=None,
@@ -1477,15 +1269,31 @@ class ShareManager(manager.SchedulerDependentManager):
         else:
             return None
 
+    def _attach_share_server_replica_list_if_enabled(
+            self, context, share_server=None, server_label='Share server'):
+        """Populate share_server_replica_list when replication is enabled."""
+        if share_server and not share_server.get('replica_state'):
+            return
+
+        if share_server and share_utils.is_share_server_replication_enabled(
+                context, self.db, share_server):
+            share_server_replica_list = self._get_share_server_replicas_list(
+                context, share_server)
+            share_server['share_server_replica_list'] = (
+                share_server_replica_list)
+            LOG.debug(
+                "%s %s: attached replica list with %d entries: %s",
+                server_label,
+                share_server['id'],
+                len(share_server_replica_list),
+                share_server['share_server_replica_list'])
+
     @utils.require_driver_initialized
     def connection_get_info(self, context, share_instance_id):
         share_instance = self.db.share_instance_get(
             context, share_instance_id, with_share_data=True)
 
-        share_server = None
-        if share_instance.get('share_server_id'):
-            share_server = self.db.share_server_get(
-                context, share_instance['share_server_id'])
+        share_server = self._get_share_server(context, share_instance)
 
         return self.driver.connection_get_info(context, share_instance,
                                                share_server)
@@ -2045,16 +1853,6 @@ class ShareManager(manager.SchedulerDependentManager):
             self._get_migrating_snapshots(context, src_share_instance,
                                           dest_share_instance))
 
-        # SCI: attach share metadata to the share instances so the driver
-        # can act on share-level metadata (e.g. cross_volume_dedupe) when
-        # reconciling the destination volume.
-        share_metadata_list = share_ref.get('share_metadata', [])
-        share_metadata = {
-            m['key']: m['value'] for m in share_metadata_list
-        } if share_metadata_list else {}
-        src_share_instance['metadata'] = share_metadata
-        dest_share_instance['metadata'] = share_metadata
-
         data_updates = self.driver.migration_complete(
             context, src_share_instance, dest_share_instance,
             src_snap_instances, snapshot_mappings, share_server,
@@ -2420,7 +2218,6 @@ class ShareManager(manager.SchedulerDependentManager):
             id = share.instance['id']
         return self.db.share_instance_get(context, id, with_share_data=True)
 
-    @run_concurrently
     @add_hooks
     @utils.require_driver_initialized
     def create_share_instance(self, context, share_instance_id,
@@ -2503,7 +2300,7 @@ class ShareManager(manager.SchedulerDependentManager):
                     error = ("Provision of share server failed: "
                              "failed to authenticate user "
                              "against security server.")
-                    LOG.warning(error)
+                    LOG.error(error)
                     self.db.share_instance_update(
                         context, share_instance_id,
                         {'status': constants.STATUS_ERROR}
@@ -2516,38 +2313,6 @@ class ShareManager(manager.SchedulerDependentManager):
                         resource_id=share_id,
                         detail=(message_field.Detail
                                 .SECURITY_SERVICE_FAILED_AUTH))
-            except exception.CifsServerCertificateError:
-                with excutils.save_and_reraise_exception():
-                    LOG.warning("Provision of share server failed: CIFS AD "
-                                "join failed due to a certificate error.")
-                    self.db.share_instance_update(
-                        context, share_instance_id,
-                        {'status': constants.STATUS_ERROR}
-                    )
-                    self.message_api.create(
-                        context,
-                        message_field.Action.CREATE,
-                        share['project_id'],
-                        resource_type=message_field.Resource.SHARE,
-                        resource_id=share_id,
-                        detail=(message_field.Detail
-                                .CIFS_SERVER_CERTIFICATE_ERROR))
-            except exception.CifsServerSetupFailed:
-                with excutils.save_and_reraise_exception():
-                    LOG.warning("Provision of share server failed: CIFS "
-                                "server could not be set up after all "
-                                "retries.")
-                    self.db.share_instance_update(
-                        context, share_instance_id,
-                        {'status': constants.STATUS_ERROR}
-                    )
-                    self.message_api.create(
-                        context,
-                        message_field.Action.CREATE,
-                        share['project_id'],
-                        resource_type=message_field.Resource.SHARE,
-                        resource_id=share_id,
-                        detail=message_field.Detail.CIFS_SERVER_SETUP_FAILED)
             except exception.IpAddressGenerationFailureClient:
                 with excutils.save_and_reraise_exception():
                     error = ("Creation of share instance %s failed: "
@@ -2568,7 +2333,7 @@ class ShareManager(manager.SchedulerDependentManager):
                 with excutils.save_and_reraise_exception():
                     error = ("Creation of share instance %s failed: "
                              "failed to get share server.")
-                    LOG.warning(error, share_instance_id)
+                    LOG.error(error, share_instance_id)
                     self.db.share_instance_update(
                         context, share_instance_id,
                         {'status': constants.STATUS_ERROR}
@@ -2583,6 +2348,9 @@ class ShareManager(manager.SchedulerDependentManager):
 
         else:
             share_server = None
+
+        self._attach_share_server_replica_list_if_enabled(
+            context, share_server=share_server)
 
         if share_network_id and self.driver.driver_handles_share_servers:
             proto = share_instance.get('share_proto').lower()
@@ -2614,30 +2382,6 @@ class ShareManager(manager.SchedulerDependentManager):
                             "mandatory for protocol %s.") %
                             share_instance.get('share_proto'))
 
-        # SAPCC Get project_domain_name from request_spec and set to context
-        if context.project_domain_name is None and request_spec:
-            context.project_domain_name = request_spec.get(
-                'project_domain_name')
-
-        # SCI: Disable cross-volume dedup on shares in the neo domain by
-        # setting cross_volume_dedupe=false metadata.
-        if (hasattr(context, 'project_domain_name') and
-                context.project_domain_name in ['neo']):
-            self.db.share_metadata_update(
-                context, share['id'],
-                {'cross_volume_dedupe': 'false'},
-                delete=False)
-            LOG.debug('Set cross_volume_dedupe=false metadata for neo share '
-                      '%s', share['id'])
-            # Refresh share to get the updated metadata
-            share = self.db.share_get(context, share['id'])
-
-        # Add share_metadata to share_instance for driver access
-        share_metadata_list = share.get('share_metadata', [])
-        share_instance['metadata'] = {
-            m['key']: m['value'] for m in share_metadata_list
-        } if share_metadata_list else {}
-
         status = constants.STATUS_AVAILABLE
         try:
             if snapshot_ref:
@@ -2649,6 +2393,12 @@ class ShareManager(manager.SchedulerDependentManager):
                     with_share_data=True)
                 parent_share_dict = self._get_share_instance_dict(
                     context, parent_share_instance)
+                parent_share_server = parent_share_dict.get('share_server')
+                self._attach_share_server_replica_list_if_enabled(
+                    context,
+                    share_server=parent_share_server,
+                    server_label='Parent share server',
+                )
                 model_update = self.driver.create_share_from_snapshot(
                     context, share_instance, snapshot_ref.instance,
                     share_server=share_server, parent_share=parent_share_dict)
@@ -2687,8 +2437,8 @@ class ShareManager(manager.SchedulerDependentManager):
 
         except Exception as e:
             with excutils.save_and_reraise_exception():
-                LOG.warning("Share instance %s failed on creation.",
-                            share_instance_id)
+                LOG.error("Share instance %s failed on creation.",
+                          share_instance_id)
                 detail_data = getattr(e, 'detail_data', {})
 
                 def get_export_location(details):
@@ -2841,8 +2591,8 @@ class ShareManager(manager.SchedulerDependentManager):
                 )
             except Exception:
                 with excutils.save_and_reraise_exception():
-                    LOG.warning("Failed to get share server "
-                                "for share replica creation.")
+                    LOG.error("Failed to get share server "
+                              "for share replica creation.")
                     self.db.share_replica_update(
                         context, share_replica['id'],
                         {'status': constants.STATUS_ERROR,
@@ -2883,10 +2633,6 @@ class ShareManager(manager.SchedulerDependentManager):
                         for r in replica_list]
         share_replica = self._get_share_instance_dict(context, share_replica)
 
-        share_replica['metadata'] = (
-            self.db.share_replica_metadata_get(
-                context, share_replica_id) or {})
-
         try:
             replica_ref = self.driver.create_replica(
                 context, replica_list, share_replica,
@@ -2895,8 +2641,8 @@ class ShareManager(manager.SchedulerDependentManager):
 
         except Exception as excep:
             with excutils.save_and_reraise_exception():
-                LOG.warning("Share replica %s failed on creation.",
-                            share_replica['id'])
+                LOG.error("Share replica %s failed on creation.",
+                          share_replica['id'])
                 self.db.share_replica_update(
                     context, share_replica['id'],
                     {'status': constants.STATUS_ERROR,
@@ -3001,6 +2747,9 @@ class ShareManager(manager.SchedulerDependentManager):
                 delete_all_rules=True,
                 share_server=share_server
             )
+        except exception.ShareResourceNotFound:
+            LOG.warning("Share replica %s does not exist in the "
+                        "backend.", share_replica_id)
         except Exception as excep:
             with excutils.save_and_reraise_exception() as exc_context:
                 # Set status to 'error' from 'deleting' since
@@ -3111,26 +2860,7 @@ class ShareManager(manager.SchedulerDependentManager):
         replica_list = [self._get_share_instance_dict(context, r)
                         for r in replica_list]
 
-        # SCI: Merge share metadata into each replica dict so the driver
-        # can act on share-level metadata (e.g. cross_volume_dedupe) during
-        # promotion. Share metadata wins over replica-specific metadata.
-        share = self.db.share_get(context, share_replica['share_id'])
-        share_metadata_list = share.get('share_metadata', [])
-        share_metadata = {
-            m['key']: m['value'] for m in share_metadata_list
-        } if share_metadata_list else {}
-
-        for r in replica_list:
-            replica_metadata = self.db.share_replica_metadata_get(
-                context, r["id"]) or {}
-            r['metadata'] = {**replica_metadata, **share_metadata}
-
         share_replica = self._get_share_instance_dict(context, share_replica)
-        share_replica['metadata'] = {
-            **(self.db.share_replica_metadata_get(
-                context, share_replica_id) or {}),
-            **share_metadata,
-        }
 
         try:
             updated_replica_list = (
@@ -3269,6 +2999,679 @@ class ShareManager(manager.SchedulerDependentManager):
         self._share_replica_update(
             context, share_replica_id, share_id=share_id)
 
+    @periodic_task.periodic_task(
+        spacing=CONF.share_server_replica_state_update_interval)
+    @utils.require_driver_initialized
+    def periodic_share_server_replica_state_update(self, context):
+        LOG.debug("Updating state of share server replicas.")
+
+        share_servers = self.db.share_server_get_all_by_host(
+            context, self.host)
+
+        # Poll only replica entries that are not active and should
+        # have proper replica status
+        share_server_replicas = [
+            server for server in share_servers
+            if (server.get('source_share_server_id') and
+                server.get('replica_state'))
+        ]
+
+        for replica in share_server_replicas:
+            # Don't update replicas that are in error_deleting, deleting,
+            # creating or promoting state
+            if replica.get("status") in (
+                    constants.STATUS_ERROR_DELETING,
+                    constants.STATUS_DELETING,
+                    constants.STATUS_CREATING,
+                    constants.STATUS_REPLICATION_CHANGE,
+            ):
+                continue
+
+            self.update_share_server_replica_state(context, replica['id'])
+
+    @periodic_task.periodic_task(
+        spacing=CONF.share_server_replica_failover_check_interval)
+    @utils.require_driver_initialized
+    def periodic_check_for_unplanned_share_server_replica_failover(
+            self, context):
+
+        # TODO(manideep): Only 1 inactive replica per active share server
+        # is supported today (no fanout), so we call this per replica.
+        # Relook at this once fanout replication is supported.
+        share_servers = self.db.share_server_get_all_by_host(
+            context, self.host)
+
+        for server in share_servers:
+            if (server.get('source_share_server_id') and
+                    server.get('replica_state') and
+                    server.get('status') not in (
+                        constants.STATUS_ERROR_DELETING,
+                        constants.STATUS_CREATING,
+                        constants.STATUS_DELETING,
+                        constants.STATUS_SERVER_REPLICA_PROMOTING,
+                    )):
+                self.check_for_unplanned_share_server_replica_failover(
+                    context, server['source_share_server_id'], server['id'])
+
+    def _get_share_server_replica_property(self, context, replica_server_id):
+        return self.db.share_server_replica_metadata_get(
+            context, replica_server_id) or {}
+
+    def _get_share_server_replicas_list(
+            self, context, source_share_server):
+        all_replicas = self.db.share_server_get_all_with_filters(
+            context, {'source_share_server_id': source_share_server['id']})
+        all_replicas = [
+            server for server in all_replicas
+            if server.get('replica_state')
+        ]
+
+        share_server_replica_list = []
+        seen_server_ids = set()
+        for server in [source_share_server] + all_replicas:
+            if server['id'] in seen_server_ids:
+                continue
+            seen_server_ids.add(server['id'])
+            metadata = self._get_share_server_replica_property(
+                context, server['id'])
+            share_server_replica_list.append(
+                share_utils.build_share_server_replica_payload(
+                    server,
+                    include_metadata=True,
+                    metadata=metadata,
+                ))
+
+        return share_server_replica_list
+
+    def _get_share_server_share_instances_info(self, context, share_server):
+        share_instances = self.db.share_instance_get_all_by_share_server(
+            context, share_server['id'], with_share_data=False)
+
+        protected_share_instances = [
+            {
+                'id': share_instance['id'],
+                'share_id': share_instance['share_id'],
+                'status': share_instance['status'],
+                'share_server_id': share_instance['share_server_id'],
+            }
+            for share_instance in share_instances
+        ]
+
+        return {
+            'protected_share_instances': protected_share_instances,
+        }
+
+    def _get_share_server_replication_context(
+            self, context, source_share_server_id):
+        """Gather the driver-call inputs shared by promote/failover checks"""
+        source_share_server = self.db.share_server_get(
+            context, source_share_server_id)
+
+        # Build full replica context list for the driver, including source.
+        share_server_replica_list = self._get_share_server_replicas_list(
+            context, source_share_server)
+
+        share_instances_info = self._get_share_server_share_instances_info(
+            context, source_share_server)
+
+        return (source_share_server, share_server_replica_list,
+                share_instances_info)
+
+    def _get_share_server_replica_network_ids(self, context, replica_id):
+        """Return the network id/subnet id of a share server replica"""
+        replica_subnets = (
+            self.db.share_network_subnet_get_all_by_share_server_id(
+                context, replica_id))
+        return (replica_subnets[0]['share_network_id'],
+                replica_subnets[0]['id'])
+
+    def _validate_replica_promotion_updates(
+            self, context, updates, replica_id, source_share_server_id,
+            share_instances_info, action='promote'):
+        """Validate driver's promote/failover response.
+
+        Used by both ``promote_share_server_replica`` and
+        ``check_for_unplanned_share_server_replica_failover``.
+        """
+        replica_list = updates.get('replica_list') or []
+        promoted_replica_update = None
+        source_replica_update = None
+        for replica_update in replica_list:
+            if replica_update.get('replica_id') == replica_id:
+                promoted_replica_update = replica_update
+            elif replica_update.get('replica_id') == source_share_server_id:
+                source_replica_update = replica_update
+
+        if promoted_replica_update is None or source_replica_update is None:
+            raise exception.InvalidInput(reason=_(
+                "Driver %s response is missing a replica_list entry for "
+                "the promoted replica or the source share server.")
+                % action)
+
+        if (promoted_replica_update.get('replica_state') !=
+                constants.REPLICA_STATE_ACTIVE):
+            raise exception.InvalidInput(reason=_(
+                "Driver %s response must set the promoted replica's "
+                "replica_state to 'active'.") % action)
+
+        if 'replica_state' not in source_replica_update:
+            raise exception.InvalidInput(reason=_(
+                "Driver %s response is missing replica_state for the "
+                "source replica.") % action)
+
+        share_pool_mappings = updates.get('share_pool_mappings') or {}
+        protected_share_instances = share_instances_info.get(
+            'protected_share_instances', [])
+        for instance in protected_share_instances:
+            if not share_pool_mappings.get(instance['id']):
+                raise exception.InvalidInput(reason=_(
+                    "Driver %(action)s response is missing a "
+                    "share_pool_mappings entry for share instance "
+                    "%(id)s.") % {'action': action, 'id': instance['id']})
+
+        promoted_updates = {
+            'status': constants.STATUS_ACTIVE,
+            'replica_state': constants.REPLICA_STATE_ACTIVE,
+            'source_share_server_id': None,
+        }
+        source_updates = {
+            'status': constants.STATUS_INACTIVE,
+            'replica_state': source_replica_update['replica_state'],
+            'source_share_server_id': replica_id,
+        }
+
+        return {
+            'promoted_updates': promoted_updates,
+            'source_updates': source_updates,
+            'source_replica_id': source_replica_update['replica_id'],
+            'protected_share_instances': protected_share_instances,
+            'share_pool_mappings': share_pool_mappings,
+        }
+
+    def _update_db_for_share_server_replica_promotion(
+            self, context, replica_id, source_share_server_id,
+            replica_host, promotion_result):
+        """Persist the DB updates computed for a replica promotion."""
+        share_pool_mappings = promotion_result['share_pool_mappings']
+        promoted_share_network_id, promoted_share_network_subnet_id = (
+            self._get_share_server_replica_network_ids(context, replica_id))
+
+        protected_share_groups = self.db.share_group_get_all_by_share_server(
+            context, source_share_server_id)
+        protected_share_group_ids = [
+            protected_share_group['id']
+            for protected_share_group in protected_share_groups]
+
+        promoted_backend_host = share_utils.extract_host(replica_host)
+        service = self.db.service_get_by_args(
+            context, promoted_backend_host, 'manila-share')
+        promoted_availability_zone_id = service['availability_zone_id']
+
+        instance_host_mapping = {
+            instance['id']: share_utils.append_host(
+                promoted_backend_host, share_pool_mappings[instance['id']])
+            for instance in promotion_result['protected_share_instances']
+        }
+
+        source_share_server = self.db.share_server_get(
+            context, source_share_server_id)
+        promotion_result['promoted_updates']['is_auto_deletable'] = (
+            source_share_server['is_auto_deletable'])
+        promotion_result['source_updates']['is_auto_deletable'] = False
+
+        self.db.share_server_replica_promotion_update(
+            context, replica_id, promotion_result['source_replica_id'],
+            promotion_result['promoted_updates'],
+            promotion_result['source_updates'], protected_share_group_ids,
+            promoted_availability_zone_id, promoted_share_network_id,
+            promoted_share_network_subnet_id, instance_host_mapping)
+
+    @add_hooks
+    @utils.require_driver_initialized
+    def create_share_server_replica(
+            self, context, share_server_replica_id):
+        """Create a share server replica on the target backend."""
+        context = context.elevated()
+
+        share_server_replica = self.db.share_server_get(
+            context, share_server_replica_id)
+
+        # Build destination payload for the driver.
+        new_share_server_replica = (
+            share_utils.build_share_server_replica_payload(
+                share_server_replica,
+                include_metadata=True,
+                metadata=self._get_share_server_replica_property(
+                    context, share_server_replica['id']),
+            ))
+
+        source_share_server_id = share_server_replica.get(
+            'source_share_server_id')
+        if source_share_server_id:
+            source_share_server = self.db.share_server_get(
+                context, source_share_server_id)
+            # Build full replica context list for the driver, including source.
+            share_server_replica_list = self._get_share_server_replicas_list(
+                context, source_share_server)
+        else:
+            share_server_replica_list = [new_share_server_replica]
+
+        replica_subnets = share_server_replica.get('share_network_subnets')
+        if not replica_subnets:
+            msg = _(
+                'Share server replica %(replica_id)s does not have any '
+                'share network subnets configured.'
+            ) % {'replica_id': share_server_replica_id}
+            raise exception.NetworkBadConfigurationException(reason=msg)
+
+        # All subnets belong to the same share network.
+        share_network = self.db.share_network_get(
+            context, replica_subnets[0]['share_network_id'])
+
+        # Pre-allocate destination network before invoking backend replica
+        # creation so drivers can consume populated network_info payload.
+        for share_network_subnet in replica_subnets:
+            self.driver.allocate_network(
+                context, share_server_replica, share_network,
+                share_network_subnet)
+        self.driver.allocate_admin_network(context, share_server_replica)
+
+        network_info_list = self._get_share_server_network_info_list(
+            context, new_share_server_replica)
+
+        try:
+            model_update = self.driver.create_share_server_replica(
+                context,
+                new_share_server_replica,
+                share_server_replica_list,
+                share_network_details=network_info_list,
+            ) or {}
+
+            backend_details = model_update.pop('backend_details', None)
+            if backend_details:
+                serialized_details = {
+                    key: (jsonutils.dumps(value)
+                          if isinstance(value, (dict, list)) else str(value))
+                    for key, value in backend_details.items()
+                }
+                self.db.share_server_backend_details_set(
+                    context,
+                    share_server_replica_id,
+                    serialized_details)
+                self.db.share_server_replica_metadata_update_item(
+                    context,
+                    share_server_replica_id,
+                    {'backend_details': jsonutils.dumps(backend_details)})
+
+                LOG.info(
+                    "Set backend_details for replica share server "
+                    "%(server)s: %(details)s",
+                    {
+                        'server': share_server_replica_id,
+                        'details': list(backend_details.keys()),
+                    })
+
+            self.driver.update_network_allocation(
+                context, share_server_replica)
+            self.driver.update_admin_network_allocation(
+                context, share_server_replica)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                LOG.exception("Share server replica %s failed on creation.",
+                              share_server_replica_id)
+                self.db.share_server_update(
+                    context,
+                    share_server_replica_id,
+                    {
+                        'status': constants.STATUS_ERROR,
+                        'replica_state': constants.STATUS_ERROR,
+                    },
+                )
+                self.driver.deallocate_network(
+                    context, share_server_replica_id)
+
+        updates = {
+            'status': constants.STATUS_INACTIVE,
+            'replica_state': constants.REPLICA_STATE_OUT_OF_SYNC,
+            'source_share_server_id': source_share_server['id'],
+        }
+        if model_update.get('replica_state'):
+            updates['replica_state'] = model_update['replica_state']
+
+        self.db.share_server_update(
+            context, share_server_replica_id, updates)
+
+        LOG.info(
+            "Share server replica %s created successfully.",
+            share_server_replica_id)
+
+    @add_hooks
+    @utils.require_driver_initialized
+    def delete_share_server_replica(
+            self, context, share_server_replica_id, force=False):
+        """Delete a share server replica from the target backend."""
+
+        context = context.elevated()
+        replica_server = self.db.share_server_get(
+            context, share_server_replica_id)
+
+        source_share_server_id = replica_server.get('source_share_server_id')
+
+        source_share_server = self.db.share_server_get(
+            context, source_share_server_id)
+
+        # Build destination payload for the driver.
+        share_server_replica = share_utils.build_share_server_replica_payload(
+            replica_server,
+            include_metadata=True,
+            metadata=self._get_share_server_replica_property(
+                context, replica_server['id']),
+        )
+
+        # Build full replica context list for the driver, including source.
+        share_server_replica_list = self._get_share_server_replicas_list(
+            context, source_share_server)
+
+        delete_db_entry = force
+        try:
+            self.driver.delete_share_server_replica(
+                context, share_server_replica,
+                share_server_replica_list)
+            delete_db_entry = True
+        except Exception:
+            if force:
+                LOG.exception(
+                    "Share server replica %s failed on backend deletion, "
+                    "but force=True so DB cleanup will continue.",
+                    share_server_replica_id)
+            else:
+                with excutils.save_and_reraise_exception():
+                    LOG.exception(
+                        "Share server replica %s failed on deletion.",
+                        share_server_replica_id)
+                    self.db.share_server_update(
+                        context,
+                        share_server_replica_id,
+                        {
+                            'status': constants.STATUS_ERROR_DELETING,
+                            'replica_state': constants.STATUS_ERROR,
+                        },
+                    )
+
+        # Delete destination share server record in manager when backend
+        # deletion succeeds, or when force cleanup is requested.
+        if delete_db_entry:
+            replica_project_id = replica_server.get('project_id')
+            try:
+                self.driver.deallocate_network(
+                    context, share_server_replica_id)
+                self.db.share_server_delete(
+                    context, share_server_replica_id)
+            except exception.NotFound:
+                pass
+
+            # Release the share server replica quota for the project.
+            if replica_project_id:
+                try:
+                    reservations = QUOTAS.reserve(
+                        context, share_server_replicas=-1,
+                        project_id=replica_project_id)
+                    QUOTAS.commit(
+                        context, reservations,
+                        project_id=replica_project_id)
+                except Exception as e:
+                    LOG.warning("Failed to update quota usages for share "
+                                "server replica %(replica)s deletion: "
+                                "%(error)s.",
+                                {'replica': share_server_replica_id,
+                                 'error': e})
+
+        LOG.info("Share server replica %s cleaned up successfully.",
+                 share_server_replica_id)
+
+    @add_hooks
+    @utils.require_driver_initialized
+    def promote_share_server_replica(
+            self, context, share_server_replica_id, wait=False):
+
+        """Promote a share server replica to the active backend."""
+        context = context.elevated()
+
+        replica_server = self.db.share_server_get(
+            context, share_server_replica_id)
+
+        source_share_server_id = replica_server.get('source_share_server_id')
+        if not source_share_server_id:
+            msg = _(
+                "Share server %(replica)s is not a replica (no "
+                "source_share_server_id). Cannot promote a share server "
+                "that is not part of a replication relationship."
+            ) % {'replica': share_server_replica_id}
+            raise exception.InvalidInput(reason=msg)
+
+        (source_share_server, share_server_replica_list,
+         share_instances_info) = self._get_share_server_replication_context(
+            context, source_share_server_id)
+
+        # Build destination payload for the driver.
+        share_server_replica = share_utils.build_share_server_replica_payload(
+            replica_server,
+            include_metadata=True,
+            metadata=self._get_share_server_replica_property(
+                context, replica_server['id']),
+        )
+
+        network_info_list = self._get_share_server_network_info_list(
+            context, source_share_server)
+
+        if not replica_server.get('share_network_subnets'):
+            raise exception.InvalidInput(reason=_(
+                "Replica share server %(replica)s has no share network "
+                "subnets. Cannot promote a replica without network "
+                "bindings.") % {'replica': share_server_replica_id})
+
+        try:
+            promotion_updates = self.driver.promote_share_server_replica(
+                context, share_server_replica,
+                share_server_replica_list,
+                share_server_resources=share_instances_info,
+                network_info_list=network_info_list) or {}
+
+            promotion_result = self._validate_replica_promotion_updates(
+                context, updates=promotion_updates,
+                replica_id=share_server_replica_id,
+                source_share_server_id=source_share_server_id,
+                share_instances_info=share_instances_info,
+                action='promote')
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                LOG.exception(
+                    "Share server replica %s failed on promotion.",
+                    share_server_replica_id)
+                self.db.share_server_update(
+                    context,
+                    share_server_replica_id,
+                    {'status': constants.STATUS_ERROR,
+                     'replica_state': constants.STATUS_ERROR},
+                )
+
+        try:
+            self._update_db_for_share_server_replica_promotion(
+                context, share_server_replica_id, source_share_server_id,
+                replica_server['host'], promotion_result)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                LOG.exception(
+                    "Share server replica %s failed on persisting "
+                    "promotion updates to the database.",
+                    share_server_replica_id)
+                self.db.share_server_update(
+                    context,
+                    share_server_replica_id,
+                    {'status': constants.STATUS_ERROR,
+                     'replica_state': constants.STATUS_ERROR},
+                )
+
+        LOG.info("Share server replica %s: promoted to active state "
+                 "successfully.", share_server_replica_id)
+
+    @add_hooks
+    @utils.require_driver_initialized
+    def update_share_server_replica_state(self, context,
+                                          share_server_replica_id):
+        """Resync a non-active share server replica."""
+
+        context = context.elevated()
+        replica_server = self.db.share_server_get(
+            context, share_server_replica_id)
+
+        source_share_server_id = replica_server.get('source_share_server_id')
+
+        source_share_server = self.db.share_server_get(
+            context, source_share_server_id)
+
+        # Build destination payload for the driver.
+        share_server_replica = share_utils.build_share_server_replica_payload(
+            replica_server,
+            include_metadata=True,
+            metadata=self._get_share_server_replica_property(
+                context, replica_server['id']),
+        )
+
+        # Build full replica context list for the driver, including source.
+        share_server_replica_list = self._get_share_server_replicas_list(
+            context, source_share_server)
+
+        project_id = (
+            replica_server.get('project_id')
+            or context.project_id)
+
+        try:
+            replica_state = self.driver.update_share_server_replica_state(
+                context, share_server_replica,
+                share_server_replica_list)
+        except NotImplementedError:
+            LOG.debug(
+                "Driver does not support resync of share server replica "
+                "%s. Skipping.",
+                share_server_replica_id)
+            return
+        except Exception as excep:
+            LOG.exception(
+                "Driver error while resyncing share server replica %s.",
+                share_server_replica_id)
+            self.db.share_server_update(
+                context, share_server_replica_id,
+                {'status': constants.STATUS_ERROR,
+                 'replica_state': constants.STATUS_ERROR})
+            self.message_api.create(
+                context,
+                message_field.Action.RESYNC,
+                project_id,
+                resource_type=message_field.Resource.SHARE_SERVER_REPLICA,
+                resource_id=share_server_replica_id,
+                exception=excep,
+                detail=message_field.Detail.RESYNC_FAILED_RECREATE_REPLICA)
+            return
+
+        if replica_state == constants.REPLICA_STATE_IN_SYNC:
+            updates = {'status': constants.STATUS_INACTIVE,
+                       'replica_state': constants.REPLICA_STATE_IN_SYNC}
+        else:
+            updates = {'status': constants.STATUS_INACTIVE,
+                       'replica_state': constants.REPLICA_STATE_OUT_OF_SYNC}
+
+        self.db.share_server_update(
+            context, share_server_replica_id, updates)
+
+        LOG.info(
+            "Share server replica %(id)s resync finished with "
+            "replica_state=%(state)s.",
+            {'id': share_server_replica_id,
+             'state': updates['replica_state']})
+
+    @add_hooks
+    def check_for_unplanned_share_server_replica_failover(
+            self, context, active_share_server_replica_id, replica_id):
+        """Detect an unplanned storage-side failover for a replica."""
+
+        context = context.elevated()
+
+        (active_share_server, share_server_replica_list,
+         share_instances_info) = self._get_share_server_replication_context(
+            context, active_share_server_replica_id)
+
+        try:
+            failover_updates = (
+                self.driver.check_for_unplanned_share_server_replica_failover(
+                    context, share_server_replica_list,
+                    share_server_resources=share_instances_info)
+            )
+
+            if failover_updates.get('promote_required') is not True:
+                LOG.debug(
+                    "Promote not required for share server replica "
+                    "%(replica)s.",
+                    {'replica': active_share_server_replica_id})
+                return
+
+            replica_server = self.db.share_server_get(context, replica_id)
+
+            promotion_result = self._validate_replica_promotion_updates(
+                context, updates=failover_updates, replica_id=replica_id,
+                source_share_server_id=active_share_server_replica_id,
+                share_instances_info=share_instances_info,
+                action='failover')
+
+        except NotImplementedError:
+            LOG.debug(
+                "Driver does not support unplanned failover detection "
+                "for share server replica %s. Skipping check.",
+                active_share_server_replica_id)
+            return
+        except Exception as excep:
+            with excutils.save_and_reraise_exception():
+                LOG.exception(
+                    "Share server replica %s failed to promote after "
+                    "unplanned failback",
+                    active_share_server_replica_id)
+                self.db.share_server_update(
+                    context,
+                    active_share_server_replica_id,
+                    {'status': constants.STATUS_ERROR,
+                     'replica_state': constants.STATUS_ERROR},
+                )
+                project_id = (
+                    active_share_server.get('project_id')
+                    or context.project_id)
+                self.message_api.create(
+                    context,
+                    message_field.Action.FAILOVER,
+                    project_id,
+                    resource_type=message_field.Resource.SHARE_SERVER_REPLICA,
+                    resource_id=active_share_server_replica_id,
+                    exception=excep,
+                    detail=(message_field.Detail
+                            .FAILOVER_FAILED_RECREATE_REPLICA))
+
+        try:
+            self._update_db_for_share_server_replica_promotion(
+                context, replica_id, active_share_server_replica_id,
+                replica_server['host'], promotion_result)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                LOG.exception(
+                    "Share server replica %s failed on persisting "
+                    "promotion updates to the database after unplanned "
+                    "failback",
+                    active_share_server_replica_id)
+                self.db.share_server_update(
+                    context,
+                    active_share_server_replica_id,
+                    {'status': constants.STATUS_ERROR,
+                        'replica_state': constants.STATUS_ERROR},
+                )
+
     @locked_share_replica_operation
     def _share_replica_update(self, context, share_replica_id, share_id=None):
         # share_id is used by the locked_share_replica_operation decorator
@@ -3286,10 +3689,17 @@ class ShareManager(manager.SchedulerDependentManager):
         # or if they are the 'active' instance.
         if (share_replica['status'] in constants.TRANSITIONAL_STATUSES
             or share_replica['status'] == constants.STATUS_ERROR_DELETING
-            or share_replica['status'] == constants.STATUS_REPLICATION_CHANGE
             or share_replica['replica_state'] ==
                 constants.REPLICA_STATE_ACTIVE):
             return
+
+        share_server = self._get_share_server(context, share_replica)
+
+        access_rules = self.db.share_access_get_all_for_share(
+            context, share_replica['share_id'])
+
+        LOG.debug("Updating status of share share_replica %s: ",
+                  share_replica['id'])
 
         # _get_share_instance_dict will fetch share server
         replica_list = (
@@ -3315,34 +3725,6 @@ class ShareManager(manager.SchedulerDependentManager):
             # non-active replica
             return
 
-        # If both the active replica and the target replica are in error
-        # status, skip the update. This likely indicates a failed promotion
-        # or other critical operation that requires manual intervention.
-        # Attempting to restore replication automatically could recreate
-        # the relationship in the wrong direction.
-        if (_active_replica['status'] == constants.STATUS_ERROR and
-                share_replica['status'] == constants.STATUS_ERROR):
-            msg_args = {
-                'replica_id': share_replica['id'],
-                'active_id': _active_replica['id'],
-                'share_id': share_replica['share_id'],
-            }
-            msg = ("Skipping replica update for replica %(replica_id)s. "
-                   "Both the active replica %(active_id)s and this replica "
-                   "are in error status for share %(share_id)s. This may "
-                   "indicate a failed promotion that requires manual "
-                   "intervention.") % msg_args
-            LOG.warning(msg)
-            return
-
-        share_server = self._get_share_server(context, share_replica)
-
-        access_rules = self.db.share_access_get_all_for_share(
-            context, share_replica['share_id'])
-
-        LOG.debug("Updating status of share share_replica %s: ",
-                  share_replica['id'])
-
         # Get snapshots for the share.
         share_snapshots = self.db.share_snapshot_get_all_for_share(
             context, share_replica['share_id'])
@@ -3359,19 +3741,11 @@ class ShareManager(manager.SchedulerDependentManager):
                         for r in replica_list]
 
         share_replica = self._get_share_instance_dict(context, share_replica)
-        share_replica['metadata'] = (self.db.share_replica_metadata_get(
-            context, share_replica_id) or {})
 
         try:
-            metadata = self.db.share_metadata_get(
-                context, share_replica['share_id'])
-            skip_conf_snapmirror_schedule = False
-            if 'snapmirror_schedule' in metadata:
-                skip_conf_snapmirror_schedule = True
             replica_state = self.driver.update_replica_state(
                 context, replica_list, share_replica, access_rules,
-                available_share_snapshots, share_server=share_server,
-                skip_conf_snapmirror_schedule=skip_conf_snapmirror_schedule)
+                available_share_snapshots, share_server=share_server)
         except Exception as excep:
             msg = ("Driver error when updating replica "
                    "state for replica %s.")
@@ -3390,14 +3764,10 @@ class ShareManager(manager.SchedulerDependentManager):
             return
 
         if replica_state in (constants.REPLICA_STATE_IN_SYNC,
-                             constants.REPLICA_STATE_OUT_OF_SYNC):
-            states = {'replica_state': replica_state,
-                      'status': constants.STATUS_AVAILABLE}
-            self.db.share_replica_update(context, share_replica['id'], states)
-        elif replica_state == constants.STATUS_ERROR:
-            states = {'replica_state': replica_state,
-                      'status': constants.STATUS_ERROR}
-            self.db.share_replica_update(context, share_replica['id'], states)
+                             constants.REPLICA_STATE_OUT_OF_SYNC,
+                             constants.STATUS_ERROR):
+            self.db.share_replica_update(context, share_replica['id'],
+                                         {'replica_state': replica_state})
         elif replica_state:
             msg = (("Replica %(id)s cannot be set to %(state)s "
                     "through update call.") %
@@ -3434,6 +3804,13 @@ class ShareManager(manager.SchedulerDependentManager):
             context, share_instance['share_type_id'])
         share_type_supports_replication = share_type_extra_specs.get(
             'replication_type', None)
+
+        metadata_updates = {
+            constants.AdminOnlyMetadata.MANAGED_AT_KEY:
+                share_ref.get('created_at')
+        }
+        self.db.share_metadata_update(
+            context, share_id, metadata_updates, False)
 
         project_id = share_ref['project_id']
 
@@ -3541,6 +3918,14 @@ class ShareManager(manager.SchedulerDependentManager):
         snapshot_instance = self.db.share_snapshot_instance_get(
             context, snapshot_ref.instance['id'], with_share_data=True
         )
+
+        metadata_updates = {
+            constants.AdminOnlyMetadata.MANAGED_AT_KEY:
+                snapshot_ref.get('created_at')
+        }
+        self.db.share_snapshot_metadata_update(
+            context, snapshot_ref['id'], metadata_updates, delete='False')
+
         project_id = snapshot_ref['project_id']
 
         driver_dhss = self.driver.driver_handles_share_servers
@@ -4074,16 +4459,17 @@ class ShareManager(manager.SchedulerDependentManager):
         share_instance = self._get_share_instance(context, share_instance_id)
         share = self.db.share_get(context, share_instance.get('share_id'))
         share_server = self._get_share_server(context, share_instance)
-        # explicitly load export location to prevent DetachedInstanceError
-        # see https://bugs.launchpad.net/manila/+bug/1700660
-        # on other possible workaround
-        share_instance.get('export_location')
-        # and explicitly load backend_details
-        if share_server:
-            share_server.get('backend_details')
         return (share, share_instance, share_server)
 
-    @run_concurrently
+    def _get_duration_seconds_for_instances(self, share_instance):
+        scheduled_at = share_instance.get('scheduled_at')
+        terminated_at = share_instance.get('terminated_at')
+        if scheduled_at and terminated_at:
+            duration = terminated_at - scheduled_at
+            return duration.total_seconds()
+        # Else, assume share was alive for a week.
+        return constants.ONE_WEEK_IN_SECONDS
+
     @add_hooks
     @utils.require_driver_initialized
     def delete_share_instance(self, context, share_instance_id, force=False,
@@ -4126,6 +4512,9 @@ class ShareManager(manager.SchedulerDependentManager):
                     {'status': constants.STATUS_ERROR_DEFERRED_DELETING})
                 return
 
+        self._attach_share_server_replica_list_if_enabled(
+            context, share_server=share_server)
+
         try:
             self.access_helper.update_access_rules(
                 context,
@@ -4166,12 +4555,9 @@ class ShareManager(manager.SchedulerDependentManager):
             return
 
         try:
-            scheduled_at = share_instance.get('scheduled_at')
-            terminated_at = share_instance.get('terminated_at')
-            if scheduled_at and terminated_at:
-                duration = terminated_at - scheduled_at
-                share_instance.update(
-                    {'duration_seconds': duration.total_seconds()})
+            duration_seconds = self._get_duration_seconds_for_instances(
+                share_instance)
+            share_instance.update({'duration_seconds': duration_seconds})
             self.driver.delete_share(context, share_instance,
                                      share_server=share_server)
         except exception.ShareResourceNotFound:
@@ -4196,27 +4582,13 @@ class ShareManager(manager.SchedulerDependentManager):
                         context,
                         share_instance_id,
                         {'status': error_state})
-
-                # NOTE: workaround to filter NetApp snapmirror error:
-                exc_msg = getattr(excep, 'message', '')
-                exc_code = getattr(excep, 'code', '')
-                if ('18436' in str(exc_code) and 'SnapMirror' in exc_msg):
-                    self.message_api.create(
-                        context,
-                        message_field.Action.DELETE,
-                        share_instance['project_id'],
-                        resource_type=message_field.Resource.SHARE,
-                        resource_id=share.id,
-                        detail=(message_field.Detail.
-                                DRIVER_FAILED_DELETE_SHARE_SNAPMIRROR))
-                else:
-                    self.message_api.create(
-                        context,
-                        message_field.Action.DELETE,
-                        share_instance['project_id'],
-                        resource_type=message_field.Resource.SHARE,
-                        resource_id=share_instance_id,
-                        exception=excep)
+                self.message_api.create(
+                    context,
+                    message_field.Action.DELETE,
+                    share_instance['project_id'],
+                    resource_type=message_field.Resource.SHARE,
+                    resource_id=share_instance_id,
+                    exception=excep)
 
         if error_state == constants.STATUS_ERROR_DEFERRED_DELETING and (
                 not force):
@@ -4252,6 +4624,10 @@ class ShareManager(manager.SchedulerDependentManager):
                 LOG.debug("Scheduled deletion of share-server "
                           "with id '%s' automatically by "
                           "deletion of last share.", share_server['id'])
+                if share_utils.is_share_server_replication_enabled(
+                        context, self.db, share_server):
+                    self._delete_share_server_replica_for_cleanup(
+                        context, share_server)
                 if remote_host:
                     rpcapi = share_rpcapi.ShareAPI()
                     rpcapi.delete_share_server(context, share_server)
@@ -4304,12 +4680,9 @@ class ShareManager(manager.SchedulerDependentManager):
                 continue
 
             try:
-                scheduled_at = share_instance.get('scheduled_at')
-                terminated_at = share_instance.get('terminated_at')
-                if scheduled_at and terminated_at:
-                    duration = terminated_at - scheduled_at
-                    share_instance.update(
-                        {'duration_seconds': duration.total_seconds()})
+                duration_seconds = self._get_duration_seconds_for_instances(
+                    share_instance)
+                share_instance.update({'duration_seconds': duration_seconds})
                 self.driver.delete_share(ctxt, share_instance,
                                          share_server=share_server)
             except exception.ShareResourceNotFound:
@@ -4342,29 +4715,12 @@ class ShareManager(manager.SchedulerDependentManager):
                                                                 self.host,
                                                                 updated_before)
         for server in servers:
-            src_server_id = server['source_share_server_id']
-            if src_server_id:
-                try:
-                    self.db.share_server_get(ctxt, src_server_id)
-                except exception.ShareServerNotFound:
-                    pass
-                else:
-                    msg = ("Share server %s has source share server %s."
-                           "Skipping deletion.")
-                    LOG.error(msg, server['id'], src_server_id)
-                    continue
-
-            dest_servers = self.db.share_server_get_all_with_filters(ctxt, {
-                'source_share_server_id': server['id']
-            })
-            if len(dest_servers) > 0:
-                dest_server_id = dest_servers[0]['id']
-                msg = ("Share server %s has existing destination share "
-                       "servers %s. Skipping deletion.")
-                LOG.error(msg, server['id'], dest_server_id)
-                continue
-
             try:
+                if share_utils.is_share_server_replication_enabled(
+                        ctxt, self.db, server):
+                    if not self._delete_share_server_replica_for_cleanup(
+                            ctxt, server):
+                        continue
                 self.delete_share_server(ctxt, server)
             except exception.ShareServerNotFound:
                 continue
@@ -4372,6 +4728,50 @@ class ShareManager(manager.SchedulerDependentManager):
                 LOG.exception(
                     "Unable to delete share server %s, will retry in the next "
                     "run.", server['id'])
+
+    def _delete_share_server_replica_for_cleanup(self, ctxt, server):
+        rpcapi = share_rpcapi.ShareAPI()
+        all_replicas = self.db.share_server_get_all_with_filters(
+            ctxt, {'source_share_server_id': server['id']})
+
+        for replica in all_replicas:
+            rpcapi.delete_share_server_replica(
+                ctxt, replica, force=False)
+
+        @utils.retry(
+            retry_param=exception.Found,
+            interval=CONF.share_server_replica_cleanup_retry_interval,
+            retries=CONF.share_server_replica_cleanup_max_retries,
+            backoff_rate=1,
+        )
+        def _wait_for_replica_cleanup():
+            replicas = self.db.share_server_get_all_with_filters(
+                ctxt, {'source_share_server_id': server['id']})
+            if replicas:
+                raise exception.Found(
+                    reason=(
+                        'Share server replicas for source server %s '
+                        'still exist.'
+                    ) % server['id'])
+
+        try:
+            _wait_for_replica_cleanup()
+            all_replicas = []
+        except exception.Found:
+            all_replicas = self.db.share_server_get_all_with_filters(
+                ctxt, {'source_share_server_id': server['id']})
+
+        if all_replicas:
+            LOG.info(
+                "Skipping deletion of share server %s because "
+                "replicas still exist.",
+                server['id'])
+            return False
+
+        # Delete the active replica of the share server.
+        rpcapi.delete_share_server_replica(
+            ctxt, server, force=True)
+        return True
 
     @periodic_task.periodic_task(
         spacing=CONF.check_for_expired_shares_in_recycle_bin_interval)
@@ -4465,7 +4865,6 @@ class ShareManager(manager.SchedulerDependentManager):
         }
         LOG.info(msg, msg_args)
 
-    @run_concurrently
     @add_hooks
     @utils.require_driver_initialized
     def create_snapshot(self, context, share_id, snapshot_id):
@@ -4479,7 +4878,7 @@ class ShareManager(manager.SchedulerDependentManager):
         snapshot_instance_id = snapshot_instance['id']
 
         snapshot_instance = self._get_snapshot_instance_dict(
-            context, snapshot_instance)
+            context, snapshot_instance, snapshot=snapshot_ref)
 
         try:
 
@@ -4542,7 +4941,6 @@ class ShareManager(manager.SchedulerDependentManager):
                 share_type_id=share_type_id,
             )
 
-    @run_concurrently
     @add_hooks
     @utils.require_driver_initialized
     def delete_snapshot(self, context, snapshot_id, force=False,
@@ -4558,7 +4956,7 @@ class ShareManager(manager.SchedulerDependentManager):
         snapshot_instance_id = snapshot_instance['id']
 
         snapshot_instance = self._get_snapshot_instance_dict(
-            context, snapshot_instance)
+            context, snapshot_instance, snapshot=snapshot_ref)
 
         share_ref = self.db.share_get(context, snapshot_ref['share_id'])
 
@@ -4640,7 +5038,11 @@ class ShareManager(manager.SchedulerDependentManager):
         ctxt = ctxt.elevated()
         snapshot_instances = (
             self.db.share_snapshot_instance_get_all_with_filters(
-                ctxt, {'statuses': constants.STATUS_ERROR_DEFERRED_DELETING}))
+                ctxt, {
+                    'host': self.host,
+                    'statuses': constants.STATUS_ERROR_DEFERRED_DELETING
+                }
+            ))
 
         for snapshot_instance in snapshot_instances:
             snapshot_instance_id = snapshot_instance['id']
@@ -4995,7 +5397,6 @@ class ShareManager(manager.SchedulerDependentManager):
             self.db.share_snapshot_instance_update(
                 context, replica_snapshot['id'], snapshot_update)
 
-    @run_concurrently
     @add_hooks
     @utils.require_driver_initialized
     def update_access(self, context, share_instance_id):
@@ -5067,7 +5468,7 @@ class ShareManager(manager.SchedulerDependentManager):
         self._publish_service_capabilities(context)
 
     def _form_server_setup_info(self, context, share_server, share_network,
-                                share_network_subnets, add_gateways=False):
+                                share_network_subnets):
         share_server_id = share_server['id']
         # Network info is used by driver for setting up share server
         # and getting server info on share creation.
@@ -5084,18 +5485,6 @@ class ShareManager(manager.SchedulerDependentManager):
                 self.db.network_allocations_get_for_share_server(
                     context, share_server_id, label='user',
                     subnet_id=share_network_subnet['id']))
-            if add_gateways:
-                # add missing gateways to net_allocation
-                for net_allocation in network_allocations:
-                    if not net_allocation['gateway']:
-                        LOG.debug(
-                            ("Adding gateway %(gateway)s to net allocation "
-                             "%(net_allocation)s"),
-                            {'gateway': share_network_subnet['gateway'],
-                             'net_allocation': net_allocation['id']})
-                        self.db.network_allocation_update(
-                            context, net_allocation['id'],
-                            {'gateway': share_network_subnet['gateway']})
             # NOTE(vponomaryov): following network_info fields are deprecated:
             # 'segmentation_id', 'cidr' and 'network_type'.
             # And they should be used from network allocations directly.
@@ -5114,6 +5503,23 @@ class ShareManager(manager.SchedulerDependentManager):
                 'subnet_metadata': share_network_subnet['subnet_metadata']
             })
         return network_info
+
+    def _get_share_server_network_info_list(self, context, share_server):
+        try:
+            share_network_subnets = (
+                self.db.share_network_subnet_get_all_by_share_server_id(
+                    context, share_server['id']))
+        except exception.ShareNetworkSubnetNotFoundByShareServer:
+            return None
+
+        if not share_network_subnets:
+            return None
+
+        # All subnets belong to the same share network.
+        share_network = self.db.share_network_get(
+            context, share_network_subnets[0]['share_network_id'])
+        return self._form_server_setup_info(
+            context, share_server, share_network, share_network_subnets)
 
     def _handle_setup_server_error(self, context, share_server_id, e):
         details = getattr(e, "detail_data", {})
@@ -5212,11 +5618,7 @@ class ShareManager(manager.SchedulerDependentManager):
         except Exception as e:
             with excutils.save_and_reraise_exception():
                 self._handle_setup_server_error(context, share_server['id'], e)
-                if not context.is_admin:
-                    self.driver.deallocate_network(context, share_server['id'])
-                else:
-                    LOG.debug(f"keeping network allocations to debug failure"
-                              f" of share server {share_server['id']}")
+                self.driver.deallocate_network(context, share_server['id'])
 
     def _validate_segmentation_id(self, network_info):
         """Raises exception if the segmentation type is incorrect."""
@@ -5295,17 +5697,11 @@ class ShareManager(manager.SchedulerDependentManager):
                 share_net = None
                 share_net_subnet = None
                 if subnet_id:
-                    # we request a copy of the current context
-                    # that can read soft-deleted entries
-                    # because the subnet and network may already have been
-                    # deleted in the API layer
-                    soft_deleted_context = context.elevated(read_deleted='yes')
                     try:
                         share_net_subnet = self.db.share_network_subnet_get(
-                            soft_deleted_context, subnet_id)
+                            context, subnet_id)
                         share_net = self.db.share_network_get(
-                            soft_deleted_context,
-                            share_net_subnet['share_network_id'])
+                            context, share_net_subnet['share_network_id'])
                     except Exception:
                         LOG.warning('Share network subnet not found during '
                                     'deletion of share server.')
@@ -5340,7 +5736,7 @@ class ShareManager(manager.SchedulerDependentManager):
                     security_services=security_services)
             except Exception:
                 with excutils.save_and_reraise_exception():
-                    LOG.warning(
+                    LOG.error(
                         "Share server '%s' failed on deletion.",
                         server_id)
                     self.db.share_server_update(
@@ -5372,7 +5768,6 @@ class ShareManager(manager.SchedulerDependentManager):
                 context, reservations, project_id=context.project_id,
             )
 
-    @run_concurrently
     @add_hooks
     @utils.require_driver_initialized
     def extend_share(self, context, share_id, new_size, reservations):
@@ -5461,7 +5856,7 @@ class ShareManager(manager.SchedulerDependentManager):
                     resource_type=message_field.Resource.SHARE,
                     resource_id=share['id'],
                     detail=message_field.Detail.DRIVER_FAILED_SHRINK)
-            LOG.warning(msg, resource=share)
+            LOG.exception(msg, resource=share)
             self.db.share_update(context, share['id'], {'status': status})
 
             raise exception.ShareShrinkingError(
@@ -5598,8 +5993,8 @@ class ShareManager(manager.SchedulerDependentManager):
                 )
             except Exception:
                 with excutils.save_and_reraise_exception():
-                    LOG.warning("Failed to get share server"
-                                " for share group creation.")
+                    LOG.error("Failed to get share server"
+                              " for share group creation.")
                     self.db.share_group_update(
                         context, share_group_id,
                         {'status': constants.STATUS_ERROR})
@@ -5669,7 +6064,7 @@ class ShareManager(manager.SchedulerDependentManager):
                     self.db.share_instance_update(
                         context, share['id'],
                         {'status': constants.STATUS_ERROR})
-                LOG.warning("Share group %s: create failed", share_group_id)
+                LOG.error("Share group %s: create failed", share_group_id)
 
         now = timeutils.utcnow()
         for share in shares:
@@ -5726,8 +6121,8 @@ class ShareManager(manager.SchedulerDependentManager):
                     context,
                     share_group_ref['id'],
                     {'status': constants.STATUS_ERROR})
-                LOG.warning("Share group %s: delete failed",
-                            share_group_ref['id'])
+                LOG.error("Share group %s: delete failed",
+                          share_group_ref['id'])
 
         self.db.share_group_destroy(context, share_group_id)
         LOG.info("Share group %s: deleted successfully", share_group_id)
@@ -5814,8 +6209,8 @@ class ShareManager(manager.SchedulerDependentManager):
                     context,
                     snap_ref['id'],
                     {'status': constants.STATUS_ERROR})
-                LOG.warning("Share group snapshot %s: create failed",
-                            share_group_snapshot_id)
+                LOG.error("Share group snapshot %s: create failed",
+                          share_group_snapshot_id)
 
         for member in (snap_ref.get('share_group_snapshot_members') or []):
             if member['id'] in updated_members_ids:
@@ -5872,8 +6267,8 @@ class ShareManager(manager.SchedulerDependentManager):
                     context,
                     snap_ref['id'],
                     {'status': constants.STATUS_ERROR})
-                LOG.warning("Share group snapshot %s: delete failed",
-                            snap_ref['name'])
+                LOG.error("Share group snapshot %s: delete failed",
+                          snap_ref['name'])
 
         self.db.share_group_snapshot_destroy(context, share_group_snapshot_id)
 
@@ -5897,6 +6292,7 @@ class ShareManager(manager.SchedulerDependentManager):
             'identifier': share_server.get('identifier', None),
             'network_allocations': share_server.get('network_allocations',
                                                     None),
+            'replica_state': share_server.get('replica_state'),
         }
         return share_server_ref
 
@@ -5947,23 +6343,26 @@ class ShareManager(manager.SchedulerDependentManager):
             'source_share_group_snapshot_member_id': share_instance.get(
                 'source_share_group_snapshot_member_id'),
             'availability_zone': share_instance.get('availability_zone'),
-            'qos_type_id': share_instance.get('qos_type_id'),
             'mount_point_name': share_instance.get('mount_point_name'),
+            'qos_type_id': share_instance.get('qos_type_id'),
+            'metadata': {m['key']: m['value']
+                         for m in share_instance.get(
+                'share_instance_metadata', [])},
         }
-        # share type is nullable
-        if share_instance_ref.get('share_type'):
-            share_instance_ref['share_type_name'] = share_instance_ref.get(
-                'share_type').get('name')
-        else:
-            if share_instance.get('share_type_id'):
-                share_type = share_types.get_share_type(
-                    context, share_instance.get('share_type_id'))
-                share_instance_ref['share_type_name'] = share_type.get('name')
-
         if share_instance_ref['share_server']:
             share_instance_ref['share_server'] = self._get_share_server_dict(
                 context, share_instance_ref['share_server']
             )
+        if share_instance.get('share_type'):
+            share_instance_ref['share_type_name'] = share_instance.get(
+                'share_type').get('name')
+        elif share_instance.get('share_type_id'):
+            try:
+                share_type = share_types.get_share_type(
+                    context, share_instance.get('share_type_id'))
+                share_instance_ref['share_type_name'] = share_type.get('name')
+            except exception.ShareTypeNotFound:
+                share_instance_ref['share_type_name'] = None
         share_instance_ref['export_locations'] = [
             self._get_export_location_dict(context, el) for
             el in share_instance.get('export_locations') or []
@@ -5991,9 +6390,10 @@ class ShareManager(manager.SchedulerDependentManager):
         }
 
         if snapshot:
-            snapshot_instance_ref.update({
-                'size': snapshot.get('size'),
-            })
+            snapshot_instance_ref['size'] = snapshot.get('size')
+            display_name = snapshot.get('display_name')
+            if display_name:
+                snapshot_instance_ref['display_name'] = display_name
 
         return snapshot_instance_ref
 
@@ -6070,7 +6470,7 @@ class ShareManager(manager.SchedulerDependentManager):
                              backup_id)
             except Exception:
                 LOG.warning("Failed to get progress of share %(share)s "
-                            "backing up in share_backup %(backup).",
+                            "backing up in share_backup %(backup)s.",
                             {'share': share_id, 'backup': backup_id})
                 self.db.share_update(
                     context, share_id,
@@ -6207,7 +6607,7 @@ class ShareManager(manager.SchedulerDependentManager):
                                  backup_id)
                 except Exception:
                     LOG.exception("Failed to get progress of share_backup "
-                                  "%(backup)s restoring in share %(share).",
+                                  "%(backup)s restoring in share %(share)s.",
                                   {'share': share_id, 'backup': backup_id})
                     self.db.share_update(
                         context, share_id,
@@ -6260,6 +6660,8 @@ class ShareManager(manager.SchedulerDependentManager):
         if share_server is not None:
             share_server = self._get_share_server_dict(context,
                                                        share_server)
+        self._attach_share_server_replica_list_if_enabled(
+            context, share_server=share_server)
         try:
             data_updates = self.driver.get_share_status(share_instance,
                                                         share_server)
@@ -6508,8 +6910,6 @@ class ShareManager(manager.SchedulerDependentManager):
                 context, dest_share_server['id'],
                 {'task_state': (
                     constants.TASK_STATE_MIGRATION_DRIVER_STARTING)})
-
-            dest_share_server['volume_placement'] = dest_host
 
             server_info = self.driver.share_server_migration_start(
                 context, source_share_server, dest_share_server,
@@ -6822,20 +7222,6 @@ class ShareManager(manager.SchedulerDependentManager):
             self.db.share_instance_get_all_by_share_server(
                 context, src_share_server_id, with_share_data=True))
         share_instance_ids = [x.id for x in share_instances]
-
-        # Add metadata dict to share_instances for driver access
-        for instance in share_instances:
-            share_id = instance.get('share_id')
-            if share_id:
-                # Get share to access metadata
-                # (instance.share relationship is detached)
-                share = self.db.share_get(context, share_id)
-                share_metadata_list = share.get('share_metadata', [])
-                instance['metadata'] = {
-                    m['key']: m['value'] for m in share_metadata_list
-                } if share_metadata_list else {}
-            else:
-                instance['metadata'] = {}
 
         snapshot_instances = (
             self.db.share_snapshot_instance_get_all_with_filters(

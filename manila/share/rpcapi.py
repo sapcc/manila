@@ -91,6 +91,7 @@ class ShareAPI(object):
         1.28 - Add update_share_from_metadata() method
         1.29 - Add ensure_shares()
         1.30 - Add update_share_network_subnet_from_metadata() method
+        1.31 - Add update_share_server_replica_state() method
     """
 
     BASE_RPC_API_VERSION = '1.0'
@@ -99,7 +100,7 @@ class ShareAPI(object):
         super(ShareAPI, self).__init__()
         target = messaging.Target(topic=CONF.share_topic,
                                   version=self.BASE_RPC_API_VERSION)
-        self.client = rpc.get_client(target, version_cap='1.30')
+        self.client = rpc.get_client(target, version_cap='1.31')
 
     def create_share_instance(self, context, share_instance, host,
                               request_spec, filter_properties,
@@ -565,4 +566,46 @@ class ShareAPI(object):
             context,
             'ensure_driver_resources',
             skip_backend_info_check=True
+        )
+
+    def create_share_server_replica(
+            self, context, share_server_replica):
+        new_host = utils.extract_host(share_server_replica['host'])
+        call_context = self.client.prepare(server=new_host, version='1.31')
+        call_context.cast(
+            context,
+            'create_share_server_replica',
+            share_server_replica_id=share_server_replica['id'],
+        )
+
+    def delete_share_server_replica(
+            self, context, share_server_replica, force=False):
+        new_host = utils.extract_host(share_server_replica['host'])
+        call_context = self.client.prepare(server=new_host, version='1.31')
+        call_context.cast(
+            context,
+            'delete_share_server_replica',
+            share_server_replica_id=share_server_replica['id'],
+            force=force,
+        )
+
+    def promote_share_server_replica(
+            self, context, share_server_replica, wait=False):
+        new_host = utils.extract_host(share_server_replica['host'])
+        call_context = self.client.prepare(server=new_host, version='1.31')
+        call_context.cast(
+            context,
+            'promote_share_server_replica',
+            share_server_replica_id=share_server_replica['id'],
+            wait=wait,
+        )
+
+    def update_share_server_replica_state(self, context,
+                                          share_server_replica):
+        new_host = utils.extract_host(share_server_replica['host'])
+        call_context = self.client.prepare(server=new_host, version='1.31')
+        call_context.cast(
+            context,
+            'update_share_server_replica_state',
+            share_server_replica_id=share_server_replica['id'],
         )

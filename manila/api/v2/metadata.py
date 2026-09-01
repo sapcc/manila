@@ -30,6 +30,7 @@ class MetadataController(object):
         "share_network_subnet": "share_network_subnet_get",
         "share_export_location": "export_location_get_by_uuid",
         "share_replica": "share_replica_get",
+        "share_server_replica": "share_server_get",
     }
 
     resource_metadata_get = {
@@ -38,6 +39,7 @@ class MetadataController(object):
         "share_network_subnet": "share_network_subnet_metadata_get",
         "share_export_location": "export_location_metadata_get",
         "share_replica": "share_replica_metadata_get",
+        "share_server_replica": "share_server_replica_metadata_get",
     }
 
     resource_metadata_get_item = {
@@ -46,6 +48,7 @@ class MetadataController(object):
         "share_network_subnet": "share_network_subnet_metadata_get_item",
         "share_export_location": "export_location_metadata_get_item",
         "share_replica": "share_replica_metadata_get_item",
+        "share_server_replica": "share_server_replica_metadata_get_item",
     }
 
     resource_metadata_update = {
@@ -54,6 +57,7 @@ class MetadataController(object):
         "share_network_subnet": "share_network_subnet_metadata_update",
         "share_export_location": "export_location_metadata_update",
         "share_replica": "share_replica_metadata_update",
+        "share_server_replica": "share_server_replica_metadata_update",
     }
 
     resource_metadata_update_item = {
@@ -62,6 +66,7 @@ class MetadataController(object):
         "share_network_subnet": "share_network_subnet_metadata_update_item",
         "share_export_location": "export_location_metadata_update_item",
         "share_replica": "share_replica_metadata_update_item",
+        "share_server_replica": "share_server_replica_metadata_update_item",
     }
 
     resource_metadata_delete = {
@@ -70,6 +75,7 @@ class MetadataController(object):
         "share_network_subnet": "share_network_subnet_metadata_delete",
         "share_export_location": "export_location_metadata_delete",
         "share_replica": "share_replica_metadata_delete",
+        "share_server_replica": "share_server_replica_metadata_delete",
     }
 
     resource_policy_get = {
@@ -77,6 +83,7 @@ class MetadataController(object):
         'share_snapshot': 'get_snapshot',
         'share_network_subnet': 'show',
         'share_replica': 'show',
+        'share_server_replica': 'show',
     }
 
     def __init__(self):
@@ -86,7 +93,8 @@ class MetadataController(object):
     def _get_resource(self, context, resource_id,
                       for_modification=False, parent_id=None):
         if self.resource_name in ['share', 'share_network_subnet',
-                                  'share_export_location', 'share_replica']:
+                                  'share_export_location', 'share_replica',
+                                  'share_server_replica']:
             # some resources don't have a "project_id" field (like
             # share_export_location or share_network_subnet),
             # and sometimes we want to retrieve "public" resources

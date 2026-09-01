@@ -131,3 +131,9 @@ class Scheduler(object):
                                 filter_properties):
         """Must override schedule method for create replica to work."""
         raise NotImplementedError(_("Must implement schedule_create_replica"))
+
+    def select_share_server_replica_host(self, context, request_spec,
+                                         filter_properties):
+        """Must override schedule method for server replica host selection."""
+        raise NotImplementedError(_(
+            "Must implement select_share_server_replica_host"))

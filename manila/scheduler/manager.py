@@ -40,25 +40,18 @@ from manila import quota
 from manila import rpc
 from manila.share import rpcapi as share_rpcapi
 from manila.share import share_types
+from manila import utils
 
 LOG = log.getLogger(__name__)
 QUOTAS = quota.QUOTAS
 
-scheduler_driver_opts = [
-    cfg.StrOpt('scheduler_driver',
-               default='manila.scheduler.drivers.'
-                       'filter.FilterScheduler',
-               help='Default scheduler driver to use.'),
-    cfg.BoolOpt('migration_ignore_scheduler',
-                default=False,
-                help='Whether migration will '
-                     'filter target host through '
-                     'scheduler.'),
-]
+scheduler_driver_opt = cfg.StrOpt('scheduler_driver',
+                                  default='manila.scheduler.drivers.'
+                                          'filter.FilterScheduler',
+                                  help='Default scheduler driver to use.')
 
 CONF = cfg.CONF
-CONF.register_opts(scheduler_driver_opts)
-
+CONF.register_opt(scheduler_driver_opt)
 
 # Drivers that need to change module paths or class names can add their
 # old/new path here to maintain backward compatibility.
@@ -75,7 +68,7 @@ MAPPING = {
 class SchedulerManager(manager.Manager):
     """Chooses a host to create shares."""
 
-    RPC_API_VERSION = '1.11'
+    RPC_API_VERSION = '1.12'
 
     def __init__(self, scheduler_driver=None, service_name=None,
                  *args, **kwargs):
@@ -99,18 +92,8 @@ class SchedulerManager(manager.Manager):
 
     def init_host_with_rpc(self, service_id=None):
         self.service_id = service_id
-        try:
-            open('/etc/manila/probe', 'a')
-        except Exception as e:
-            LOG.error("Probe not created: %(e)s", {'e': str(e)})
         ctxt = context.get_admin_context()
         self.request_service_capabilities(ctxt)
-        # init done, mark service ready
-        try:
-            with open('/etc/manila/probe', 'w+') as f:
-                f.write('ready\n')
-        except Exception as e:
-            LOG.error("Probe not written: %(e)s", {'e': str(e)})
 
     def get_host_list(self, context):
         """Get a list of hosts from the HostManager."""
@@ -205,12 +188,8 @@ class SchedulerManager(manager.Manager):
                 context, share_ref, new_share_type_id)
 
         try:
-            if CONF.migration_ignore_scheduler:
-                target_host = host
-            else:
-                tgt_host = self.driver.host_passes_filters(
-                    context, host, request_spec, filter_properties)
-                target_host = tgt_host.host
+            tgt_host = self.driver.host_passes_filters(
+                context, host, request_spec, filter_properties)
 
         except Exception as ex:
             with excutils.save_and_reraise_exception():
@@ -219,7 +198,7 @@ class SchedulerManager(manager.Manager):
 
             try:
                 share_rpcapi.ShareAPI().migration_start(
-                    context, share_ref, target_host,
+                    context, share_ref, tgt_host.host,
                     force_host_assisted_migration, preserve_metadata, writable,
                     nondisruptive, preserve_snapshots, new_share_network_id,
                     new_share_type_id)
@@ -230,8 +209,8 @@ class SchedulerManager(manager.Manager):
     def _set_share_state_and_notify(self, method, state, context, ex,
                                     request_spec, action=None):
 
-        LOG.warning("Failed to schedule %(method)s: %(ex)s",
-                    {"method": method, "ex": ex})
+        LOG.error("Failed to schedule %(method)s: %(ex)s",
+                  {"method": method, "ex": ex})
 
         properties = request_spec.get('share_properties', {})
 
@@ -339,11 +318,25 @@ class SchedulerManager(manager.Manager):
                 self._set_share_replica_error_state(
                     context, 'create_share_replica', exc, request_spec)
 
+    def select_share_server_replica_host(self, context, request_spec=None,
+                                         filter_properties=None):
+        return self.driver.select_share_server_replica_host(
+            context, request_spec, filter_properties)
+
     @periodic_task.periodic_task(spacing=CONF.message_reap_interval,
                                  run_immediately=True)
     @coordination.synchronized('locked-clean-expired-messages')
     def _clean_expired_messages(self, context):
         self.message_api.cleanup_expired_messages(context)
+
+    @periodic_task.periodic_task(spacing=CONF.service_down_time,
+                                 run_immediately=True)
+    @coordination.synchronized('locked-mark-services-as-down')
+    def _mark_services_as_down(self, context):
+        for svc in db.service_get_all(context):
+            if not utils.service_is_up(svc):
+                if svc["state"] not in ("down", "stopped"):
+                    db.service_update(context, svc['id'], {"state": "down"})
 
     def extend_share(self, context, share_id, new_size, reservations,
                      request_spec=None, filter_properties=None):

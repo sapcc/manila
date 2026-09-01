@@ -20,10 +20,13 @@ location of the data's source and destination. This includes cloning,
 SnapMirror, and copy-offload as improvements to brute force data transfer.
 """
 
+import re
+
 from oslo_config import cfg
 from oslo_log import log
 from oslo_utils import excutils
 
+from manila.common import constants
 from manila import exception
 from manila.i18n import _
 from manila.share import configuration
@@ -42,21 +45,19 @@ CONF = cfg.CONF
 
 
 def get_backend_configuration(backend_name):
-    config_stanzas = CONF.list_all_sections()
-    if backend_name not in config_stanzas:
+    config = configuration.Configuration(driver.share_opts,
+                                         config_group=backend_name)
+
+    if config.driver_handles_share_servers is None:
         msg = _("Could not find backend stanza %(backend_name)s in "
                 "configuration which is required for replication or migration "
-                "workflows with the source backend. Available stanzas are "
-                "%(stanzas)s")
+                "workflows with the source backend.")
         params = {
-            "stanzas": config_stanzas,
             "backend_name": backend_name,
         }
         raise exception.BadConfigurationException(reason=msg % params)
 
-    config = configuration.Configuration(driver.share_opts,
-                                         config_group=backend_name)
-    if config.driver_handles_share_servers:
+    if config.driver_handles_share_servers is True:
         # NOTE(dviroel): avoid using a pre-create vserver on DHSS == True mode
         # when retrieving remote backend configuration.
         config.netapp_vserver = None
@@ -75,20 +76,20 @@ def get_backend_configuration(backend_name):
 
 
 def get_backup_configuration(backup_type):
-    config_stanzas = CONF.list_all_sections()
-    if backup_type not in config_stanzas:
-        msg = _("Could not find backup_type stanza %(backup_type)s in "
-                "configuration which is required for backup workflows "
-                "with the source share. Available stanzas are "
-                "%(stanzas)s")
-        params = {
-            "stanzas": config_stanzas,
-            "backup_type": backup_type,
-        }
-        raise exception.BadConfigurationException(reason=msg % params)
     config = configuration.Configuration(driver.share_opts,
                                          config_group=backup_type)
     config.append_config_values(na_opts.netapp_backup_opts)
+
+    if config.netapp_backup_backend_section_name is None:
+        msg = _("Could not find backup_type stanza %(backup_type)s in "
+                "configuration which is required for backup workflows "
+                "with the source share. Stanza must contain the configuration "
+                "key: netapp_backup_backend_section_name.")
+        params = {
+            "backup_type": backup_type,
+        }
+        raise exception.BadConfigurationException(reason=msg % params)
+
     return config
 
 
@@ -99,6 +100,7 @@ def get_client_for_backend(backend_name, vserver_name=None,
         client = client_cmode.NetAppCmodeClient(
             transport_type=config.netapp_transport_type,
             ssl_cert_path=config.netapp_ssl_cert_path,
+            ssl_cert_verify=config.netapp_ssl_cert_verify,
             username=config.netapp_login,
             password=config.netapp_password,
             hostname=config.netapp_server_hostname,
@@ -114,6 +116,7 @@ def get_client_for_backend(backend_name, vserver_name=None,
         client = client_cmode_rest.NetAppRestClient(
             transport_type=config.netapp_transport_type,
             ssl_cert_path=config.netapp_ssl_cert_path,
+            ssl_cert_verify=config.netapp_ssl_cert_verify,
             username=config.netapp_login,
             password=config.netapp_password,
             hostname=config.netapp_server_hostname,
@@ -124,6 +127,7 @@ def get_client_for_backend(backend_name, vserver_name=None,
             private_key_file=config.netapp_private_key_file,
             certificate_file=config.netapp_certificate_file,
             ca_certificate_file=config.netapp_ca_certificate_file,
+            zapi_fallback_enabled=config.netapp_zapi_fallback_enabled,
             certificate_host_validation=(
                 config.netapp_certificate_host_validation))
 
@@ -135,6 +139,34 @@ def get_client_for_host(host):
     backend_name = share_utils.extract_host(host, level='backend_name')
     client = get_client_for_backend(backend_name)
     return client
+
+
+@na_utils.trace
+def validate_mediator_reachable(peer_cluster_name, mediators):
+    """Validate that a mediator is reachable and connected.
+
+    :param peer_cluster_name: name of the peer cluster (for error messages).
+    :param mediators: list of mediator records from get_cluster_mediators().
+    """
+    if not mediators:
+        msg = _("No mediator configured for cluster pair with "
+                "'%(peer)s'. Configure a mediator on both clusters "
+                "before retrying.")
+        raise exception.NetAppException(
+            msg % {'peer': peer_cluster_name})
+    mediator = mediators[0]
+    if not mediator.get('reachable'):
+        msg = _("Mediator for cluster pair with '%(peer)s' is not "
+                "reachable.")
+        raise exception.NetAppException(
+            msg % {'peer': peer_cluster_name})
+    if mediator.get('peer_mediator_connectivity') != 'connected':
+        msg = _("Peer mediator connectivity for '%(peer)s' is "
+                "'%(state)s', expected 'connected'.")
+        raise exception.NetAppException(
+            msg % {'peer': peer_cluster_name,
+                   'state': mediator.get(
+                       'peer_mediator_connectivity', 'unknown')})
 
 
 class DataMotionSession(object):
@@ -253,8 +285,8 @@ class DataMotionSession(object):
         # 1. Create SnapMirror relationship
         config = get_backend_configuration(dest_backend)
         if is_sync_policy:
-            """skip the schedule setting incase of sync policy type
-            as per NetApp design"""
+            # skip the schedule setting in case of sync policy type
+            # as per NetApp design
             schedule = None
         else:
             schedule = config.netapp_snapmirror_schedule
@@ -293,7 +325,7 @@ class DataMotionSession(object):
         1. Abort snapmirror
         2. Quiesce snapmirror
         3. Delete the snapmirror
-        3. Release snapmirror to clean up snapmirror metadata and snapshots
+        4. Release snapmirror to clean up snapmirror metadata and snapshots
         """
         dest_volume_name, dest_vserver, dest_backend = (
             self.get_backend_info_for_share(dest_share_obj))
@@ -446,16 +478,6 @@ class DataMotionSession(object):
         try:
             wait_for_quiesced()
         except exception.ReplicationException:
-            msg_args = {
-                'timeout': config.netapp_snapmirror_quiesce_timeout,
-                'src_volume': src_volume,
-                'dest_volume': dest_volume,
-            }
-            msg = (
-                'failed to quiesce snapmirror in %(timeout)s seconds: '
-                'abort snapmirror from %(src_volume)s to %(dest_volume)s'
-            ) % msg_args
-            LOG.warning(msg)
             dest_client.abort_snapmirror_vol(src_vserver,
                                              src_volume,
                                              dest_vserver,
@@ -469,8 +491,7 @@ class DataMotionSession(object):
         1. Quiesce any ongoing snapmirror transfers
         2. Wait until snapmirror finishes transfers and enters quiesced state
         3. Break snapmirror
-        4. Wait for volume to transition from DP to RW
-        5. Mount the destination volume so it is exported as a share
+        4. Mount the destination volume so it is exported as a share
         """
         dest_volume_name, dest_vserver, dest_backend = (
             self.get_backend_info_for_share(dest_share_obj))
@@ -485,77 +506,12 @@ class DataMotionSession(object):
                                 quiesce_wait_time=quiesce_wait_time)
 
         # 2. Break SnapMirror
-        config = get_backend_configuration(dest_backend)
-        abort_retries = config.netapp_snapmirror_abort_timeout / 5
+        dest_client.break_snapmirror_vol(src_vserver,
+                                         src_volume_name,
+                                         dest_vserver,
+                                         dest_volume_name)
 
-        @utils.retry(retry_param=exception.ReplicationException,
-                     interval=5,
-                     retries=int(abort_retries),
-                     backoff_rate=1)
-        def wait_for_aborted():
-            try:
-                dest_client.break_snapmirror_vol(src_vserver,
-                                                 src_volume_name,
-                                                 dest_vserver,
-                                                 dest_volume_name)
-            except netapp_api.NaApiError as e:
-                undergoing_abort = 'Abort in progress'
-                if (e.code == netapp_api.EAPIERROR and
-                        undergoing_abort in e.message):
-                    raise exception.ReplicationException(
-                        reason="Snapmirror relationship is aborting.")
-                else:
-                    raise
-
-        try:
-            wait_for_aborted()
-        except exception.ReplicationException:
-            msg_args = {
-                'timeout': config.netapp_snapmirror_abort_timeout,
-                'src_volume': src_volume_name,
-                'dest_volume': dest_volume_name,
-            }
-            msg = (
-                'failed waiting for abort snapmirror in %(timeout)s seconds: '
-                'break snapmirror from %(src_volume)s to %(dest_volume)s'
-            ) % msg_args
-            raise exception.ReplicationException(reason=msg)
-
-        # 3. Wait for volume to become RW after break
-        config = get_backend_configuration(dest_backend)
-        timeout = config.netapp_snapmirror_quiesce_timeout
-        retries = int(timeout / 5) or 1
-
-        @utils.retry(retry_param=exception.ReplicationException,
-                     interval=5,
-                     retries=retries,
-                     backoff_rate=1)
-        def wait_for_rw_volume():
-            volume = dest_client.get_volume(dest_volume_name)
-            volume_type = volume.get('type')
-            if volume_type != 'rw':
-                msg_args = {
-                    'volume': dest_volume_name,
-                    'type': volume_type,
-                }
-                msg = ('Volume %(volume)s is still type %(type)s, '
-                       'waiting for RW after snapmirror break.') % msg_args
-                LOG.debug(msg)
-                raise exception.ReplicationException(reason=msg)
-
-        try:
-            wait_for_rw_volume()
-        except exception.ReplicationException:
-            msg_args = {
-                'volume': dest_volume_name,
-                'timeout': timeout,
-            }
-            msg = _('Volume %(volume)s did not become RW within %(timeout)s '
-                    'seconds after snapmirror break.') % msg_args
-            LOG.exception(msg)
-            raise exception.NetAppException(message=msg)
-
-        # 4. Mount the destination volume and create a junction path
+        # 3. Mount the destination volume and create a junction path
         if mount:
             dest_client.mount_volume(dest_volume_name)
 
@@ -642,7 +598,7 @@ class DataMotionSession(object):
                 snapmirrors = self.get_snapmirrors(
                     orig_source_replica, new_source_replica)
                 policy = (snapmirrors[0].get("policy")
-                          if snapmirrors and len(snapmirrors) > 0
+                          if snapmirrors
                           else None)
                 is_sync_policy = policy in na_utils.SUPPORTED_SYNC_POLICIES
             except netapp_api.NaApiError:
@@ -652,8 +608,8 @@ class DataMotionSession(object):
                        % replica['id'])
                 raise exception.NetAppException(message=msg)
         else:
-            """If the replica is not the original active replica then
-            get the policy from the replica's metadata."""
+            # If the replica is not the original active replica then
+            # get the policy from the replica's metadata.
             policy, is_sync_policy = (
                 self.get_policy_from_share_replica_metadata(replica))
 
@@ -694,8 +650,8 @@ class DataMotionSession(object):
 
         # 3. create
         if is_sync_policy:
-            """skip the schedule setting incase of sync policy type
-            as per NetApp design"""
+            # skip the schedule setting in case of sync policy type
+            # as per NetApp design
             schedule = None
         else:
             schedule = replica_config.netapp_snapmirror_schedule
@@ -783,6 +739,182 @@ class DataMotionSession(object):
         # 2. Initialize async transfer of the initial data
         dest_client.initialize_snapmirror_svm(src_vserver,
                                               dest_vserver)
+
+    def create_share_server_replica(self, source_share_server,
+                                    replica_share_server, replication_type,
+                                    replication_policy=None,
+                                    destination_ipspace=None):
+        """Creates a share server replica relationship at share server level.
+
+        :param source_share_server: active source share server.
+        :param replica_share_server: new replica share server; its
+            host identifies the peer backend and its id names the dp-dest SVM.
+        :param replication_type: 'sync' for SM-as NAS;
+        :param replication_policy: SnapMirror policy name.
+        :param destination_ipspace: optional IPspace name for the
+            auto-created dp-destination SVM on a custom-IPSpace network.
+
+        :return: dict with the relationship uuid, the post-init replica
+            status ('in_sync'/'out_of_sync'), and backend_details containing
+            vserver_name (dp-dest SVM) and, for AutomatedFailOver policy only,
+            ports propagated from the source share server's backend_details.
+        """
+        init_state = self._get_svm_relationship_init_state(replication_type)
+
+        src_client, src_vserver = self.get_client_and_vserver_name(
+            source_share_server)
+
+        dest_backend = share_utils.extract_host(
+            replica_share_server['host'], level='backend_name')
+        dest_config = get_backend_configuration(dest_backend)
+        dest_client = get_client_for_backend(dest_backend)
+
+        dp_dest_svm_name = (dest_config.netapp_vserver_name_template
+                            % replica_share_server['id'])
+        src_path = src_vserver + ':'
+        dest_path = dp_dest_svm_name + ':'
+        source_cluster_name = src_client.get_cluster_name()
+        destination_cluster_name = dest_client.get_cluster_name()
+
+        # Step 1: dual-cluster version gate + peering + mediator pre-checks.
+        self._validate_smas_prerequisites(
+            src_client, dest_client, source_cluster_name,
+            destination_cluster_name)
+
+        try:
+            # Step 2: auto-creates dp-dest SVM, SVM peering and relationship.
+            dest_client.create_snapmirror_relationship(
+                src_path, dest_path,
+                source_cluster_name=source_cluster_name,
+                destination_cluster_name=destination_cluster_name,
+                policy_name=replication_policy,
+                create_destination=True,
+                destination_ipspace=destination_ipspace)
+
+            relationships = dest_client.get_snapmirror_relationships(
+                src_path, dest_path, fields='uuid')
+            relationship_uuid = relationships[0]['uuid']
+
+            # Step 3: assign aggregates so destination volumes can be placed.
+            dp_dest_svm_uuid = dest_client._get_unique_svm_by_name(
+                dp_dest_svm_name)
+            aggregate_names = self._get_matching_aggregates(
+                dest_client, dest_config)
+            dest_client.assign_aggregates_to_svm(
+                dp_dest_svm_uuid, dp_dest_svm_name, aggregate_names)
+
+            # Step 4: initialize the relationship.
+            dest_client.update_snapmirror_state(
+                relationship_uuid, state=init_state)
+
+            # Single best-effort read (not a poll) of the post-init replica
+            # status; the periodic task confirms the eventual in_sync.
+            relationship = dest_client.get_svm_snapmirror_by_id(
+                relationship_uuid,
+                fields='state,healthy,unhealthy_reason')
+        except Exception:
+            # TODO(kumart): the auto-created dp-destination SVM, SVM peer and
+            # relationship are left behind. Enhance core and driver to send
+            # detail_data in the exception; do not duplicate the delete flow.
+            msg = _('Could not create the share server replica '
+                    'between source SVM %(src)s and destination SVM '
+                    '%(dst)s.')
+            msg_args = {'src': src_vserver, 'dst': dp_dest_svm_name}
+            LOG.exception(msg, msg_args)
+            raise exception.NetAppException(msg % msg_args)
+
+        # Step 5: return without waiting for baseline transfer.
+        backend_details = {'vserver_name': dp_dest_svm_name}
+        if replication_policy == na_utils.SMAS_POLICY_NAME:
+            source_backend_details = source_share_server.get(
+                'backend_details') or {}
+            source_ports = source_backend_details.get('ports')
+            if source_ports is not None:
+                backend_details['ports'] = source_ports
+
+        return {
+            'relationship_uuid': relationship_uuid,
+            'replica_status': self.map_snapmirror_state_to_replica_status(
+                relationship),
+            'backend_details': backend_details,
+        }
+
+    _SVM_REPLICATION_INIT_STATES = {
+        'sync': na_utils.SM_IN_SYNC_STATE,
+        'async': na_utils.SM_SNAPMIRRORED_STATE,
+    }
+
+    def _get_svm_relationship_init_state(self, replication_type):
+        """Returns the SnapMirror init state for a replication type.
+
+        :param replication_type: 'sync' for SM-as NAS, 'async' for SVM-DR.
+        """
+        init_state = self._SVM_REPLICATION_INIT_STATES.get(replication_type)
+        if init_state is None:
+            msg = _("Unsupported share server replication type: '%s'.")
+            raise exception.NetAppException(msg % replication_type)
+        return init_state
+
+    def _validate_smas_prerequisites(self, src_client, dest_client,
+                                     source_cluster_name,
+                                     destination_cluster_name):
+        """Validates ONTAP version, cluster peering and mediator for SM-as.
+
+        :param src_client: REST client for the source cluster.
+        :param dest_client: REST client for the destination cluster.
+        :param source_cluster_name: name of the source cluster.
+        :param destination_cluster_name: name of the destination cluster.
+        """
+        clusters = ((src_client, source_cluster_name),
+                    (dest_client, destination_cluster_name))
+        for client, cluster_name in clusters:
+            version = client.get_ontap_version(cached=False)
+            if version['version-tuple'] < na_utils.SMAS_MIN_ONTAP_VERSION:
+                msg = _("SMas NAS requires ONTAP 9.19.1 or later on both "
+                        "clusters. Cluster '%(cluster)s' is running "
+                        "'%(version)s', which is not supported.")
+                raise exception.NetAppException(
+                    msg % {'cluster': cluster_name,
+                           'version': version['version']})
+
+        src_client.validate_cluster_peering(destination_cluster_name)
+        mediators = src_client.get_cluster_mediators(
+            peer_cluster_name=destination_cluster_name)
+        validate_mediator_reachable(destination_cluster_name, mediators)
+
+    def _get_matching_aggregates(self, client, config):
+        """Returns destination aggregates matching the configured pattern.
+
+        :param client: REST client for the destination cluster.
+        :param config: configuration object for the destination backend.
+        """
+        pattern = config.netapp_aggregate_name_search_pattern
+        return [name for name in client.list_non_root_aggregates()
+                if re.match(pattern, name)]
+
+    def map_snapmirror_state_to_replica_status(self, relationship):
+        """Maps an ONTAP SnapMirror relationship to a Manila replica status.
+
+        :param relationship: SnapMirror relationship record carrying 'state',
+            'healthy' and optionally 'unhealthy_reason'.
+        """
+        state = relationship.get('state')
+        healthy = relationship.get('healthy')
+        synced_states = (na_utils.SM_IN_SYNC_STATE,
+                         na_utils.SM_SNAPMIRRORED_STATE)
+        if state in synced_states and healthy is True:
+            return constants.REPLICA_STATE_IN_SYNC
+
+        # ONTAP returns unhealthy_reason as a list of
+        # {arguments, code, message}; log the human-readable messages.
+        unhealthy_reason = relationship.get('unhealthy_reason')
+        if unhealthy_reason:
+            reasons = '; '.join(
+                r.get('message', '') for r in unhealthy_reason)
+            LOG.debug('SnapMirror relationship not yet synchronized '
+                      '(state=%(state)s, healthy=%(healthy)s): %(reason)s.',
+                      {'state': state, 'healthy': healthy, 'reason': reasons})
+        return constants.REPLICA_STATE_OUT_OF_SYNC
 
     def get_snapmirrors_svm(self, source_share_server, dest_share_server):
         """Get SnapMirrors between two vServers."""
@@ -889,6 +1021,10 @@ class DataMotionSession(object):
                      backoff_rate=1)
         def wait_for_state():
             vserver_info = client.get_vserver_info(vserver_name)
+            if vserver_info is None:
+                LOG.info('Vserver %s no longer exists; treating as already '
+                         'converted to default subtype.', vserver_name)
+                return
             if vserver_info.get('subtype') != 'default':
                 if is_dest_path:
                     client.break_snapmirror_svm(dest_vserver=vserver_name)
@@ -1012,72 +1148,10 @@ class DataMotionSession(object):
 
     def wait_for_mount_replica(self, vserver_client, share_name, timeout=300,
                                mount_point_name=None):
-        """Mount a replica share that is waiting for snapmirror initialize.
-
-        Polls the SnapMirror relationship state and only retries the mount
-        while the relationship is genuinely still initializing. Fails fast
-        on terminal SnapMirror errors instead of spinning the full timeout
-        on a doomed mount and surfacing a misleading "snapmirror initialize"
-        message.
-
-        Sync (Sync, StrictSync) and async (MirrorAllSnapshots / DP) have
-        different state machines, so each is checked accordingly:
-          - sync: ready when relationship-status == 'insync' and
-            mirror-state == 'snapmirrored'
-          - async DP: ready when relationship-status == 'idle' and
-            mirror-state == 'snapmirrored'
-          - either: still progressing while relationship-status is
-            'transferring' or mirror-state is 'uninitialized' with no
-            last-transfer-error
-        """
+        """Mount a replica share that is waiting for snapmirror initialize."""
 
         interval = 10
         retries = (timeout // interval or 1)
-
-        sm_attrs = ['relationship-status', 'mirror-state', 'policy-type',
-                    'last-transfer-error']
-        sync_policy_types = (na_utils.ZAPI_SYNC_POLICY_TYPE_NAME,
-                             na_utils.ZAPI_STRICT_SYNC_POLICY_TYPE_NAME)
-
-        def _snapmirror_state_says_initializing():
-            """Inspect the SnapMirror relationship targeting this volume.
-
-            Returns (still_initializing, terminal_error_msg). If the state
-            can't be determined (no relationship found, ZAPI failure), both
-            are None and the caller falls back to the mount-error heuristic.
-            """
-            try:
-                snapmirrors = vserver_client.get_snapmirrors(
-                    dest_volume=share_name, desired_attributes=sm_attrs)
-            except netapp_api.NaApiError:
-                return None, None
-            if not snapmirrors:
-                return None, None
-            sm = snapmirrors[0]
-            policy_type = sm.get('policy-type')
-            mirror_state = sm.get('mirror-state')
-            rel_status = sm.get('relationship-status')
-            last_err = sm.get('last-transfer-error')
-
-            if policy_type in sync_policy_types:
-                if rel_status == 'insync' and mirror_state == 'snapmirrored':
-                    return False, None
-                if rel_status in (
-                    'preparing', 'transferring', 'finalizing') or (
-                        mirror_state == 'uninitialized' and not last_err):
-                    return True, None
-                return False, last_err or (
-                    'SnapMirror Sync relationship is in state '
-                    'mirror-state=%s, relationship-status=%s'
-                    % (mirror_state, rel_status))
-            # async DP
-            if rel_status == 'idle' and mirror_state == 'snapmirrored':
-                return False, None
-            if rel_status == 'transferring':
-                return True, None
-            if last_err:
-                return False, last_err
-            return None, None
 
         junction_path = ('/%s' % mount_point_name
                          if mount_point_name
@@ -1086,29 +1160,13 @@ class DataMotionSession(object):
         @utils.retry(exception.ShareBusyException, interval=interval,
                      retries=retries, backoff_rate=1)
         def try_mount_volume():
-            still_initializing, terminal_err = (
-                _snapmirror_state_says_initializing())
-            if terminal_err:
-                msg = _('Unable to mount share %(name)s: SnapMirror '
-                        'relationship is in a terminal state and will not '
-                        'become ready. Detail: %(err)s') % {
-                    'name': share_name, 'err': terminal_err}
-                LOG.error(msg)
-                raise exception.NetAppException(message=msg)
             try:
                 vserver_client.mount_volume(share_name, junction_path)
             except netapp_api.NaApiError as e:
                 undergoing_snap_init = 'snapmirror initialize'
-                msg_args = {'name': share_name, 'err_msg': e.message}
-                # Prefer the SnapMirror state signal over the error string;
-                # fall back to the historical substring match when state is
-                # unknown.
-                is_initializing = (
-                    still_initializing
-                    if still_initializing is not None
-                    else (e.code == netapp_api.EAPIERROR
-                          and undergoing_snap_init in e.message))
-                if is_initializing:
+                msg_args = {'name': share_name}
+                if (e.code == netapp_api.EAPIERROR and
+                        undergoing_snap_init in e.message):
                     msg = _('The share %(name)s is undergoing a snapmirror '
                             'initialize. Will retry the operation.') % msg_args
                     LOG.warning(msg)
@@ -1116,8 +1174,7 @@ class DataMotionSession(object):
                 else:
                     msg = _("Unable to perform mount operation for the share "
                             "%(name)s. Caught an unexpected error. Not "
-                            "retrying. %(err_msg)s") % msg_args
-                    LOG.exception(msg)
+                            "retrying.") % msg_args
                     raise exception.NetAppException(message=msg)
 
         try:
@@ -1252,3 +1309,47 @@ class DataMotionSession(object):
             msg = _("Timed out while wait for SnapMirror relationship to "
                     "be initialized")
             raise exception.NetAppException(message=msg)
+
+    @na_utils.trace
+    def delete_svm_snapmirror_relationship(self, src_share_server,
+                                           dest_share_server):
+        """Delete SVM SnapMirror relationship on destination cluster.
+
+        Performs a full destination-side delete of the SVM-scoped SnapMirror
+        relationship. The underlying REST call is asynchronous; the client
+        waits for the job to complete. 404 (relationship already gone) is
+        treated as success.
+
+        :param src_share_server: source share server dict.
+        :param dest_share_server: destination (replica) share server dict.
+        """
+        dest_client, dest_vserver = self.get_client_and_vserver_name(
+            dest_share_server)
+        _, src_vserver = self.get_client_and_vserver_name(
+            src_share_server)
+
+        src_path = src_vserver + ':'
+        dest_path = dest_vserver + ':'
+        snapmirrors = dest_client.get_snapmirror_relationships(
+            src_path, dest_path, fields='uuid')
+        if not snapmirrors:
+            LOG.debug('No SVM SnapMirror relationship found between source '
+                      'vserver %(src)s and destination vserver %(dest)s.',
+                      {'src': src_vserver, 'dest': dest_vserver})
+            return
+
+        rel_uuid = snapmirrors[0].get('uuid')
+        if not rel_uuid:
+            LOG.warning('SnapMirror relationship found but UUID is missing.'
+                        'Skipping relationship delete.')
+            return
+
+        LOG.debug('Deleting SVM SnapMirror relationship %(uuid)s '
+                  'from source vserver %(src)s to destination vserver '
+                  '%(dest)s.', {'uuid': rel_uuid, 'src': src_vserver,
+                                'dest': dest_vserver})
+        dest_client.delete_snapmirror_relationship(rel_uuid)
+        LOG.info('Deleted SVM SnapMirror relationship %(uuid)s '
+                 'from source vserver %(src)s to destination vserver '
+                 '%(dest)s.', {'uuid': rel_uuid, 'src': src_vserver,
+                               'dest': dest_vserver})

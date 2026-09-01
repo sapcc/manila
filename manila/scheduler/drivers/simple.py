@@ -77,3 +77,23 @@ class SimpleScheduler(chance.ChanceScheduler):
                 return None
         msg = _("Is the appropriate service running?")
         raise exception.NoValidHost(reason=msg)
+
+    def select_share_server_replica_host(self, context, request_spec,
+                                         filter_properties=None):
+        """Picks a host that is up and has the fewest shares."""
+        elevated = context.elevated()
+
+        availability_zone_id = request_spec.get('availability_zone_id')
+
+        results = db.service_get_all_share_sorted(elevated)
+        if availability_zone_id:
+            results = [(service_g, gigs) for (service_g, gigs) in results
+                       if (service_g['availability_zone_id']
+                           == availability_zone_id)]
+
+        for service, _allocated_gigs in results:
+            if utils.service_is_up(service) and not service['disabled']:
+                return service['host']
+
+        msg = _("Is the appropriate service running?")
+        raise exception.NoValidHost(reason=msg)
