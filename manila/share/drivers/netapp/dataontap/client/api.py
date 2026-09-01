@@ -20,6 +20,7 @@ Contains classes required to issue API calls to Data ONTAP and OnCommand DFM.
 
 import copy
 import re
+import threading
 
 from lxml import etree
 from oslo_log import log
@@ -103,6 +104,7 @@ class BaseClient(object):
         self._trace = trace
         self._api_trace_pattern = api_trace_pattern
         self._refresh_conn = True
+        self._session_lock = threading.Lock()
         if ssl_cert_path is not None:
             self._ssl_verify = ssl_cert_path
         else:
@@ -380,9 +382,13 @@ class ZapiClient(BaseClient):
         except requests.URLRequired as e:
             raise exception.StorageCommunicationException(str(e))
         except Exception as e:
-            if not self._refresh_conn:
-                # Connection may have timed out; rebuild and retry once.
-                self._refresh_conn = True
+            with self._session_lock:
+                should_retry = not self._refresh_conn
+                if should_retry:
+                    # Connection may have timed out; rebuild and retry once.
+                    self._refresh_conn = True
+                    self._build_session()
+            if should_retry:
                 return self.invoke_elem(na_element,
                                         enable_tunneling=enable_tunneling)
             raise NaApiError(message=e)
@@ -578,9 +584,13 @@ class RestClient(BaseClient):
         except requests.URLRequired as e:
             raise exception.StorageCommunicationException(str(e))
         except Exception as e:
-            if not self._refresh_conn:
-                # Connection may have timed out; rebuild and retry once.
-                self._refresh_conn = True
+            with self._session_lock:
+                should_retry = not self._refresh_conn
+                if should_retry:
+                    # Connection may have timed out; rebuild and retry once.
+                    self._refresh_conn = True
+                    self._build_session()
+            if should_retry:
                 return self.invoke_elem(na_element, api_args=api_args)
             raise NaApiError(message=e)
 
