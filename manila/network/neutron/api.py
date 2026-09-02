@@ -72,6 +72,10 @@ class PortBindingAlreadyExistsClient(neutron_client_exc.Conflict):
     pass
 
 
+class MacAddressInUseClient(neutron_client_exc.Conflict):
+    pass
+
+
 # We need to monkey-patch neutronclient.common.exceptions module, to make
 # neutron client to raise error specific exceptions. E.g. exception
 # PortBindingAlreadyExistsClient is raised for Neutron API error
@@ -79,6 +83,7 @@ class PortBindingAlreadyExistsClient(neutron_client_exc.Conflict):
 # Conflict will be raised.
 neutron_client_exc.PortBindingAlreadyExistsClient = \
     PortBindingAlreadyExistsClient
+neutron_client_exc.MacAddressInUseClient = MacAddressInUseClient
 
 
 def list_opts():
@@ -197,6 +202,8 @@ class API(object):
         except neutron_client_exc.NeutronClientException as e:
             LOG.warning('Neutron error creating port on network %s',
                         network_id)
+            if e.status_code == 409 and 'mac' in str(e.message).lower():
+                raise exception.MacAddressInUse(mac=e.message)
             if e.status_code == 409:
                 raise exception.PortLimitExceeded()
             raise exception.NetworkException(code=e.status_code,

@@ -276,6 +276,36 @@ class NeutronApiTest(test.TestCase):
         self.assertTrue(clientv20.Client.called)
         self.assertTrue(self.neutron_api.client.create_port.called)
 
+    @mock.patch.object(neutron_api.LOG, 'warning', mock.Mock())
+    def test_create_port_exception_status_409_mac_in_use(self):
+        self.mock_object(
+            self.neutron_api.client, 'create_port',
+            mock.Mock(side_effect=neutron_client_exc.NeutronClientException(
+                status_code=409,
+                message='The mac address fa:16:3e:xx is in use.')))
+        port_args = {'tenant_id': 'test tenant', 'network_id': 'test net'}
+
+        self.assertRaises(exception.MacAddressInUse,
+                          self.neutron_api.create_port,
+                          **port_args)
+
+        self.assertTrue(neutron_api.LOG.warning.called)
+
+    @mock.patch.object(neutron_api.LOG, 'warning', mock.Mock())
+    def test_create_port_exception_status_409_quota_not_mac(self):
+        self.mock_object(
+            self.neutron_api.client, 'create_port',
+            mock.Mock(side_effect=neutron_client_exc.NeutronClientException(
+                status_code=409,
+                message='Quota exceeded for resources: [\'port\']')))
+        port_args = {'tenant_id': 'test tenant', 'network_id': 'test net'}
+
+        self.assertRaises(exception.PortLimitExceeded,
+                          self.neutron_api.create_port,
+                          **port_args)
+
+        self.assertTrue(neutron_api.LOG.warning.called)
+
     def test_delete_port(self):
         # Set up test data
         self.mock_object(self.neutron_api.client, 'delete_port')

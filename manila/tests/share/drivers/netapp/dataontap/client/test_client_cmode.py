@@ -1077,6 +1077,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
                     'node': None,
                     'operational-speed': None,
                     'ifgrp-port': None,
+                    'mac-address': None,
                 },
             },
         }
