@@ -1768,10 +1768,25 @@ class ShareManager(manager.SchedulerDependentManager):
 
         for instance in instances:
 
-            if instance['status'] != constants.STATUS_MIGRATING:
-                continue
-
             share = self.db.share_get(context, instance['share_id'])
+
+            if instance['status'] != constants.STATUS_MIGRATING:
+                if share['task_state'] == (
+                        constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS):
+                    LOG.warning(
+                        "Share instance %(instance_id)s (share %(share_id)s) "
+                        "is skipped by migration_driver_continue because its "
+                        "status is %(status)s (expected %(expected)s), while "
+                        "task_state is still %(task_state)s. The migration "
+                        "task_state may be orphaned - this typically happens "
+                        "when extend_share/shrink_share overwrote the "
+                        "migrating status.",
+                        {'instance_id': instance['id'],
+                         'share_id': instance['share_id'],
+                         'status': instance['status'],
+                         'expected': constants.STATUS_MIGRATING,
+                         'task_state': share['task_state']})
+                continue
 
             if share['task_state'] == (
                     constants.TASK_STATE_MIGRATION_DRIVER_IN_PROGRESS):
@@ -5372,6 +5387,42 @@ class ShareManager(manager.SchedulerDependentManager):
                 context, reservations, project_id=context.project_id,
             )
 
+    def _detect_migration_status(self, share, share_server):
+        """Detect whether the share is being migrated."""
+
+        share_task_state = share.get('task_state')
+        was_share_migrating = share_task_state in constants.BUSY_TASK_STATES
+
+        was_server_migrating = False
+        if share_server is not None and hasattr(share_server, 'get'):
+            server_status = share_server.get('status')
+            server_task_state = share_server.get('task_state')
+            was_server_migrating = (
+                server_status == constants.STATUS_SERVER_MIGRATING
+                or server_task_state in constants.BUSY_TASK_STATES)
+
+        if was_server_migrating:
+            return True, constants.STATUS_SERVER_MIGRATING
+        if was_share_migrating:
+            return True, constants.STATUS_MIGRATING
+        return False, share['status']
+
+    def _migration_still_running(self, context, share, share_server):
+        """Re-check migration state right before a final status write."""
+
+        fresh_share = self.db.share_get(context, share['id'])
+        fresh_server = None
+        if share_server:
+            try:
+                fresh_server = self.db.share_server_get(
+                    context, share_server['id'])
+            except exception.ShareServerNotFound:
+                fresh_server = None
+        _, current_original = self._detect_migration_status(
+            fresh_share, fresh_server)
+        return current_original in (constants.STATUS_MIGRATING,
+                                    constants.STATUS_SERVER_MIGRATING)
+
     @run_concurrently
     @add_hooks
     @utils.require_driver_initialized
@@ -5382,6 +5433,9 @@ class ShareManager(manager.SchedulerDependentManager):
         share_server = self._get_share_server(context, share_instance)
         project_id = share['project_id']
         user_id = share['user_id']
+
+        was_migrating, original_status = self._detect_migration_status(
+            share, share_server)
 
         self._notify_about_share_usage(context, share,
                                        share_instance, "extend.start")
@@ -5399,9 +5453,15 @@ class ShareManager(manager.SchedulerDependentManager):
                 resource_id=share_id,
                 detail=message_field.Detail.DRIVER_FAILED_EXTEND)
             try:
+                still_migrating = (
+                    was_migrating
+                    and self._migration_still_running(
+                        context, share, share_server))
+                error_status = (original_status if still_migrating
+                                else constants.STATUS_EXTENDING_ERROR)
                 self.db.share_update(
                     context, share['id'],
-                    {'status': constants.STATUS_EXTENDING_ERROR}
+                    {'status': error_status}
                 )
                 raise exception.ShareExtendingError(
                     reason=str(e), share_id=share_id)
@@ -5420,11 +5480,16 @@ class ShareManager(manager.SchedulerDependentManager):
             user_id=user_id, share_type_id=share_instance['share_type_id'],
         )
 
+        still_migrating = (
+            was_migrating
+            and self._migration_still_running(context, share, share_server))
+        success_status = (original_status if still_migrating
+                          else constants.STATUS_AVAILABLE.lower())
         share_update = {
             'size': int(new_size),
             # NOTE(u_glide): translation to lower case should be removed in
             # a row with usage of upper case of share statuses in all places
-            'status': constants.STATUS_AVAILABLE.lower()
+            'status': success_status
         }
         share = self.db.share_update(context, share['id'], share_update)
 
@@ -5447,6 +5512,9 @@ class ShareManager(manager.SchedulerDependentManager):
             context, share['id'])
         supports_replication = len(replicas) > 0
 
+        was_migrating, original_status = self._detect_migration_status(
+            share, share_server)
+
         self._notify_about_share_usage(context, share,
                                        share_instance, "shrink.start")
 
@@ -5462,7 +5530,13 @@ class ShareManager(manager.SchedulerDependentManager):
                     resource_id=share['id'],
                     detail=message_field.Detail.DRIVER_FAILED_SHRINK)
             LOG.warning(msg, resource=share)
-            self.db.share_update(context, share['id'], {'status': status})
+            still_migrating = (
+                was_migrating
+                and self._migration_still_running(
+                    context, share, share_server))
+            final_status = original_status if still_migrating else status
+            self.db.share_update(
+                context, share['id'], {'status': final_status})
 
             raise exception.ShareShrinkingError(
                 reason=str(exc), share_id=share_id)
@@ -5527,9 +5601,14 @@ class ShareManager(manager.SchedulerDependentManager):
             user_id=user_id, share_type_id=share_instance['share_type_id'],
         )
 
+        still_migrating = (
+            was_migrating
+            and self._migration_still_running(context, share, share_server))
+        success_status = (original_status if still_migrating
+                          else constants.STATUS_AVAILABLE)
         share_update = {
             'size': new_size,
-            'status': constants.STATUS_AVAILABLE
+            'status': success_status
         }
         share = self.db.share_update(context, share['id'], share_update)
 
@@ -6383,8 +6462,31 @@ class ShareManager(manager.SchedulerDependentManager):
         if task_state:
             fields['task_state'] = task_state
         if share_instance_ids:
-            self.db.share_instance_status_update(
-                context, share_instance_ids, fields)
+
+            preserved_statuses = (
+                constants.STATUS_EXTENDING_ERROR,
+                constants.STATUS_SHRINKING_ERROR,
+            )
+            ids_to_update = []
+            for instance_id in share_instance_ids:
+                instance = self.db.share_instance_get(context, instance_id)
+                if instance['status'] in preserved_statuses:
+                    LOG.warning(
+                        "Not overwriting share instance %(id)s status "
+                        "%(status)s during resource status update to "
+                        "%(new_status)s - the error state is preserved for "
+                        "operator visibility.",
+                        {'id': instance_id,
+                         'status': instance['status'],
+                         'new_status': status})
+                    if task_state:
+                        self.db.share_instance_update(
+                            context, instance_id, {'task_state': task_state})
+                else:
+                    ids_to_update.append(instance_id)
+            if ids_to_update:
+                self.db.share_instance_status_update(
+                    context, ids_to_update, fields)
         if snapshot_instance_ids:
             self.db.share_snapshot_instances_status_update(
                 context, snapshot_instance_ids, fields)
