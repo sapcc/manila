@@ -1425,6 +1425,8 @@ class NetAppCmodeFileStorageLibrary(object):
         timeout = self.configuration.netapp_flexgroup_volume_online_timeout
         self.wait_for_flexgroup_deployment(vserver_client, job_info['jobid'],
                                            timeout)
+        self.wait_for_flexgroup_volume_online(vserver_client, share_name,
+                                              timeout)
 
         if not replica:
             # Efficiency settings (dedup, compression, efficiency policy) are
@@ -1549,6 +1551,39 @@ class NetAppCmodeFileStorageLibrary(object):
             msg = _("Timeout waiting for FlexGroup create job %s to be "
                     "finished.")
             raise exception.NetAppException(msg % job_id)
+
+    @na_utils.trace
+    def wait_for_flexgroup_volume_online(self, vserver_client, share_name,
+                                         timeout):
+        """Wait for a FlexGroup volume to become resolvable in the namespace.
+
+        :param vserver_client: the client used to query the volume.
+        :param share_name: name of the FlexGroup volume.
+        :param timeout: time in seconds to wait for the junction path.
+        """
+
+        interval = 5
+        retries = (timeout / interval or 1)
+
+        @manila_utils.retry(exception.ShareBackendException, interval=interval,
+                            retries=retries, backoff_rate=1)
+        def _wait_junction_is_set():
+            try:
+                volume = vserver_client.get_volume(share_name)
+            except exception.StorageResourceNotFound:
+                # The volume is not visible yet; treat as not ready and retry.
+                volume = {}
+            if not volume.get('junction-path'):
+                msg = _('FlexGroup volume %s has no junction path yet. Will '
+                        'wait for it to be mounted.') % share_name
+                LOG.debug(msg)
+                raise exception.ShareBackendException(msg=msg)
+        try:
+            _wait_junction_is_set()
+        except exception.ShareBackendException:
+            msg = _("Timeout waiting for FlexGroup volume %s junction path "
+                    "to be set.")
+            raise exception.NetAppException(msg % share_name)
 
     @na_utils.trace
     def _remap_standard_boolean_extra_specs(self, extra_specs):

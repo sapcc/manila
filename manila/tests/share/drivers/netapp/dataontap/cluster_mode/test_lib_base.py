@@ -1706,6 +1706,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             mock.Mock(return_value={'jobid': fake.JOB_ID, 'error-code': None}))
         mock_wait_for_flexgroup_deployment = self.mock_object(
             self.library, 'wait_for_flexgroup_deployment')
+        mock_wait_for_volume_online = self.mock_object(
+            self.library, 'wait_for_flexgroup_volume_online')
         aggr_list = [fake.AGGREGATE]
         options = {'efficiency_policy': fake.VOLUME_EFFICIENCY_POLICY_NAME}
         self.library._create_flexgroup_share(vserver_client, aggr_list,
@@ -1721,6 +1723,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             efficiency_policy=fake.VOLUME_EFFICIENCY_POLICY_NAME)
         mock_wait_for_flexgroup_deployment.assert_called_once_with(
             vserver_client, fake.JOB_ID, 2)
+        mock_wait_for_volume_online.assert_called_once_with(
+            vserver_client, fake.SHARE_NAME, 2)
         vserver_client.update_volume_efficiency_attributes.assert_called_once_with(  # noqa
             fake.SHARE_NAME, False, False,
             is_flexgroup=True,
@@ -1804,6 +1808,37 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             exception.NetAppException,
             self.library.wait_for_flexgroup_deployment,
             vserver_client, fake.JOB_ID, 10)
+
+    def test_wait_for_flexgroup_volume_online(self):
+        vserver_client = mock.Mock()
+        vserver_client.get_volume.return_value = {
+            'junction-path': '/%s' % fake.SHARE_NAME,
+        }
+
+        result = self.library.wait_for_flexgroup_volume_online(
+            vserver_client, fake.SHARE_NAME, 20)
+
+        self.assertIsNone(result)
+        vserver_client.get_volume.assert_called_once_with(fake.SHARE_NAME)
+
+    def test_wait_for_flexgroup_volume_online_timeout(self):
+        vserver_client = mock.Mock()
+        vserver_client.get_volume.return_value = {'junction-path': None}
+
+        self.assertRaises(
+            exception.NetAppException,
+            self.library.wait_for_flexgroup_volume_online,
+            vserver_client, fake.SHARE_NAME, 10)
+
+    def test_wait_for_flexgroup_volume_online_not_found(self):
+        vserver_client = mock.Mock()
+        vserver_client.get_volume.side_effect = (
+            exception.StorageResourceNotFound(name=fake.SHARE_NAME))
+
+        self.assertRaises(
+            exception.NetAppException,
+            self.library.wait_for_flexgroup_volume_online,
+            vserver_client, fake.SHARE_NAME, 10)
 
     def test_check_extra_specs_validity(self):
         boolean_extra_spec_keys = list(
