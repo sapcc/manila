@@ -396,6 +396,17 @@ def share_instance_sizes_sum_by_host(context, host):
     return IMPL.share_instance_sizes_sum_by_host(context, host)
 
 
+def share_instance_count_and_size_sum_by_server(context, share_server_id):
+    """Returns (count, size_sum) of share instances on the given server."""
+    return IMPL.share_instance_count_and_size_sum_by_server(
+        context, share_server_id)
+
+
+def share_snapshot_size_sum_by_server(context, share_server_id):
+    """Returns total snapshot size for all snapshots on the given server."""
+    return IMPL.share_snapshot_size_sum_by_server(context, share_server_id)
+
+
 def share_instance_purge(context, instance_id):
     """Removes share instance from database."""
     return IMPL.share_instance_purge(context, instance_id)
