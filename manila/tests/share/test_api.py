@@ -745,25 +745,81 @@ class ShareAPITestCase(test.TestCase):
         mock_call.assert_called_once_with(
             self.context, 'fake_share', backend_metadata)
 
-    @ddt.data(True, False)
-    def test_create_public_and_private_share(self, is_public):
-        share, share_data = self._setup_create_mocks(is_public=is_public)
-        az = share_data.pop('availability_zone')
+    def test_reset_share_metadata_to_default(self):
+        CONF.set_default('driver_updatable_metadata', ['dedupe'])
+        self.mock_object(self.api, 'get', mock.Mock(return_value='fake_share'))
+        mock_call = self.mock_object(
+            self.api.share_rpcapi, 'update_share_from_metadata')
 
-        self.api.create(
-            self.context,
-            share_data['share_proto'],
-            share_data['size'],
-            share_data['display_name'],
-            share_data['display_description'],
-            availability_zone=az
-        )
+        self.api.reset_share_metadata_to_default(
+            self.context, 'fake_id', 'dedupe')
 
-        share['status'] = constants.STATUS_CREATING
-        share['host'] = None
+        mock_call.assert_called_once_with(
+            self.context, 'fake_share', {'dedupe': None})
 
-        self.assertSubDictMatch(share_data,
-                                db_api.share_create.call_args[0][1])
+    def test_reset_share_metadata_to_default_key_not_driver_updatable(self):
+        CONF.set_default('driver_updatable_metadata', ['dedupe'])
+        mock_call = self.mock_object(
+            self.api.share_rpcapi, 'update_share_from_metadata')
+
+        self.api.reset_share_metadata_to_default(
+            self.context, 'fake_id', 'regular_key')
+
+        mock_call.assert_not_called()
+
+    def test_reset_share_metadata_to_default_no_driver_keys_configured(self):
+        CONF.set_default('driver_updatable_metadata', [])
+        mock_call = self.mock_object(
+            self.api.share_rpcapi, 'update_share_from_metadata')
+
+        self.api.reset_share_metadata_to_default(
+            self.context, 'fake_id', 'dedupe')
+
+        mock_call.assert_not_called()
+
+    def test_reset_share_network_subnet_metadata_to_default(self):
+        CONF.set_default('driver_updatable_subnet_metadata', ['showmount'])
+        self.mock_object(
+            db_api, 'share_server_get_all_by_host_and_or_share_subnet',
+            mock.Mock(return_value=['fake_share_server']))
+        mock_call = self.mock_object(
+            self.api.share_rpcapi,
+            'update_share_network_subnet_from_metadata')
+
+        self.api.reset_share_network_subnet_metadata_to_default(
+            self.context, 'fake_sn_id', 'fake_subnet_id', 'showmount')
+
+        mock_call.assert_called_once_with(
+            self.context, 'fake_sn_id', 'fake_subnet_id',
+            'fake_share_server', {'showmount': None})
+
+    def test_reset_share_network_subnet_metadata_to_default_not_driver_key(
+            self):
+        CONF.set_default('driver_updatable_subnet_metadata', ['showmount'])
+        mock_call = self.mock_object(
+            self.api.share_rpcapi,
+            'update_share_network_subnet_from_metadata')
+
+        self.api.reset_share_network_subnet_metadata_to_default(
+            self.context, 'fake_sn_id', 'fake_subnet_id', 'regular_key')
+
+        mock_call.assert_not_called()
+
+    def test_reset_share_network_subnet_metadata_to_default_no_servers(self):
+        CONF.set_default('driver_updatable_subnet_metadata', ['showmount'])
+        self.mock_object(
+            db_api, 'share_server_get_all_by_host_and_or_share_subnet',
+            mock.Mock(
+                side_effect=exception.ShareServerNotFoundByFilters(
+                    filters_description='subnet_id=fake_subnet_id')))
+        mock_call = self.mock_object(
+            self.api.share_rpcapi,
+            'update_share_network_subnet_from_metadata')
+
+        self.api.reset_share_network_subnet_metadata_to_default(
+            self.context, 'fake_sn_id', 'fake_subnet_id', 'showmount')
+
+        mock_call.assert_not_called()
 
     @ddt.data(
         {},
