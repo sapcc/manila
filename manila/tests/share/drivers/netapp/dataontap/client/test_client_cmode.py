@@ -3862,6 +3862,32 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.client.send_request.assert_called_once_with(
             'volume-modify-iter', volume_modify_iter_api_args)
 
+    def test_set_volume_unix_permissions(self):
+        self.mock_object(self.client, 'send_request')
+
+        self.client.set_volume_unix_permissions(fake.SHARE_NAME, '0777')
+
+        expected_args = {
+            'query': {
+                'volume-attributes': {
+                    'volume-id-attributes': {
+                        'name': fake.SHARE_NAME,
+                    },
+                },
+            },
+            'attributes': {
+                'volume-attributes': {
+                    'volume-security-attributes': {
+                        'volume-security-unix-attributes': {
+                            'permissions': '0777',
+                        },
+                    },
+                },
+            },
+        }
+        self.client.send_request.assert_called_once_with(
+            'volume-modify-iter', expected_args)
+
     def test_enable_dedup(self):
 
         self.mock_object(self.client, 'send_request')

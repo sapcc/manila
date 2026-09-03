@@ -9957,6 +9957,45 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         mock_update_volume_snapshot_policy.assert_called_once_with(
             share_instance, "daily", share_server=None)
 
+    def test_update_share_from_metadata_nfs_full_permission(self):
+        metadata = {"nfs_full_permission": "true"}
+        share_instance = fake.SHARE_INSTANCE
+        mock_update = self.mock_object(self.library,
+                                       'update_nfs_full_permission')
+
+        self.library.update_share_from_metadata(self.context, share_instance,
+                                                metadata)
+
+        mock_update.assert_called_once_with(share_instance, "true",
+                                            share_server=None)
+
+    def test_update_nfs_full_permission_true(self):
+        share_instance = fake.SHARE_INSTANCE
+        share_name = self.library._get_backend_share_name(share_instance['id'])
+        mock_set_perms = self.mock_object(self.client,
+                                          'set_volume_unix_permissions')
+        self.mock_object(self.library, '_get_vserver',
+                         mock.Mock(return_value=(
+                             fake.VSERVER1, self.client)))
+
+        self.library.update_nfs_full_permission(share_instance, 'true')
+
+        mock_set_perms.assert_called_once_with(share_name, '0777')
+
+    def test_update_nfs_full_permission_false_is_noop(self):
+        mock_set_perms = self.mock_object(self.client,
+                                          'set_volume_unix_permissions')
+
+        self.library.update_nfs_full_permission(fake.SHARE_INSTANCE, 'false')
+
+        mock_set_perms.assert_not_called()
+
+    def test_update_nfs_full_permission_invalid_value(self):
+        self.assertRaises(
+            exception.NetAppException,
+            self.library.update_nfs_full_permission,
+            fake.SHARE_INSTANCE, 'maybe')
+
     def test_update_share_network_subnet_from_metadata(self):
         metadata = {
             "showmount": "true",

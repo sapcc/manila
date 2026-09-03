@@ -745,6 +745,57 @@ class ShareAPITestCase(test.TestCase):
         mock_call.assert_called_once_with(
             self.context, 'fake_share', backend_metadata)
 
+    def test_validate_set_once_metadata_raises_on_re_set(self):
+        CONF.set_default('driver_set_once_metadata', ['nfs_full_permission'])
+        self.mock_object(self.api.db, 'share_metadata_get',
+                         mock.Mock(
+                             return_value={'nfs_full_permission': 'true'}))
+
+        self.assertRaises(
+            exception.MetadataSetOnceViolation,
+            self.api.validate_set_once_metadata,
+            self.context, 'fake_id', {'nfs_full_permission': 'false'})
+
+    def test_validate_set_once_metadata_allows_first_set(self):
+        CONF.set_default('driver_set_once_metadata', ['nfs_full_permission'])
+        self.mock_object(self.api.db, 'share_metadata_get',
+                         mock.Mock(return_value={}))
+
+        result = self.api.validate_set_once_metadata(
+            self.context, 'fake_id', {'nfs_full_permission': 'true'})
+
+        self.assertEqual({'nfs_full_permission': 'true'}, result)
+
+    def test_validate_set_once_metadata_no_config_is_noop(self):
+        CONF.set_default('driver_set_once_metadata', [])
+
+        result = self.api.validate_set_once_metadata(
+            self.context, 'fake_id', {'nfs_full_permission': 'true'})
+        self.assertEqual({}, result)
+
+    def test_update_share_from_set_once_metadata_calls_driver(self):
+        new_set_once = {'nfs_full_permission': 'true'}
+
+        self.mock_object(self.api, 'get',
+                         mock.Mock(return_value='fake_share'))
+        mock_rpc = self.mock_object(self.api.share_rpcapi,
+                                    'update_share_from_metadata')
+
+        self.api.update_share_from_set_once_metadata(
+            self.context, 'fake_id', new_set_once)
+
+        mock_rpc.assert_called_once_with(
+            self.context, 'fake_share', {'nfs_full_permission': 'true'})
+
+    def test_update_share_from_set_once_metadata_empty_is_noop(self):
+        mock_rpc = self.mock_object(self.api.share_rpcapi,
+                                    'update_share_from_metadata')
+
+        self.api.update_share_from_set_once_metadata(
+            self.context, 'fake_id', {})
+
+        mock_rpc.assert_not_called()
+
     @ddt.data(True, False)
     def test_create_public_and_private_share(self, is_public):
         share, share_data = self._setup_create_mocks(is_public=is_public)

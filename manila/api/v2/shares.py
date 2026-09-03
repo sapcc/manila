@@ -664,6 +664,10 @@ class ShareController(wsgi.Controller,
             persistent_keys = []
 
         current_share_metadata = db.share_metadata_get(context, share_id)
+
+        new_set_once = self.share_api.validate_set_once_metadata(
+            context, share_id, metadata)
+
         if delete:
             _metadata = metadata
             for key in persistent_keys:
@@ -676,7 +680,7 @@ class ShareController(wsgi.Controller,
             _metadata = current_share_metadata.copy()
             _metadata.update(metadata_copy)
 
-        return _metadata
+        return _metadata, new_set_once
 
     # NOTE: (ashrod98) original metadata method and policy overrides
     @wsgi.Controller.api_version("2.0")
@@ -691,15 +695,16 @@ class ShareController(wsgi.Controller,
         if not self.is_valid_body(body, 'metadata'):
             expl = _('Malformed request body')
             raise exc.HTTPBadRequest(explanation=expl)
-        _metadata = self._validate_metadata_for_update(req, resource_id,
-                                                       body['metadata'],
-                                                       delete=False)
+        _metadata, new_set_once = self._validate_metadata_for_update(
+            req, resource_id, body['metadata'], delete=False)
         body['metadata'] = _metadata
         metadata = self._create_metadata(req, resource_id, body)
 
         context = req.environ['manila.context']
         self.share_api.update_share_from_metadata(context, resource_id,
                                                   metadata.get('metadata'))
+        self.share_api.update_share_from_set_once_metadata(
+            context, resource_id, new_set_once)
         return metadata
 
     @wsgi.Controller.api_version("2.0")
@@ -708,14 +713,16 @@ class ShareController(wsgi.Controller,
         if not self.is_valid_body(body, 'metadata'):
             expl = _('Malformed request body')
             raise exc.HTTPBadRequest(explanation=expl)
-        _metadata = self._validate_metadata_for_update(req, resource_id,
-                                                       body['metadata'])
+        _metadata, new_set_once = self._validate_metadata_for_update(
+            req, resource_id, body['metadata'])
         body['metadata'] = _metadata
         metadata = self._update_all_metadata(req, resource_id, body)
 
         context = req.environ['manila.context']
         self.share_api.update_share_from_metadata(context, resource_id,
                                                   metadata.get('metadata'))
+        self.share_api.update_share_from_set_once_metadata(
+            context, resource_id, new_set_once)
         return metadata
 
     @wsgi.Controller.api_version("2.0")
@@ -724,15 +731,16 @@ class ShareController(wsgi.Controller,
         if not self.is_valid_body(body, 'meta'):
             expl = _('Malformed request body')
             raise exc.HTTPBadRequest(explanation=expl)
-        _metadata = self._validate_metadata_for_update(req, resource_id,
-                                                       body['metadata'],
-                                                       delete=False)
+        _metadata, new_set_once = self._validate_metadata_for_update(
+            req, resource_id, body['metadata'], delete=False)
         body['metadata'] = _metadata
         metadata = self._update_metadata_item(req, resource_id, body, key)
 
         context = req.environ['manila.context']
         self.share_api.update_share_from_metadata(context, resource_id,
                                                   metadata.get('metadata'))
+        self.share_api.update_share_from_set_once_metadata(
+            context, resource_id, new_set_once)
         return metadata
 
     @wsgi.Controller.api_version("2.0")
