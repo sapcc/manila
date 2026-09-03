@@ -146,6 +146,13 @@ global_opts = [
                      '(element of the list is <driver_updatable_key>, '
                      'i.e max_files) can be passed to share drivers as part '
                      'of metadata create/update operations.'),
+    cfg.ListOpt('driver_set_once_metadata',
+                default=['nfs_full_permission'],
+                help='Metadata keys that can be set only once per share '
+                     'lifetime. On the first set the update is passed to '
+                     'the share driver. Any subsequent attempt to update '
+                     'a key in this list returns HTTP 400. '
+                     'Example: nfs_full_permission'),
     cfg.ListOpt('driver_updatable_subnet_metadata',
                 default=[],
                 help='Metadata keys that will decide which share network '
