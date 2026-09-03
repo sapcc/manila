@@ -658,6 +658,12 @@ class InvalidMetadataSize(Invalid):
     message = _("Invalid metadata size.")
 
 
+class MetadataSetOnceViolation(Invalid):
+    message = _("Metadata key '%(key)s' can only be set once and already "
+                "has value '%(current_value)s'. Updating set-once metadata "
+                "is not allowed.")
+
+
 class SecurityServiceNotFound(NotFound):
     message = _("Security service %(security_service_id)s could not be found.")
 
