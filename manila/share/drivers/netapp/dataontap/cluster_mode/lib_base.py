@@ -6366,6 +6366,26 @@ class NetAppCmodeFileStorageLibrary(object):
                                                      snapshot_policy)
 
     @na_utils.trace
+    def update_nfs_full_permission(self, share, value, share_server=None):
+        """Set unix permissions to 0777 on the share volume.
+
+        Triggered by the metadata key 'nfs_full_permission' = 'true'.
+        The value 'false' is intentionally a no-op here; the API layer
+        prevents re-setting a key that was already written so this method
+        is only called with value='true'.
+        """
+        value = value.lower()
+        if value not in ('true', 'false'):
+            err_msg = _("Invalid nfs_full_permission value '%s'. "
+                        "Accepted values are 'true' or 'false'.") % value
+            raise exception.NetAppException(err_msg)
+        if value == 'false':
+            return
+        share_name = self._get_backend_share_name(share['id'])
+        vserver, vserver_client = self._get_vserver(share_server=share_server)
+        vserver_client.set_volume_unix_permissions(share_name, '0777')
+
+    @na_utils.trace
     def update_showmount(self, showmount, share_server=None):
         showmount = showmount.lower()
         if showmount not in ('true', 'false'):
@@ -6390,6 +6410,7 @@ class NetAppCmodeFileStorageLibrary(object):
         metadata_update_func_map = {
             "snapshot_policy": "update_volume_snapshot_policy",
             "cross_volume_dedupe": "update_cross_volume_dedupe",
+            "nfs_full_permission": "update_nfs_full_permission",
         }
 
         for k, v in metadata.items():

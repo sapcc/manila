@@ -612,6 +612,41 @@ class API(base.Base):
             self.share_rpcapi.update_share_from_metadata(context, share,
                                                          driver_metadata)
 
+    def validate_set_once_metadata(self, context, share_id, metadata):
+        """Raise MetadataSetOnceViolation if a set-once key is being re-set.
+
+        Returns a dict of set-once key/value pairs that are new (not yet in
+        the DB), so the caller can forward them to the driver after the DB
+        write without a second DB query.
+        """
+        set_once_keys = getattr(CONF, 'driver_set_once_metadata', [])
+        if not set_once_keys:
+            return {}
+        existing = self.db.share_metadata_get(context, share_id)
+        new_set_once = {}
+        for key in set_once_keys:
+            if key not in metadata:
+                continue
+            if key in existing:
+                raise exception.MetadataSetOnceViolation(
+                    key=key, current_value=existing[key])
+            new_set_once[key] = metadata[key]
+        return new_set_once
+
+    def update_share_from_set_once_metadata(self, context, share_id,
+                                            new_set_once_metadata):
+        """Pass new set-once metadata keys to the driver.
+
+        Expects only the keys that were not previously in the DB (as returned
+        by validate_set_once_metadata).  No DB re-query is performed here
+        because the caller already has the pre-write snapshot of what is new.
+        """
+        if not new_set_once_metadata:
+            return
+        share = self.get(context, share_id)
+        self.share_rpcapi.update_share_from_metadata(
+            context, share, new_set_once_metadata)
+
     def update_share_network_subnet_from_metadata(self, context,
                                                   share_network_id,
                                                   share_network_subnet_id,
