@@ -763,6 +763,10 @@ class IPAddressInUse(InUse):
     message = _("IP address %(ip)s is already used.")
 
 
+class MacAddressInUse(InUse):
+    message = _("MAC address %(mac)s is already in use.")
+
+
 class ShareGroupTypeInUse(ManilaException):
     message = _("Share group Type %(type_id)s deletion is not allowed "
                 "with groups present with the type.")
