@@ -4874,6 +4874,32 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.assertTrue(self.mock_dm_session.create_snapmirror.called)
         self.assertEqual(constants.STATUS_ERROR, result)
 
+    def test_update_replica_state_no_snapmirror_create_clone_split(self):
+        vserver_client = mock.Mock()
+        self.mock_object(vserver_client, 'volume_exists',
+                         mock.Mock(return_value=True))
+        self.mock_object(self.library,
+                         '_get_vserver',
+                         mock.Mock(return_value=(fake.VSERVER1,
+                                                 vserver_client)))
+        self.mock_dm_session.get_snapmirrors = mock.Mock(return_value=[])
+        self.mock_object(self.library,
+                         '_is_readable_replica',
+                         mock.Mock(return_value=False))
+        self.mock_dm_session.create_snapmirror.side_effect = (
+            exception.NetAppException(
+                message='Unable to perform mount operation because volume '
+                        'clone split is in progress on the source volume.'))
+
+        replica = copy.deepcopy(fake.SHARE)
+        replica['status'] = constants.REPLICA_STATE_OUT_OF_SYNC
+
+        result = self.library.update_replica_state(
+            None, [replica], replica, None, [], share_server=None)
+
+        self.assertTrue(self.mock_dm_session.create_snapmirror.called)
+        self.assertEqual(constants.REPLICA_STATE_OUT_OF_SYNC, result)
+
     @ddt.data(constants.STATUS_ERROR, constants.STATUS_AVAILABLE)
     def test_update_replica_state_no_snapmirror(self, status):
         vserver_client = mock.Mock()
@@ -5016,6 +5042,83 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         )
 
         self.assertEqual(constants.STATUS_ERROR, result)
+
+    def test_update_replica_state_uninitialized_snapmirror_clone_split(self):
+        fake_snapmirror = {
+            'mirror-state': 'uninitialized',
+            'relationship-status': 'idle',
+            'source-vserver': fake.VSERVER2,
+            'source-volume': 'fake_volume',
+            'policy-type': 'async',
+            'last-transfer-error': (
+                'Failed to create snapshot snapmirror.foo on volume bar. '
+                '(Volume Clone Split is in progress on the source volume.)'),
+            'last-transfer-end-timestamp': '%s' % float(time.time() - 10000)
+        }
+        vserver_client = mock.Mock()
+        self.mock_object(vserver_client, 'volume_exists',
+                         mock.Mock(return_value=True))
+        self.mock_object(self.library,
+                         '_get_vserver',
+                         mock.Mock(return_value=(fake.VSERVER1,
+                                                 vserver_client)))
+        self.mock_dm_session.get_snapmirrors = mock.Mock(
+            return_value=[fake_snapmirror])
+        self.mock_object(self.library,
+                         '_is_readable_replica',
+                         mock.Mock(return_value=False))
+        vserver_client.initialize_snapmirror_vol.side_effect = (
+            netapp_api.NaApiError(
+                code=netapp_api.EAPIERROR,
+                message='Volume Clone Split is in progress on the source '
+                        'volume.'))
+
+        result = self.library.update_replica_state(None, [fake.SHARE],
+                                                   fake.SHARE, None, [],
+                                                   share_server=None)
+
+        vserver_client.initialize_snapmirror_vol.assert_called_once_with(
+            fake.VSERVER2, 'fake_volume', fake.VSERVER1, fake.SHARE['name'],
+            state=na_utils.SM_SNAPMIRRORED_STATE
+        )
+        vserver_client.resync_snapmirror_vol.assert_not_called()
+        self.assertEqual(constants.REPLICA_STATE_OUT_OF_SYNC, result)
+
+    def test_update_replica_state_uninitialized_snapmirror_calls_initialize(
+            self):
+        """An uninitialized relationship must call initialize, not resync."""
+        fake_snapmirror = {
+            'mirror-state': 'uninitialized',
+            'relationship-status': 'idle',
+            'source-vserver': fake.VSERVER2,
+            'source-volume': 'fake_volume',
+            'policy-type': 'async',
+            'last-transfer-end-timestamp': '%s' % float(time.time() - 10000)
+        }
+        vserver_client = mock.Mock()
+        self.mock_object(vserver_client, 'volume_exists',
+                         mock.Mock(return_value=True))
+        self.mock_object(self.library,
+                         '_get_vserver',
+                         mock.Mock(return_value=(fake.VSERVER1,
+                                                 vserver_client)))
+        self.mock_dm_session.get_snapmirrors = mock.Mock(
+            return_value=[fake_snapmirror])
+        self.mock_object(self.library,
+                         '_is_readable_replica',
+                         mock.Mock(return_value=False))
+
+        result = self.library.update_replica_state(None, [fake.SHARE],
+                                                   fake.SHARE, None, [],
+                                                   share_server=None)
+
+        vserver_client.initialize_snapmirror_vol.assert_called_once_with(
+            fake.VSERVER2, 'fake_volume', fake.VSERVER1, fake.SHARE['name'],
+            state=na_utils.SM_SNAPMIRRORED_STATE
+        )
+        vserver_client.resume_snapmirror_vol.assert_not_called()
+        vserver_client.resync_snapmirror_vol.assert_not_called()
+        self.assertEqual(constants.REPLICA_STATE_OUT_OF_SYNC, result)
 
     def test_update_replica_state_stale_snapmirror(self):
         fake_snapmirror = {
