@@ -8222,6 +8222,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         mock_modify_volume.assert_called_once_with(
             fake.POOL_NAME,
             fake.SHARE_NAME,
+            replica=False,
             comment=mock.ANY,
             **expected_options)
 
@@ -8304,6 +8305,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         mock_modify_volume.assert_called_once_with(
             fake.POOL_NAME,
             fake.SHARE_NAME,
+            replica=False,
             comment='fake_comment',
             **expected_options)
 
@@ -8379,6 +8381,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         mock_modify_volume.assert_called_once_with(
             fake.POOL_NAME,
             fake.SHARE_NAME,
+            replica=False,
             comment='fake_comment',
             **expected_options)
 
