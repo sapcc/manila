@@ -51,8 +51,13 @@ class NetAppCmodeCIFSHelper(base.NetAppBaseHelper):
         def _get_volume_junction_path(share_name):
             return self._client.get_volume_junction_path(share_name)
 
+        if is_flexgroup:
+            volume_info = self._client.get_volume(share_name)
+            export_path = volume_info['junction-path']
+        else:
+            export_path = _get_volume_junction_path(share_name)
+
         cifs_exist = self._client.cifs_share_exists(share_name)
-        export_path = _get_volume_junction_path(share_name)
         if ensure_share_already_exists and not cifs_exist:
             msg = _("The expected CIFS share %(share_name)s was not found.")
             msg_args = {'share_name': share_name}
