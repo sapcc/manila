@@ -1,0 +1,30 @@
+---
+features:
+  - |
+    Add DNS metadata support for NFS shares. When a share is created with
+    dns_name and dns_domain metadata, Manila automatically:
+
+    - Creates a DNS record in OpenStack Designate pointing to the preferred
+      export location IP.
+    - Adds an extra export location with the DNS path
+      alongside the existing IP-based paths, so clients
+      can mount by name instead of IP.
+
+    This solves the problem of NFS clients needing to update mount
+    configurations when a share server is recreated and gets a different IP -
+    the DNS name stays stable even if the underlying IP changes.
+
+security:
+  - |
+    There is no RBAC mechanism in Designate equivalent to Neutron's
+    device_owner protection for ports. Any user with access to the
+    Designate zone can modify or delete the A records created by Manila.
+
+    - Manila is not notified of external Designate changes, so the DNS export
+      location entry in Manila's database will remain even after the record is
+      deleted in Designate, leading to a stale path.
+
+    Suggestion:
+
+    - To reduce risk, it is recommended to restrict write access to the Designate
+    zone used for Manila shares to the Manila service account only.
