@@ -3798,13 +3798,22 @@ class NetAppCmodeFileStorageLibrary(object):
                     dm_session.create_snapmirror(active_replica, replica,
                                                  relationship_type,
                                                  mount=is_readable)
-                except netapp_api.NaApiError:
+                except (netapp_api.NaApiError,
+                        exception.NetAppException) as e:
+                    if data_motion.is_volume_clone_split_in_progress(e):
+                        LOG.warning("Could not create snapmirror for replica "
+                                    "%s because a source volume clone split "
+                                    "is in progress. Will retry during the "
+                                    "next replica state update.",
+                                    replica['id'])
+                        return constants.REPLICA_STATE_OUT_OF_SYNC
                     LOG.exception("Could not create snapmirror for "
                                   "replica %s.", replica['id'])
                     return constants.STATUS_ERROR
             return constants.REPLICA_STATE_OUT_OF_SYNC
 
         snapmirror = snapmirrors[0]
+        current_state = snapmirror.get('mirror-state')
 
         # Determine desired steady state based on policy type.
         # Async policies target 'snapmirrored';
@@ -3838,14 +3847,36 @@ class NetAppCmodeFileStorageLibrary(object):
             na_utils.SM_SYNCHRONIZING_STATE,
             na_utils.SM_FINALIZING_STATE
         ]
-        if (snapmirror.get('mirror-state') != desired_state and
+        if (current_state != desired_state and
             (snapmirror.get('relationship-status') in in_progress_status or
              snapmirror.get('transferring-state') in in_progress_status)):
             LOG.debug("Entered in-progress state for replica %s.",
                       replica['id'])
             return constants.REPLICA_STATE_OUT_OF_SYNC
 
-        if snapmirror.get('mirror-state') != desired_state:
+        if current_state != desired_state:
+            if current_state == na_utils.SM_UNINITIALIZED_STATE:
+                try:
+                    LOG.debug("Invoking snapmirror initialize for replica "
+                              "%s.", replica['id'])
+                    vserver_client.initialize_snapmirror_vol(
+                        snapmirror['source-vserver'],
+                        snapmirror['source-volume'],
+                        vserver,
+                        share_name,
+                        state=desired_state)
+                    return constants.REPLICA_STATE_OUT_OF_SYNC
+                except netapp_api.NaApiError as e:
+                    if data_motion.is_volume_clone_split_in_progress(e):
+                        LOG.warning("Could not initialize snapmirror for "
+                                    "replica %s because a source volume "
+                                    "clone split is in progress. Will retry "
+                                    "during the next replica state update.",
+                                    replica['id'])
+                        return constants.REPLICA_STATE_OUT_OF_SYNC
+                    LOG.exception("Could not initialize snapmirror.")
+                    return constants.STATUS_ERROR
+
             try:
                 LOG.debug("Invoking snapmirror resume/resync for replica %s.",
                           replica['id'])
@@ -3860,7 +3891,13 @@ class NetAppCmodeFileStorageLibrary(object):
                     vserver,
                     share_name)
                 return constants.REPLICA_STATE_OUT_OF_SYNC
-            except netapp_api.NaApiError:
+            except netapp_api.NaApiError as e:
+                if data_motion.is_volume_clone_split_in_progress(e):
+                    LOG.warning("Could not resync snapmirror for replica %s "
+                                "because a source volume clone split is in "
+                                "progress. Will retry during the next replica "
+                                "state update.", replica['id'])
+                    return constants.REPLICA_STATE_OUT_OF_SYNC
                 LOG.exception("Could not resync snapmirror.")
                 return constants.STATUS_ERROR
 
