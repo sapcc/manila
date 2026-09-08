@@ -3212,7 +3212,7 @@ class ShareManagerTestCase(test.TestCase):
 
         # Creates some snapshot instances to make sure they are being
         # accounted
-        snapshot_instances = [
+        snapshots = [
             db_utils.create_snapshot(
                 size=resource_size, share_id=share['id'])['instance']
             for i in range(3)]
@@ -3226,12 +3226,15 @@ class ShareManagerTestCase(test.TestCase):
         driver_mock.max_shares_per_share_server = max_shares
         driver_mock.max_share_server_size = max_gigabytes
         self.share_manager.driver = driver_mock
+        num_instances = len(share_instances)
+        instances_size_sum = sum(si['size'] for si in share_instances)
+        snapshot_size_sum = sum(si['size'] for si in snapshots)
         self.mock_object(
-            db, 'share_instance_get_all_by_share_server',
-            mock.Mock(return_value=share_instances))
+            db, 'share_instance_count_and_size_sum_by_server',
+            mock.Mock(return_value=(num_instances, instances_size_sum)))
         self.mock_object(
-            db, 'share_snapshot_instance_get_all_with_filters',
-            mock.Mock(return_value=snapshot_instances))
+            db, 'share_snapshot_size_sum_by_server',
+            mock.Mock(return_value=snapshot_size_sum))
 
         # NOTE(carloss): If with_share_instance, simulates the behavior where
         # the provide_share_server method call was not related to a request to
@@ -3276,11 +3279,12 @@ class ShareManagerTestCase(test.TestCase):
 
         self.share_manager.driver = driver_mock
         self.mock_object(
-            db, 'share_instance_get_all_by_share_server',
-            mock.Mock(return_value=share_instances))
+            db, 'share_instance_count_and_size_sum_by_server',
+            mock.Mock(return_value=(len(share_instances),
+                                    sum(s['size'] for s in share_instances))))
         self.mock_object(
-            db, 'share_snapshot_instance_get_all_with_filters',
-            mock.Mock(return_value=[]))
+            db, 'share_snapshot_size_sum_by_server',
+            mock.Mock(return_value=0))
         self.mock_object(db, 'share_get', mock.Mock(return_value=share))
         self.mock_object(api.API, 'get_migrating_instances',
                          mock.Mock(return_value=share_instance_ids))
@@ -3302,12 +3306,10 @@ class ShareManagerTestCase(test.TestCase):
 
         self.assertEqual(
             1, len(available_share_servers))
-        db.share_instance_get_all_by_share_server.assert_called_once_with(
-            self.context, share_servers[0]['id'], with_share_data=True)
-        (db.share_snapshot_instance_get_all_with_filters.
-            assert_called_once_with(
-                self.context, {"share_instance_ids": share_instance_ids},
-                with_share_data=True))
+        db.share_instance_count_and_size_sum_by_server.assert_called_once_with(
+            self.context, share_servers[0]['id'])
+        db.share_snapshot_size_sum_by_server.assert_called_once_with(
+            self.context, share_servers[0]['id'])
         db.share_get.assert_called_once_with(self.context, share['id'])
         api.API.get_migrating_instances.assert_called_once_with(share)
         db.share_instance_get.assert_called_once_with(
