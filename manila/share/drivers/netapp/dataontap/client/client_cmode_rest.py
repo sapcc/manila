@@ -1220,6 +1220,16 @@ class NetAppRestClient(object):
         self.send_request(f'/storage/volumes/{uuid}', 'patch', body=body)
 
     @na_utils.trace
+    def set_volume_unix_permissions(self, volume_name, unix_permissions):
+        """Set unix permissions on the specified volume root."""
+        volume = self._get_volume_by_args(vol_name=volume_name)
+        uuid = volume['uuid']
+        body = {
+            'nas.unix_permissions': unix_permissions,
+        }
+        self.send_request(f'/storage/volumes/{uuid}', 'patch', body=body)
+
+    @na_utils.trace
     def reset_autosize_attributes(self, aggr, volume_name):
         '''Reset autosize attributes according to Volume type (RW or DP)
 

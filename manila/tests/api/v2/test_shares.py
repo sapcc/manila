@@ -2323,11 +2323,12 @@ class ShareAPITest(test.TestCase):
         body = {'metadata': {'key1': 'val1', 'key2': 'val2'}}
         mock_validate = self.mock_object(
             self.controller, '_validate_metadata_for_update',
-            mock.Mock(return_value=body['metadata']))
+            mock.Mock(return_value=(body['metadata'], {})))
         mock_create = self.mock_object(
             self.controller, '_create_metadata',
             mock.Mock(return_value=body))
         self.mock_object(share_api.API, 'update_share_from_metadata')
+        self.mock_object(share_api.API, 'update_share_from_set_once_metadata')
 
         req = fakes.HTTPRequest.blank(
             '/v2/shares/%s/metadata' % id)
@@ -2343,11 +2344,12 @@ class ShareAPITest(test.TestCase):
         body = {'metadata': {'key1': 'val1', 'key2': 'val2'}}
         mock_validate = self.mock_object(
             self.controller, '_validate_metadata_for_update',
-            mock.Mock(return_value=body['metadata']))
+            mock.Mock(return_value=(body['metadata'], {})))
         mock_update = self.mock_object(
             self.controller, '_update_all_metadata',
             mock.Mock(return_value=body))
         self.mock_object(share_api.API, 'update_share_from_metadata')
+        self.mock_object(share_api.API, 'update_share_from_set_once_metadata')
 
         req = fakes.HTTPRequest.blank(
             '/v2/shares/%s/metadata' % id)
@@ -2364,6 +2366,69 @@ class ShareAPITest(test.TestCase):
             '/v2/shares/%s/metadata/fake_key' % id)
         self.controller.delete_metadata(req, id, 'fake_key')
         mock_delete.assert_called_once_with(req, id, 'fake_key')
+
+    def test_create_metadata_set_once_blocks_re_set(self):
+        share_id = 'fake_share_id'
+        self.mock_object(db, 'share_metadata_get',
+                         mock.Mock(
+                             return_value={'nfs_full_permission': 'true'}))
+        self.mock_object(
+            share_api.API, 'update_share_from_metadata')
+        self.mock_object(
+            share_api.API, 'update_share_from_set_once_metadata')
+        self.mock_object(
+            share_api.API, 'validate_set_once_metadata',
+            mock.Mock(side_effect=exception.MetadataSetOnceViolation(
+                key='nfs_full_permission', current_value='true')))
+
+        body = {'metadata': {'nfs_full_permission': 'false'}}
+        req = fakes.HTTPRequest.blank('/v2/shares/%s/metadata' % share_id)
+        self.assertRaises(exception.MetadataSetOnceViolation,
+                          self.controller.create_metadata,
+                          req, share_id, body)
+
+    def test_update_metadata_item_set_once_blocks_re_set(self):
+        share_id = 'fake_share_id'
+        self.mock_object(db, 'share_metadata_get',
+                         mock.Mock(
+                             return_value={'nfs_full_permission': 'true'}))
+        self.mock_object(
+            share_api.API, 'update_share_from_metadata')
+        self.mock_object(
+            share_api.API, 'update_share_from_set_once_metadata')
+        self.mock_object(
+            share_api.API, 'validate_set_once_metadata',
+            mock.Mock(side_effect=exception.MetadataSetOnceViolation(
+                key='nfs_full_permission', current_value='true')))
+
+        body = {'metadata': {'nfs_full_permission': 'false'},
+                'meta': {'nfs_full_permission': 'false'}}
+        req = fakes.HTTPRequest.blank(
+            '/v2/shares/%s/metadata/nfs_full_permission' % share_id)
+        self.assertRaises(exception.MetadataSetOnceViolation,
+                          self.controller.update_metadata_item,
+                          req, share_id, body, 'nfs_full_permission')
+
+    def test_create_metadata_set_once_first_set_allowed(self):
+        share_id = 'fake_share_id'
+        body = {'metadata': {'nfs_full_permission': 'true'}}
+        CONF.set_override('driver_set_once_metadata', ['nfs_full_permission'])
+        self.mock_object(db, 'share_metadata_get',
+                         mock.Mock(return_value={}))
+        self.mock_object(self.controller, '_create_metadata',
+                         mock.Mock(return_value=body))
+        mock_updatable = self.mock_object(
+            share_api.API, 'update_share_from_metadata')
+        mock_set_once = self.mock_object(
+            share_api.API, 'update_share_from_set_once_metadata')
+
+        req = fakes.HTTPRequest.blank('/v2/shares/%s/metadata' % share_id)
+        result = self.controller.create_metadata(req, share_id, body)
+
+        self.assertEqual(body, result)
+        mock_updatable.assert_called_once()
+        mock_set_once.assert_called_once_with(
+            mock.ANY, share_id, {'nfs_full_permission': 'true'})
 
 
 def _fake_access_get(self, ctxt, access_id):

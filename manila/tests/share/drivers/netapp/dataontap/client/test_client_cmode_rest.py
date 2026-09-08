@@ -3238,6 +3238,19 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
                                         'patch', body=body)
         mock_get_vol.assert_called_once_with(vol_name='fake_volume_name')
 
+    def test_set_volume_unix_permissions(self):
+        return_uuid = {'uuid': 'fake_uuid'}
+        mock_get_vol = self.mock_object(self.client, '_get_volume_by_args',
+                                        mock.Mock(return_value=return_uuid))
+        mock_sr = self.mock_object(self.client, 'send_request')
+
+        self.client.set_volume_unix_permissions('fake_volume_name', '0777')
+
+        body = {'nas.unix_permissions': '0777'}
+        mock_sr.assert_called_once_with('/storage/volumes/fake_uuid',
+                                        'patch', body=body)
+        mock_get_vol.assert_called_once_with(vol_name='fake_volume_name')
+
     @ddt.data(True, False)
     def test_update_volume_efficiency_attributes(self, status):
         response = {
