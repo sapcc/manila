@@ -8191,6 +8191,9 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             vserver_client, 'modify_volume')
         mock_is_readable_replica = self.mock_object(
             self.library, '_is_readable_replica', mock.Mock(return_value=True))
+        self.mock_object(
+            self.library, '_is_flexgroup_share',
+            mock.Mock(return_value=False))
         mock_set_max_files = self.mock_object(
             vserver_client, 'set_volume_max_files')
         mock_junction_path = self.mock_object(

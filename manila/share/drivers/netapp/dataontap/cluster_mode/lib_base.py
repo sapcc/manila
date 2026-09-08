@@ -3339,8 +3339,13 @@ class NetAppCmodeFileStorageLibrary(object):
             # readable replicas (here and for _create_export() below),
             # because we trust that we only operate on share instances local
             # to the current host
-            existing_mount = vserver_client.get_volume_junction_path(
-                share_name, raise_on_not_found=False)
+
+            if self._is_flexgroup_share(vserver_client, share_name):
+                volume_info = vserver_client.get_volume(share_name)
+                existing_mount = volume_info['junction-path']
+            else:
+                existing_mount = vserver_client.get_volume_junction_path(
+                    share_name, raise_on_not_found=False)
 
             if not existing_mount:
                 vserver_client.mount_volume(share_name)
