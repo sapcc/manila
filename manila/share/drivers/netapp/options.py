@@ -221,6 +221,21 @@ netapp_provisioning_opts = [
                help='The maximum time in seconds that the cached aggregates '
                     'status will be considered valid. Trying to read the '
                     'expired cache leads to refreshing it.'),
+    cfg.IntOpt('netapp_share_server_compatibility_cache_hot_ttl',
+               min=0,
+               default=300,
+               help='The hot period in seconds for a cached share server '
+                    'compatibility decision. During this period, cached '
+                    'decisions are returned without an ONTAP revalidation. '
+                    'Set to 0 to disable the hot period.'),
+    cfg.IntOpt('netapp_share_server_compatibility_cache_warm_ttl',
+               min=0,
+               default=1800,
+               help='The maximum time in seconds that a cached share server '
+                    'compatibility decision will be considered valid. After '
+                    'the hot period, the decision is revalidated against '
+                    'current compatibility criteria before being reused. '
+                    'Set to 0 to disable the cache.'),
     cfg.BoolOpt('netapp_enable_flexgroup',
                 default=False,
                 help='Specify if the FlexGroup pool is enabled. When it is '
