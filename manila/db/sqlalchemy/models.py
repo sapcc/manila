@@ -1168,15 +1168,18 @@ class ShareServer(BASE, ManilaBase):
         Boolean, nullable=False, default=False)
     encryption_key_ref = Column(String(36), nullable=True)
     application_credential_id = Column(String(36), nullable=True)
+    replica_state = Column(String(32), nullable=True)
     status = Column(Enum(
         constants.STATUS_INACTIVE, constants.STATUS_ACTIVE,
-        constants.STATUS_ERROR, constants.STATUS_DELETING,
+        constants.STATUS_ERROR, constants.STATUS_ERROR_DELETING,
+        constants.STATUS_DELETING,
         constants.STATUS_CREATING, constants.STATUS_DELETED,
         constants.STATUS_MANAGING, constants.STATUS_UNMANAGING,
         constants.STATUS_UNMANAGE_ERROR, constants.STATUS_MANAGE_ERROR,
         constants.STATUS_SERVER_MIGRATING,
         constants.STATUS_SERVER_MIGRATING_TO,
-        constants.STATUS_SERVER_NETWORK_CHANGE),
+        constants.STATUS_SERVER_NETWORK_CHANGE,
+        constants.STATUS_REPLICATION_CHANGE),
         default=constants.STATUS_INACTIVE)
     network_allocations = orm.relationship(
         "NetworkAllocation",
@@ -1229,6 +1232,12 @@ class ShareServer(BASE, ManilaBase):
     def share_network_id(self):
         return (self.share_network_subnets[0]['share_network_id']
                 if self.share_network_subnets else None)
+
+    @property
+    def availability_zone(self):
+        for subnet in self.share_network_subnets:
+            if subnet['availability_zone']:
+                return subnet['availability_zone']
 
     _extra_keys = ['backend_details', 'share_network_subnet_ids']
 
@@ -1664,6 +1673,32 @@ class QosTypeSpecs(BASE, ManilaBase):
         primaryjoin='and_('
         'QosTypeSpecs.qos_type_id == QosTypes.id,'
         'QosTypeSpecs.deleted == "False")'
+    )
+
+
+class ShareServerMetadata(BASE, ManilaBase):
+    """Represents metadata key/value pairs for a share server."""
+
+    __tablename__ = 'share_server_metadata'
+
+    id = Column(Integer, primary_key=True, nullable=False)
+    deleted = Column(String(36), default='False')
+    share_server_id = Column(
+        String(36), ForeignKey('share_servers.id'),
+        nullable=False, index=True,
+    )
+    key = Column(String(255), nullable=False)
+    value = Column(String(1023), nullable=False)
+
+    share_server = orm.relationship(
+        "ShareServer",
+        foreign_keys=share_server_id,
+        backref='share_server_metadata',
+        primaryjoin='and_('
+                    'ShareServerMetadata.'
+                    'share_server_id == '
+                    'ShareServer.id,'
+                    'ShareServerMetadata.deleted == "False")',
     )
 
 

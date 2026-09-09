@@ -1,0 +1,10 @@
+---
+features:
+  - |
+    The NetApp ONTAP driver now integrates its ``create_share``,
+    ``create_share_from_snapshot``, and ``delete_share`` workflows with
+    SnapMirror Active Sync for NAS (SM-as NAS) share-server replication.
+    Protection is automatic at the share-server level -- there is no
+    per-share opt-in. Shares created on a share server that has an
+    ``in_sync`` share-server replica are protected automatically, and
+    deleting such a share implicitly unprotects it first.
