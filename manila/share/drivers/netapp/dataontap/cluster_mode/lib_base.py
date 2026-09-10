@@ -903,6 +903,11 @@ class NetAppCmodeFileStorageLibrary(object):
         else:
             return {'cross_dedup_disabled': False}
 
+    @staticmethod
+    def _share_server_has_replica(share_server):
+        """Return True if the share server has an SMAS replica."""
+        return False
+
     @na_utils.trace
     def create_share(self, context, share, share_server):
         """Creates new share."""
@@ -930,6 +935,10 @@ class NetAppCmodeFileStorageLibrary(object):
         """Creates new share from snapshot."""
         # TODO(dviroel) return progress info in asynchronous answers
 
+        # If share is part of SVM SMAS NAS protection, wait for in_sync.
+        if self._share_server_has_replica(share_server):
+            self._wait_for_smas_in_sync_or_reject(share['id'], share_server)
+
         # NOTE(felipe_rodrigues): when using FlexGroup, the NetApp driver will
         # drop consistent snapshot support, calling this create from snap
         # method for each member (no parent share is set).
@@ -949,8 +958,16 @@ class NetAppCmodeFileStorageLibrary(object):
             self._allocate_container_from_snapshot(
                 share, snapshot, src_vserver, src_vserver_client,
                 **logical_opts, **effi_opts)
-            return self._create_export(share, share_server, src_vserver,
-                                       src_vserver_client)
+            export = self._create_export(share, share_server, src_vserver,
+                                         src_vserver_client)
+
+            # If the share is part of SVM SMAS NAS protection,
+            # flexClone inherits protection from the parent volume;
+            # confirm the new share is protected before returning.
+            if self._share_server_has_replica(share_server):
+                self._verify_smas_protected(share, share_server)
+
+            return export
 
         parent_share_server = {}
         if parent_share['share_server'] is not None:
@@ -959,6 +976,11 @@ class NetAppCmodeFileStorageLibrary(object):
             for key in ss_keys:
                 parent_share_server[key] = (
                     parent_share['share_server'].get(key))
+
+        # If the source share server is SMAS-protected, the temporary clone
+        # must be created with unprotected flag.
+        src_share_server_has_replica = self._share_server_has_replica(
+            parent_share['share_server'])
 
         # Information to be saved in the private_storage that will need to be
         # retrieved later, in order to continue with the share creation flow
@@ -1031,6 +1053,25 @@ class NetAppCmodeFileStorageLibrary(object):
             parent_aggr = share_utils.extract_host(parent_share['host'],
                                                    level='pool')
 
+        # SMAS NAS pre-check: flexvolume rehost across SVMs on the same cluster
+        # is not supported when the destination share server is under an SM-as
+        # NAS relationship.  Reject here, before we enter the try/except block,
+        # so the actionable message is not swallowed by the generic handler.
+        if (src_cluster_name == dest_cluster_name and not dest_is_flexgroup
+                and self._have_cluster_creds
+                and src_vserver != dest_vserver
+                and self._share_server_has_replica(share_server)):
+            msg = _('Could not create share %(share_id)s from snapshot '
+                    '%(snapshot_id)s: creating a share across SVMs on the '
+                    'same cluster is not supported when the destination share '
+                    'server is protected by SMas NAS -- volume migrate is '
+                    'incompatible with SMAS replication. Use the same share '
+                    'server (any pool) or a share server on a different '
+                    'cluster.')
+            msg_args = {'share_id': share['id'],
+                        'snapshot_id': snapshot['id']}
+            raise exception.NetAppException(msg % msg_args)
+
         # SCI Get attributes from parent share
         logical_opts = self._get_logical_space_options(src_vserver_client,
                                                        parent_share_name)
@@ -1053,7 +1094,8 @@ class NetAppCmodeFileStorageLibrary(object):
                 temp_share['id'] = str(temp_uuid)
                 self._allocate_container_from_snapshot(
                     temp_share, snapshot, src_vserver, src_vserver_client,
-                    split=False, create_fpolicy=False)
+                    split=False, create_fpolicy=False,
+                    create_unprotected=src_share_server_has_replica)
                 # 2. Create a replica in destination host.
                 self._allocate_container(
                     dest_share, dest_vserver, dest_vserver_client,
@@ -1075,9 +1117,15 @@ class NetAppCmodeFileStorageLibrary(object):
                 # NOTE(dviroel): there's a need to split the cloned share from
                 # its parent in order to move it to a different aggregate or
                 # vserver.
+                # NOTE: if the target share server is SMAS-protected, the
+                # clone set to unprotected during creation. The split
+                # can only be performed on an unprotected clone.
                 self._allocate_container_from_snapshot(
                     dest_share, snapshot, src_vserver, src_vserver_client,
-                    split=True, **logical_opts, **effi_opts)
+                    split=True,
+                    create_unprotected=self._share_server_has_replica(
+                        share_server),
+                    **logical_opts, **effi_opts)
                 # The split volume clone operation can take some time to be
                 # concluded and we'll answer the call asynchronously.
                 state = self.STATE_SPLITTING_VOLUME_CLONE
@@ -1136,8 +1184,6 @@ class NetAppCmodeFileStorageLibrary(object):
 
             self._delete_share(source_share, src_vserver, src_vserver_client,
                                remove_export=False)
-            # Delete private storage info
-            self.private_storage.delete(share['id'])
             msg = _('Could not complete share %(share_id)s creation due to an '
                     'internal error.')
             msg_args = {'share_id': share['id']}
@@ -1266,6 +1312,12 @@ class NetAppCmodeFileStorageLibrary(object):
             raise exception.NetAppException(msg)
 
         if return_values['status'] == constants.STATUS_AVAILABLE:
+            if self._share_server_has_replica(share_server):
+                # The destination volume must be explicitely protected once
+                # it changes from DP to RW. Also this is only required if it
+                # part of a share server that is SMAS-protected.
+                self._protect_smas_volume_after_break(share, share_server)
+
             if apply_qos_on_dest:
                 extra_specs = share_types.get_extra_specs_from_share(share)
                 share_name = self._get_backend_share_name(share['id'])
@@ -2276,7 +2328,8 @@ class NetAppCmodeFileStorageLibrary(object):
     def _allocate_container_from_snapshot(
             self, share, snapshot, vserver, vserver_client,
             snapshot_name_func=_get_backend_snapshot_name, split=None,
-            create_fpolicy=True, **force_provisioning_options):
+            create_fpolicy=True, create_unprotected=False,
+            **force_provisioning_options):
         """Clones existing share."""
         share_name = self._get_backend_share_name(share['id'])
         parent_share_name = self._get_backend_share_name(snapshot['share_id'])
@@ -2302,6 +2355,8 @@ class NetAppCmodeFileStorageLibrary(object):
         vserver_client.create_volume_clone(
             share_name, parent_share_name, parent_snapshot_name,
             mount_point_name=mount_point_name,
+            smas_protection=(na_utils.SMAS_PROTECTION_UNPROTECTED
+                             if create_unprotected else None),
             **provisioning_options)
 
         # ccloud: set share comment
@@ -2371,6 +2426,12 @@ class NetAppCmodeFileStorageLibrary(object):
                     qos_policy_for_share)
         else:
             LOG.info("Share %s does not exist.", share['id'])
+        try:
+            self.private_storage.delete(share['id'])
+        except Exception as e:
+            LOG.warning(
+                "Failed to delete private storage for share %s: %s",
+                share['id'], e)
 
     @na_utils.trace
     def delete_share(self, context, share, share_server=None):
@@ -2393,7 +2454,11 @@ class NetAppCmodeFileStorageLibrary(object):
                               force_delete=False):
         """Free share space."""
         vserver_client.unmount_volume(share_name, force=True)
-        vserver_client.offline_volume(share_name)
+        # REST API does not require an offline_volume call before
+        # delete_volume; issuing it anyway leaves the SMas NAS relationship
+        # stuck in the 'shrinking' state forever.
+        if self.configuration.netapp_use_legacy_client:
+            vserver_client.offline_volume(share_name)
         vserver_client.delete_volume(share_name, force_delete)
 
     def _is_multi_protocol_share(self, share):
@@ -3497,6 +3562,44 @@ class NetAppCmodeFileStorageLibrary(object):
         :returns: True if the replication policy is supported, False otherwise.
         """
         return replication_policy in self.SUPPORTED_REPLICATION_POLICIES
+
+    @na_utils.trace
+    def _validate_share_server_replication_type_and_policy(
+            self, properties):
+        """Validates the share-server-replica replication type and policy.
+
+        :param properties: the ``--property`` key/value pairs for the
+            share-server replica. ``replication_type`` defaults to
+            ``sync`` when absent; ``replication_policy`` defaults to
+            ``AutomatedFailOver``.
+
+        :return: the resolved replication policy.
+        """
+        # TODO(kumart): Update when async relationships are supported.
+        properties = properties or {}
+        replication_type = properties.get('replication_type', 'sync')
+        if replication_type == 'async':
+            msg = _("Async replication (SVM-DR) is not yet supported for "
+                    "share server replication. Please use 'sync' policy "
+                    "(AutomatedFailOver) instead.")
+            raise exception.NetAppException(msg)
+
+        if replication_type != 'sync':
+            msg = _("Unsupported share server replication type: "
+                    "'%(type)s'. Supported types: 'sync'.")
+            raise exception.NetAppException(
+                msg % {'type': replication_type})
+
+        replication_policy = properties.get(
+            'replication_policy', na_utils.SMAS_POLICY_NAME)
+
+        supported = na_utils.SMAS_SUPPORTED_REPLICATION_POLICIES
+        if replication_policy not in supported:
+            msg = _("Only 'AutomatedFailOver' policy is supported for "
+                    "SM-as NAS sync replication.")
+            raise exception.NetAppException(msg)
+
+        return replication_policy
 
     @na_utils.trace
     def create_replica(self, context, replica_list, new_replica,

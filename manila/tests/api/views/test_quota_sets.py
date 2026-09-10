@@ -50,6 +50,8 @@ class ViewBuilderTestCase(test.TestCase):
         (None, None, "2.80"),
         ('fake_project_id', None, "2.90"),
         (None, None, "2.90"),
+        ('fake_project_id', None, "2.100"),
+        (None, None, "2.100"),
     )
     @ddt.unpack
     def test_detail_list_with_share_type(self, project_id, share_type,
@@ -115,6 +117,12 @@ class ViewBuilderTestCase(test.TestCase):
                 "encryption_keys"] = (
                 fake_per_share_gigabytes)
             quota_set['encryption_keys'] = fake_encryption_keys
+
+        if req.api_version_request >= api_version.APIVersionRequest("2.100"):
+            fake_share_server_replicas = 11
+            expected[self.builder._collection_name][
+                "share_server_replicas"] = fake_share_server_replicas
+            quota_set['share_server_replicas'] = fake_share_server_replicas
 
         result = self.builder.detail_list(
             req, quota_set, project_id=project_id, share_type=share_type)

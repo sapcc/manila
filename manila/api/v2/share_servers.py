@@ -75,11 +75,6 @@ class ShareServerController(share_servers.ShareServerController,
         except exception.PolicyNotAuthorized as e:
             raise exc.HTTPForbidden(explanation=e.msg)
 
-        result.project_id = share_network["project_id"]
-        if share_network['name']:
-            result.share_network_name = share_network['name']
-        else:
-            result.share_network_name = share_network['id']
         return self._view_builder.build_share_server(req, result)
 
     @wsgi.Controller.api_version('2.51')

@@ -50,6 +50,7 @@ from manila.api.v2 import share_network_subnets
 from manila.api.v2 import share_networks
 from manila.api.v2 import share_replica_export_locations
 from manila.api.v2 import share_replicas
+from manila.api.v2 import share_server_replicas
 from manila.api.v2 import share_servers
 from manila.api.v2 import share_snapshot_export_locations
 from manila.api.v2 import share_snapshot_instance_export_locations
@@ -782,3 +783,49 @@ class APIRouter(manila.api.openstack.APIRouter):
                 controller=self.resources["qos_type_specs"],
                 action="update",
                 conditions={"method": ["PUT"]})
+
+        self.resources['share-server-replicas'] = (
+            share_server_replicas.create_resource())
+        mapper.resource("share-server-replica", "share-server-replicas",
+                        controller=self.resources['share-server-replicas'],
+                        collection={'detail': 'GET'},
+                        member={'action': 'POST'})
+
+        for path_prefix in ['/{project_id}', '']:
+            # project_id is optional
+            mapper.connect("share_server_replica_metadata",
+                           "%s/share-server-replicas/{resource_id}/metadata"
+                           % path_prefix,
+                           controller=self.resources["share-server-replicas"],
+                           action="create_metadata",
+                           conditions={"method": ["POST"]})
+            mapper.connect("share_server_replica_metadata",
+                           "%s/share-server-replicas/{resource_id}/metadata"
+                           % path_prefix,
+                           controller=self.resources["share-server-replicas"],
+                           action="update_all_metadata",
+                           conditions={"method": ["PUT"]})
+            mapper.connect("share_server_replica_metadata",
+                           "%s/share-server-replicas/{resource_id}"
+                           "/metadata/{key}" % path_prefix,
+                           controller=self.resources["share-server-replicas"],
+                           action="update_metadata_item",
+                           conditions={"method": ["POST"]})
+            mapper.connect("share_server_replica_metadata",
+                           "%s/share-server-replicas/{resource_id}/metadata"
+                           % path_prefix,
+                           controller=self.resources["share-server-replicas"],
+                           action="index_metadata",
+                           conditions={"method": ["GET"]})
+            mapper.connect("share_server_replica_metadata",
+                           "%s/share-server-replicas/{resource_id}"
+                           "/metadata/{key}" % path_prefix,
+                           controller=self.resources["share-server-replicas"],
+                           action="show_metadata",
+                           conditions={"method": ["GET"]})
+            mapper.connect("share_server_replica_metadata",
+                           "%s/share-server-replicas/{resource_id}"
+                           "/metadata/{key}" % path_prefix,
+                           controller=self.resources["share-server-replicas"],
+                           action="delete_metadata",
+                           conditions={"method": ["DELETE"]})

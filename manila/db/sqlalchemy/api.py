@@ -43,6 +43,7 @@ from oslo_utils import timeutils
 from oslo_utils import uuidutils
 import sqlalchemy as sa
 from sqlalchemy import and_
+from sqlalchemy import case
 from sqlalchemy import MetaData
 from sqlalchemy import or_
 from sqlalchemy import orm
@@ -504,6 +505,15 @@ def _sync_replica_gigabytes(context, project_id, user_id, share_type_id=None):
     return {'replica_gigabytes': replica_gigs}
 
 
+def _sync_share_server_replicas(
+    context, project_id, user_id, share_type_id=None,
+):
+    share_server_replicas_count = _share_server_replica_data_get_for_project(
+        context, project_id, user_id,
+    )
+    return {'share_server_replicas': share_server_replicas_count}
+
+
 def _sync_encryption_keys(context, project_id, user_id, share_type_id=None):
     encryption_keys = _count_encryption_keys_for_project(
         context, project_id, user_id
@@ -521,6 +531,7 @@ QUOTA_SYNC_FUNCTIONS = {
     '_sync_share_group_snapshots': _sync_share_group_snapshots,
     '_sync_share_replicas': _sync_share_replicas,
     '_sync_replica_gigabytes': _sync_replica_gigabytes,
+    '_sync_share_server_replicas': _sync_share_server_replicas,
     '_sync_backups': _sync_backups,
     '_sync_backup_gigabytes': _sync_backup_gigabytes,
     '_sync_encryption_keys': _sync_encryption_keys,
@@ -1794,6 +1805,29 @@ def _share_instance_status_update(context, share_instance_ids, values):
     )
     return result
 
+
+def share_instances_update_for_server_promotion(
+        context, instance_host_mapping, availability_zone_id, share_server_id,
+        share_network_id):
+    """Bulk-update share instances after a share server replica promotion."""
+    if not instance_host_mapping:
+        return
+
+    host_case = case(
+        *[(models.ShareInstance.id == inst_id, new_host)
+          for inst_id, new_host in instance_host_mapping.items()]
+    )
+    values = {
+        'host': host_case,
+        'availability_zone_id': availability_zone_id,
+        'share_server_id': share_server_id,
+        'share_network_id': share_network_id,
+    }
+    model_query(
+        context, models.ShareInstance, read_deleted="no",
+    ).filter(
+        models.ShareInstance.id.in_(list(instance_host_mapping.keys()))
+    ).update(values, synchronize_session=False)
 
 ###################################
 # Share Replica Metadata functions
@@ -5677,6 +5711,14 @@ def _share_server_get_query(context):
 def share_server_create(context, values):
     values = ensure_model_dict_has_id(values)
 
+    # Several ShareServer attributes are read-only derived properties on the
+    # model (computed from the related share network / subnets), not columns.
+    # Callers and test fakes may include them in the values dict; drop them so
+    # the SQLAlchemy update() does not try to set the read-only attributes.
+    for _derived_key in ('share_network_name', 'share_network_id',
+                         'project_id', 'availability_zone'):
+        values.pop(_derived_key, None)
+
     server_ref = models.ShareServer()
     # updated_at is needed for judgement of automatic cleanup
     server_ref.updated_at = timeutils.utcnow()
@@ -5703,6 +5745,16 @@ def share_server_create(context, values):
 @context_manager.writer
 def share_server_delete(context, id):
     server_ref = _share_server_get(context, id)
+    replica_exists = _share_server_get_query(context).filter(
+        and_(
+            models.ShareServer.source_share_server_id == id,
+            models.ShareServer.replica_state.isnot(None),
+            models.ShareServer.replica_state != '',
+        )
+    ).first()
+    if replica_exists:
+        raise exception.ShareServerInUse(share_server_id=id)
+
     model_query(
         context, models.ShareServerShareNetworkSubnetMapping,
     ).filter_by(
@@ -5725,6 +5777,49 @@ def share_server_update(context, id, values):
     server_ref.update(values)
     server_ref.save(session=context.session)
     return server_ref
+
+
+@require_context
+@oslo_db_api.wrap_db_retry(max_retries=5, retry_on_deadlock=True)
+@context_manager.writer
+def share_server_replica_promotion_update(
+    context, replica_id, source_replica_id, promoted_updates,
+    source_updates, protected_share_group_ids,
+    promoted_availability_zone_id, promoted_share_network_id,
+    promoted_share_network_subnet_id, instance_host_mapping,
+):
+    """Persist all DB updates for a share server replica promotion.
+
+    Runs as a single atomic transaction that updates the promoted and
+    source share servers, any protected share groups and share instances,
+    and the network allocations affected by the promotion.
+    """
+    share_server_update(context, replica_id, promoted_updates)
+    share_server_update(context, source_replica_id, source_updates)
+
+    if protected_share_group_ids:
+        share_groups_update(
+            context, protected_share_group_ids,
+            {
+                'share_server_id': replica_id,
+                'availability_zone_id': promoted_availability_zone_id,
+                'share_network_id': promoted_share_network_id,
+            })
+
+    if instance_host_mapping:
+        share_instances_update_for_server_promotion(
+            context, instance_host_mapping,
+            promoted_availability_zone_id, replica_id,
+            promoted_share_network_id)
+
+    source_network_allocations = network_allocations_get_for_share_server(
+        context, source_replica_id)
+    for allocation in source_network_allocations:
+        alloc_update = {'share_server_id': replica_id}
+        if allocation['share_network_subnet_id']:
+            alloc_update['share_network_subnet_id'] = (
+                promoted_share_network_subnet_id)
+        network_allocation_update(context, allocation['id'], alloc_update)
 
 
 @require_context
@@ -5905,6 +6000,7 @@ def share_server_get_all_unused_deletable(context, host, updated_before):
         constants.STATUS_INACTIVE,
         constants.STATUS_ACTIVE,
         constants.STATUS_ERROR,
+        constants.STATUS_ERROR_DELETING,
         constants.STATUS_CREATING,
         constants.STATUS_DELETING,
     )
@@ -6933,6 +7029,18 @@ def share_group_update(context, share_group_id, values):
     return share_group_ref
 
 
+@require_context
+@oslo_db_api.wrap_db_retry(max_retries=5, retry_on_deadlock=True)
+@context_manager.writer
+def share_groups_update(context, share_group_ids, values):
+    result = model_query(
+        context, models.ShareGroup, read_deleted="no",
+    ).filter(
+        models.ShareGroup.id.in_(share_group_ids),
+    ).update(values, synchronize_session=False)
+    return result
+
+
 @require_admin_context
 @context_manager.writer
 def share_group_destroy(context, share_group_id):
@@ -7025,6 +7133,39 @@ def _share_replica_data_get_for_project(
 
     result = query.first()
     return result[0] or 0, result[1] or 0
+
+
+@require_context
+def _share_server_replica_data_get_for_project(
+    context, project_id, user_id=None,
+):
+    query = model_query(
+        context, models.ShareServer,
+        func.count(models.ShareServer.id.distinct()),
+        read_deleted="no",
+    ).join(
+        models.ShareServerShareNetworkSubnetMapping,
+        models.ShareServerShareNetworkSubnetMapping.share_server_id ==
+        models.ShareServer.id,
+    ).join(
+        models.ShareNetworkSubnet,
+        models.ShareNetworkSubnet.id ==
+        models.ShareServerShareNetworkSubnetMapping.share_network_subnet_id,
+    ).join(
+        models.ShareNetwork,
+        models.ShareNetwork.id == models.ShareNetworkSubnet.share_network_id,
+    ).filter(
+        models.ShareNetwork.project_id == project_id
+    ).filter(
+        models.ShareServer.source_share_server_id.isnot(None)
+    ).filter(
+        models.ShareServer.replica_state.isnot(None)
+    ).filter(
+        models.ShareServer.replica_state != ''
+    )
+
+    result = query.first()
+    return result[0] or 0
 
 
 @require_context
@@ -8373,3 +8514,145 @@ def qos_type_specs_update_or_create(context, qos_type_id, specs):
         spec_ref.save(session=context.session)
 
     return specs
+
+###############################
+
+
+@require_context
+@context_manager.reader
+def share_server_replicas_get_all(context, source_share_server_id=None,
+                                  sort_key='created_at', sort_dir='desc',
+                                  limit=None, offset=None):
+    """Return share server rows participating in replication."""
+
+    query = _share_server_get_query(context)
+    query = query.filter(
+        models.ShareServer.replica_state.isnot(None),
+        models.ShareServer.replica_state != '',
+    )
+
+    if source_share_server_id:
+        query = query.filter(
+            models.ShareServer.source_share_server_id ==
+            source_share_server_id,
+        )
+
+    try:
+        query = apply_sorting(models.ShareServer, query,
+                              sort_key or 'created_at',
+                              sort_dir or 'desc')
+    except AttributeError:
+        msg = _("Wrong sorting key provided - '%s'.") % sort_key
+        raise exception.InvalidInput(reason=msg)
+
+    if offset:
+        query = query.offset(offset)
+    if limit is not None:
+        query = query.limit(limit)
+
+    return query.all()
+
+
+@require_context
+@context_manager.reader
+def share_server_replica_get(context, server_id):
+    result = _share_server_get_query(context).filter_by(id=server_id).first()
+    if result is None:
+        raise exception.ShareServerReplicaNotFound(share_server_id=server_id)
+    return result
+
+
+@require_context
+@context_manager.reader
+def share_server_metadata_get(context, share_server_id):
+    """Get all metadata for a share server as a dictionary."""
+    return _share_server_metadata_get(context, share_server_id)
+
+
+@require_context
+@context_manager.reader
+def share_server_metadata_get_item(context, share_server_id, key):
+    """Get a specific metadata item for a share server."""
+    metadata_ref = _share_server_metadata_get_item(
+        context, share_server_id, key)
+    return {key: metadata_ref['value']}
+
+
+@require_admin_context
+@context_manager.writer
+def share_server_metadata_create(context, share_server_id, key, value):
+    """Create a metadata entry for a share server."""
+    metadata_ref = models.ShareServerMetadata()
+    metadata_ref.update({
+        'share_server_id': share_server_id,
+        'key': key,
+        'value': value,
+    })
+    metadata_ref.save(session=context.session)
+    return share_server_metadata_get(context, share_server_id)
+
+
+@require_admin_context
+@context_manager.writer
+def share_server_metadata_update(
+        context, share_server_id, metadata, delete=False):
+    """Update metadata for a share server, optionally deleting missing keys."""
+    delete = strutils.bool_from_string(delete)
+    if metadata is None:
+        metadata = {}
+
+    if delete:
+        existing = _share_server_metadata_get(context, share_server_id)
+        for key in existing:
+            if key not in metadata:
+                metadata_ref = _share_server_metadata_get_item(
+                    context, share_server_id, key)
+                metadata_ref.soft_delete(session=context.session)
+
+    existing_meta = {
+        m.key: m for m in _share_server_metadata_get_query(
+            context, share_server_id).all()
+    }
+
+    for key, value in metadata.items():
+        metadata_ref = existing_meta.get(key)
+        if metadata_ref is None:
+            metadata_ref = models.ShareServerMetadata()
+            metadata_ref.update({
+                'share_server_id': share_server_id,
+                'key': key,
+            })
+
+        metadata_ref.update({'value': value})
+        metadata_ref.save(session=context.session)
+
+    return _share_server_metadata_get(context, share_server_id)
+
+
+@require_admin_context
+@context_manager.writer
+def share_server_metadata_delete(context, share_server_id, key):
+    """Delete a metadata entry for a share server."""
+    metadata_ref = _share_server_metadata_get_query(
+        context, share_server_id).filter_by(key=key).first()
+    if metadata_ref:
+        metadata_ref.soft_delete(session=context.session)
+
+
+def _share_server_metadata_get_query(context, share_server_id):
+    return model_query(
+        context, models.ShareServerMetadata, read_deleted='no'
+    ).filter_by(share_server_id=share_server_id)
+
+
+def _share_server_metadata_get(context, share_server_id):
+    rows = _share_server_metadata_get_query(context, share_server_id).all()
+    return {row['key']: row['value'] for row in rows}
+
+
+def _share_server_metadata_get_item(context, share_server_id, key):
+    result = _share_server_metadata_get_query(
+        context, share_server_id).filter_by(key=key).first()
+    if not result:
+        raise exception.MetadataItemNotFound()
+    return result

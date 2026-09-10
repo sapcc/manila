@@ -557,6 +557,188 @@ class FilterSchedulerTestCase(test_base.SchedulerTestCase):
         sched.share_rpcapi.create_share_group.assert_called_once_with(
             fake_context, fake_updated_group, fake_host)
 
+    def test_schedule_create_share_server_replica_normalizes_backend(self):
+        sched = fakes.FakeFilterScheduler()
+        fake_context = context.RequestContext('user', 'project')
+
+        source_pool = mock.Mock(
+            host='hostA@backendA#pool1',
+            replication_domain='rd1',
+            service={
+                'availability_zone_id': 'az1',
+                'availability_zone': {'name': 'AZ1'},
+            },
+            share_server_multiple_subnet_support=True,
+        )
+        same_backend_other_pool = mock.Mock(
+            host='hostA@backendA#pool2',
+            replication_domain='rd1',
+            service={
+                'availability_zone_id': 'az1',
+                'availability_zone': {'name': 'AZ1'},
+            },
+            share_server_multiple_subnet_support=True,
+        )
+        candidate = mock.Mock(
+            host='hostB@backendB#pool1',
+            replication_domain='rd1',
+            service={
+                'availability_zone_id': 'az1',
+                'availability_zone': {'name': 'AZ1'},
+            },
+            share_server_multiple_subnet_support=True,
+        )
+
+        self.mock_object(
+            sched.host_manager,
+            'get_all_host_states_share',
+            mock.Mock(return_value=[source_pool,
+                                    same_backend_other_pool,
+                                    candidate]),
+        )
+        self.mock_object(
+            sched.host_manager,
+            'get_weighed_hosts',
+            mock.Mock(return_value=[mock.Mock(obj=candidate)]),
+        )
+
+        request_spec = {
+            'share_server_replica_id': 'fake_replica_id',
+            'source_host': 'hostA@backendA',
+            'availability_zone_id': None,
+            'availability_zones': None,
+            'az_request_multiple_subnet_support_map': {},
+        }
+        fake_updated_replica = mock.Mock()
+        self.mock_object(
+            base, 'share_server_replica_update_db',
+            mock.Mock(return_value=fake_updated_replica))
+        self.mock_object(sched.share_rpcapi, 'create_share_server_replica')
+
+        sched.schedule_create_share_server_replica(
+            fake_context, request_spec=request_spec, filter_properties={})
+
+        base.share_server_replica_update_db.assert_called_once_with(
+            fake_context, 'fake_replica_id', 'hostB@backendB')
+        (sched.share_rpcapi.create_share_server_replica
+         .assert_called_once_with(fake_context, fake_updated_replica))
+
+    def test_schedule_create_share_server_replica_no_hosts_available(self):
+        sched = fakes.FakeFilterScheduler()
+        fake_context = context.RequestContext('user', 'project')
+        self.mock_object(
+            sched.host_manager,
+            'get_all_host_states_share',
+            mock.Mock(return_value=[]),
+        )
+
+        self.assertRaises(
+            exception.WillNotSchedule,
+            sched.schedule_create_share_server_replica,
+            fake_context,
+            request_spec={},
+            filter_properties={},
+        )
+
+    def test_schedule_create_share_server_replica_domain_mismatch(
+            self):
+        sched = fakes.FakeFilterScheduler()
+        fake_context = context.RequestContext('user', 'project')
+
+        source_host_state = mock.Mock(
+            host='hostA@backendA#pool1',
+            replication_domain='rd1',
+            service={
+                'availability_zone_id': 'az1',
+                'availability_zone': {'name': 'AZ1'},
+            },
+            share_server_multiple_subnet_support=True,
+        )
+        incompatible_host_state = mock.Mock(
+            host='hostB@backendB#pool1',
+            replication_domain=None,
+            service={
+                'availability_zone_id': 'az1',
+                'availability_zone': {'name': 'AZ1'},
+            },
+            share_server_multiple_subnet_support=True,
+        )
+
+        self.mock_object(
+            sched.host_manager,
+            'get_all_host_states_share',
+            mock.Mock(return_value=[
+                source_host_state, incompatible_host_state]),
+        )
+        mock_log_error = self.mock_object(filter.LOG, 'error')
+        request_spec = {
+            'source_host': 'hostA@backendA',
+            'availability_zone_id': None,
+            'availability_zones': None,
+            'az_request_multiple_subnet_support_map': {},
+        }
+
+        self.assertRaises(
+            exception.NoValidHost,
+            sched.schedule_create_share_server_replica,
+            fake_context,
+            request_spec=request_spec,
+            filter_properties={},
+        )
+        mock_log_error.assert_called_once()
+
+    @ddt.data(
+        (
+            {'availability_zone_id': 'az1'},
+            {
+                'availability_zone_id': 'az2',
+                'availability_zone': {'name': 'AZ2'},
+            },
+            True,
+        ),
+        (
+            {'availability_zones': ['AZ1']},
+            {
+                'availability_zone_id': 'az2',
+                'availability_zone': {'name': 'AZ2'},
+            },
+            True,
+        ),
+        (
+            {'az_request_multiple_subnet_support_map': {'az1': True}},
+            {
+                'availability_zone_id': 'az1',
+                'availability_zone': {'name': 'AZ1'},
+            },
+            False,
+        ),
+    )
+    @ddt.unpack
+    def test_schedule_create_share_server_replica_filtered(
+            self, request_spec, service, multiple_subnet_support):
+        sched = fakes.FakeFilterScheduler()
+        fake_context = context.RequestContext('user', 'project')
+
+        host_state = mock.Mock(
+            host='hostB@backendB#pool1',
+            replication_domain=None,
+            service=service,
+            share_server_multiple_subnet_support=multiple_subnet_support,
+        )
+        self.mock_object(
+            sched.host_manager,
+            'get_all_host_states_share',
+            mock.Mock(return_value=[host_state]),
+        )
+
+        self.assertRaises(
+            exception.NoValidHost,
+            sched.schedule_create_share_server_replica,
+            fake_context,
+            request_spec=request_spec,
+            filter_properties={},
+        )
+
     def test_create_group_no_hosts(self):
         # Ensure empty hosts/child_zones result in NoValidHosts exception.
         sched = fakes.FakeFilterScheduler()

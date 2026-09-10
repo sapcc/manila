@@ -1,0 +1,21 @@
+---
+features:
+  - |
+    The NetApp ONTAP driver now integrates its ``create_share``,
+    ``create_share_from_snapshot``, and ``delete_share`` workflows with
+    SnapMirror Active Sync for NAS (SM-as NAS) share-server replication.
+    Protection is automatic at the share-server level -- there is no
+    per-share opt-in. Shares created on a share server that has an
+    ``in_sync`` share-server replica are protected automatically, and
+    deleting such a share implicitly unprotects it first.
+
+    Two new configuration options tune these workflows.
+    ``netapp_smas_wait_for_insync_timeout`` (default ``600`` seconds) is
+    the maximum time to wait for the SM-as NAS relationship to reach the
+    ``in_sync`` state. The driver waits before each of these operations:
+    creating a share, unprotecting a share, and deleting its volume.
+    ``netapp_smas_require_insync_after_unprotect`` (default ``False``)
+    decides what happens when that timeout is reached after the share
+    was unprotected: when disabled, the driver logs a warning and
+    attempts the deletion anyway; when enabled, it aborts the share
+    deletion instead.

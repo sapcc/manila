@@ -353,6 +353,15 @@ def share_instance_status_update(context, share_instance_ids, values):
         context, share_instance_ids, values)
 
 
+def share_instances_update_for_server_promotion(
+        context, instance_host_mapping, availability_zone_id, share_server_id,
+        share_network_id):
+    """Bulk-update share instances after a share server replica promotion."""
+    return IMPL.share_instances_update_for_server_promotion(
+        context, instance_host_mapping, availability_zone_id, share_server_id,
+        share_network_id)
+
+
 def share_instance_get_all(context, filters=None):
     """Returns all share instances."""
     return IMPL.share_instance_get_all(context, filters=filters)
@@ -1292,6 +1301,25 @@ def share_server_update(context, id, values):
     return IMPL.share_server_update(context, id, values)
 
 
+def share_server_replica_promotion_update(
+    context, replica_id, source_replica_id, promoted_updates,
+    source_updates, protected_share_group_ids,
+    promoted_availability_zone_id, promoted_share_network_id,
+    promoted_share_network_subnet_id, instance_host_mapping,
+):
+    """Persist all DB updates for a share server replica promotion.
+
+    Runs as a single atomic transaction that updates the promoted and
+    source share servers, any protected share groups and share instances,
+    and the network allocations affected by the promotion.
+    """
+    return IMPL.share_server_replica_promotion_update(
+        context, replica_id, source_replica_id, promoted_updates,
+        source_updates, protected_share_group_ids,
+        promoted_availability_zone_id, promoted_share_network_id,
+        promoted_share_network_subnet_id, instance_host_mapping)
+
+
 def share_server_get(context, id):
     """Get share server DB record by ID."""
     return IMPL.share_server_get(context, id)
@@ -1550,6 +1578,11 @@ def share_group_update(context, share_group_id, values):
     Raises NotFound if share group does not exist.
     """
     return IMPL.share_group_update(context, share_group_id, values)
+
+
+def share_groups_update(context, share_group_ids, values):
+    """Updates values of a bunch of share groups at once."""
+    return IMPL.share_groups_update(context, share_group_ids, values)
 
 
 def share_group_destroy(context, share_group_id):
@@ -2012,3 +2045,54 @@ def qos_type_specs_update_or_create(context, qos_type_id, specs):
     dict argument.
     """
     return IMPL.qos_type_specs_update_or_create(context, qos_type_id, specs)
+
+
+####################
+
+
+def share_server_replicas_get_all(context, source_share_server_id=None,
+                                  sort_key='created_at', sort_dir='desc',
+                                  limit=None, offset=None):
+    """Return all share servers participating in replication."""
+    return IMPL.share_server_replicas_get_all(
+        context,
+        source_share_server_id=source_share_server_id,
+        sort_key=sort_key,
+        sort_dir=sort_dir,
+        limit=limit,
+        offset=offset,
+    )
+
+
+def share_server_replica_get(context, server_id):
+    """Get share server replica DB record by ID."""
+    return IMPL.share_server_replica_get(context, server_id)
+
+
+def share_server_replica_metadata_get(context, share_server_id, **kwargs):
+    """Get all metadata for a share server replica."""
+    return IMPL.share_server_metadata_get(context, share_server_id)
+
+
+def share_server_replica_metadata_get_item(context, share_server_id, key):
+    """Get one metadata property for a share server replica."""
+    return IMPL.share_server_metadata_get_item(context, share_server_id, key)
+
+
+def share_server_replica_metadata_update(context, share_server_id,
+                                         metadata, delete):
+    """Update metadata for a share server replica."""
+    return IMPL.share_server_metadata_update(
+        context, share_server_id, metadata, delete)
+
+
+def share_server_replica_metadata_update_item(context, share_server_id,
+                                              metadata):
+    """Update one metadata property for a share server replica."""
+    return IMPL.share_server_metadata_update(
+        context, share_server_id, metadata, delete=False)
+
+
+def share_server_replica_metadata_delete(context, share_server_id, key):
+    """Delete one metadata property for a share server replica."""
+    return IMPL.share_server_metadata_delete(context, share_server_id, key)

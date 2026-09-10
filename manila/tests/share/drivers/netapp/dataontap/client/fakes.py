@@ -153,6 +153,82 @@ SM_DEST_VOLUME = 'fake_destination_volume'
 SM_SOURCE_PATH = SM_SOURCE_VSERVER + ':' + SM_SOURCE_VOLUME
 SM_DEST_PATH = SM_DEST_VSERVER + ':' + SM_DEST_VOLUME
 
+CLUSTER_PEER_NAME = 'fake_peer_cluster'
+MEDIATOR_IP = '10.0.0.100'
+FAKE_SVM_UUID = 'fake-svm-uuid-1234'
+FAKE_SVM_NAME = 'fake-svm-name'
+FAKE_AGGREGATE_NAMES = ['aggr1', 'aggr2']
+SVM_SM_RELATIONSHIP_UUID = 'fake-svm-sm-rel-uuid-9999'
+
+CLUSTER_PEERS_GET_RESPONSE = {
+    'records': [{
+        'name': CLUSTER_PEER_NAME,
+        'status': {'state': 'available'},
+    }],
+    'num_records': 1,
+}
+
+CLUSTER_PEERS_GET_RESPONSE_UNAVAILABLE = {
+    'records': [{
+        'name': CLUSTER_PEER_NAME,
+        'status': {'state': 'unavailable'},
+    }],
+    'num_records': 1,
+}
+
+CLUSTER_PEERS_GET_RESPONSE_EMPTY = {
+    'records': [],
+    'num_records': 0,
+}
+
+CLUSTER_PEER_INFO_LIST = [
+    {
+        'availability': 'available',
+        'cluster-name': CLUSTER_PEER_NAME,
+        'remote-cluster-name': CLUSTER_PEER_NAME,
+    },
+]
+
+CLUSTER_PEER_INFO_LIST_UNAVAILABLE = [
+    {
+        'availability': 'unavailable',
+        'cluster-name': CLUSTER_PEER_NAME,
+        'remote-cluster-name': CLUSTER_PEER_NAME,
+    },
+]
+
+CLUSTER_MEDIATORS_GET_RESPONSE = {
+    'records': [{
+        'reachable': True,
+        'peer_mediator_connectivity': 'connected',
+        'ip_address': MEDIATOR_IP,
+    }],
+    'num_records': 1,
+}
+
+CLUSTER_MEDIATORS_GET_RESPONSE_UNREACHABLE = {
+    'records': [{
+        'reachable': False,
+        'peer_mediator_connectivity': 'connected',
+        'ip_address': MEDIATOR_IP,
+    }],
+    'num_records': 1,
+}
+
+CLUSTER_MEDIATORS_GET_RESPONSE_DISCONNECTED = {
+    'records': [{
+        'reachable': True,
+        'peer_mediator_connectivity': 'disconnected',
+        'ip_address': MEDIATOR_IP,
+    }],
+    'num_records': 1,
+}
+
+CLUSTER_MEDIATORS_GET_RESPONSE_EMPTY = {
+    'records': [],
+    'num_records': 0,
+}
+
 
 FPOLICY_POLICY_NAME = 'fake_fpolicy_name'
 FPOLICY_EVENT_NAME = 'fake_fpolicy_event_name'
@@ -3729,6 +3805,37 @@ FAKE_GET_CLUSTER_NODE_VERSION_REST = {
             "uuid": "fake_uuid",
             "name": CLUSTER_NAME,
             "version": FAKE_GET_ONTAP_VERSION_REST["version"],
+        }
+    ],
+}
+
+FAKE_GET_CLUSTER_PEERS_REST = {
+    "num_records": 1,
+    "records": [
+        {
+            "name": CLUSTER_NAME,
+            "uuid": "fake_uuid",
+            "remote": {
+                "name": REMOTE_CLUSTER_NAME,
+                "serial_number": "fake_serial_number",
+                "ip_addresses": [
+                    CLUSTER_ADDRESS_1,
+                    CLUSTER_ADDRESS_2,
+                ],
+            },
+            "status": {
+                "state": "available",
+            },
+        }
+    ],
+}
+
+FAKE_GET_ONTAP_VERSION_CLI_REST = {
+    "records": [
+        {
+            "version": {
+                "full": VERSION,
+            }
         }
     ],
 }
