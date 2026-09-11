@@ -640,6 +640,43 @@ class API(base.Base):
                     driver_metadata
                 )
 
+    def reset_share_metadata_to_default(self, context, share_id, key):
+        """Notify driver to reset a metadata key to its default value."""
+
+        driver_keys = getattr(CONF, 'driver_updatable_metadata', [])
+        if not driver_keys or key not in driver_keys:
+            return
+        share_ref = self.get(context, share_id)
+        self.share_rpcapi.update_share_from_metadata(
+            context, share_ref, {key: None})
+
+    def reset_share_network_subnet_metadata_to_default(
+            self, context, share_network_id, share_network_subnet_id, key):
+        """Notify driver to reset a subnet metadata key to its default."""
+
+        driver_keys = getattr(CONF, 'driver_updatable_subnet_metadata', [])
+        if not driver_keys or key not in driver_keys:
+            return
+        try:
+            share_servers = (
+                self.db.share_server_get_all_by_host_and_or_share_subnet(
+                    context,
+                    host=None,
+                    share_subnet_id=share_network_subnet_id))
+        except exception.ShareServerNotFoundByFilters:
+            LOG.debug('No share servers found for subnet %s, skipping '
+                      'driver reset for key %s.',
+                      share_network_subnet_id, key)
+            return
+        for share_server in share_servers:
+            self.share_rpcapi.update_share_network_subnet_from_metadata(
+                context,
+                share_network_id,
+                share_network_subnet_id,
+                share_server,
+                {key: None}
+            )
+
     def get_share_attributes_from_share_type(self, share_type):
         """Determine share attributes from the share type.
 

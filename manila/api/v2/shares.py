@@ -711,11 +711,15 @@ class ShareController(wsgi.Controller,
         _metadata = self._validate_metadata_for_update(req, resource_id,
                                                        body['metadata'])
         body['metadata'] = _metadata
-        metadata = self._update_all_metadata(req, resource_id, body)
-
         context = req.environ['manila.context']
-        self.share_api.update_share_from_metadata(context, resource_id,
-                                                  metadata.get('metadata'))
+        old_metadata = self._get_metadata(context, resource_id)
+        metadata = self._update_all_metadata(req, resource_id, body)
+        new_keys = set(metadata.get('metadata', {}).keys())
+        for key in set(old_metadata.keys()) - new_keys:
+            self.share_api.reset_share_metadata_to_default(
+                context, resource_id, key)
+        self.share_api.update_share_from_metadata(
+            context, resource_id, metadata.get('metadata'))
         return metadata
 
     @wsgi.Controller.api_version("2.0")
@@ -747,7 +751,10 @@ class ShareController(wsgi.Controller,
         if key in self._conf_admin_only_metadata_keys:
             policy.check_policy(context, 'share',
                                 'update_admin_only_metadata')
-        return self._delete_metadata(req, resource_id, key)
+        result = self._delete_metadata(req, resource_id, key)
+        self.share_api.reset_share_metadata_to_default(
+            context, resource_id, key)
+        return result
 
 
 def create_resource():

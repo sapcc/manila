@@ -5695,6 +5695,8 @@ class NetAppCmodeFileStorageLibrary(object):
     @na_utils.trace
     def update_cross_volume_dedupe(self, share, value, share_server=None):
         """Update cross_volume_dedupe setting for a share."""
+        if value is None:
+            value = 'true'
         value = value.lower()
         if value not in ('true', 'false'):
             err_msg = _("Invalid cross_volume_dedupe value supplied: %s.")
@@ -6395,6 +6397,8 @@ class NetAppCmodeFileStorageLibrary(object):
     @na_utils.trace
     def update_volume_snapshot_policy(self, share, snapshot_policy,
                                       share_server=None):
+        if snapshot_policy is None:
+            snapshot_policy = 'default'
         share_name = self._get_backend_share_name(share['id'])
         _, vserver_client = self._get_vserver(share_server=share_server)
         vserver_client.update_volume_snapshot_policy(share_name,
@@ -6402,6 +6406,8 @@ class NetAppCmodeFileStorageLibrary(object):
 
     @na_utils.trace
     def update_showmount(self, showmount, share_server=None):
+        if showmount is None:
+            showmount = 'true'
         showmount = showmount.lower()
         if showmount not in ('true', 'false'):
             err_msg = _("Invalid showmount value supplied: %s.") % showmount
@@ -6411,6 +6417,8 @@ class NetAppCmodeFileStorageLibrary(object):
         vserver_client.update_showmount(showmount)
 
     def update_pnfs(self, pnfs, share_server=None):
+        if pnfs is None:
+            pnfs = 'true'
         pnfs = pnfs.lower()
         if pnfs not in ('true', 'false'):
             err_msg = _("Invalid pnfs value supplied: %s.") % pnfs

@@ -10307,6 +10307,58 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         mock_update_showmount.assert_called_once_with(
             "true", share_server=fake.SHARE_SERVER)
 
+    def test_update_cross_volume_dedupe_none_resets_to_default(self):
+        self.mock_object(self.library, '_get_vserver',
+                         mock.Mock(return_value=(fake.VSERVER1,
+                                                 self.client)))
+        mock_update = self.mock_object(
+            self.client, 'update_volume_efficiency_attributes')
+
+        self.library.update_cross_volume_dedupe(
+            fake.SHARE, None, share_server=fake.SHARE_SERVER)
+
+        mock_update.assert_called_once_with(
+            self.library._get_backend_share_name(fake.SHARE['id']),
+            True, True, cross_dedup_disabled=False)
+
+    def test_update_volume_snapshot_policy_none_resets_to_default(self):
+        self.mock_object(self.library, '_get_vserver',
+                         mock.Mock(return_value=(fake.VSERVER1,
+                                                 self.client)))
+        mock_update = self.mock_object(
+            self.client, 'update_volume_snapshot_policy')
+
+        self.library.update_volume_snapshot_policy(
+            fake.SHARE, None, share_server=fake.SHARE_SERVER)
+
+        mock_update.assert_called_once_with(
+            self.library._get_backend_share_name(fake.SHARE['id']),
+            'default')
+
+    def test_update_showmount_none_resets_to_default(self):
+        self.mock_object(self.library, '_get_vserver',
+                         mock.Mock(return_value=(fake.VSERVER1,
+                                                 self.client)))
+        mock_update = self.mock_object(
+            self.client, 'update_showmount')
+
+        self.library.update_showmount(
+            None, share_server=fake.SHARE_SERVER)
+
+        mock_update.assert_called_once_with('true')
+
+    def test_update_pnfs_none_resets_to_default(self):
+        self.mock_object(self.library, '_get_vserver',
+                         mock.Mock(return_value=(fake.VSERVER1,
+                                                 self.client)))
+        mock_update = self.mock_object(
+            self.client, 'update_pnfs')
+
+        self.library.update_pnfs(
+            None, share_server=fake.SHARE_SERVER)
+
+        mock_update.assert_called_once_with('true')
+
     def test__get_aggregate_snaplock_type_cluster_scope(self):
         self.library._have_cluster_creds = True
         self.mock_object(self.client,

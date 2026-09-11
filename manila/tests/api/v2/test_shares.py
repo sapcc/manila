@@ -2348,6 +2348,12 @@ class ShareAPITest(test.TestCase):
             self.controller, '_update_all_metadata',
             mock.Mock(return_value=body))
         self.mock_object(share_api.API, 'update_share_from_metadata')
+        self.mock_object(
+            self.controller, '_get_metadata',
+            mock.Mock(return_value={'key1': 'old1', 'key2': 'old2'}))
+        self.mock_object(
+            self.controller.share_api,
+            'reset_share_metadata_to_default')
 
         req = fakes.HTTPRequest.blank(
             '/v2/shares/%s/metadata' % id)
@@ -2356,14 +2362,72 @@ class ShareAPITest(test.TestCase):
         mock_validate.assert_called_once_with(req, id, body['metadata'])
         mock_update.assert_called_once_with(req, id, body)
 
+    def test_update_all_metadata_resets_removed_driver_keys(self):
+        id = 'fake_share_id'
+        body = {'metadata': {'key1': 'val1'}}
+        self.mock_object(
+            self.controller, '_validate_metadata_for_update',
+            mock.Mock(return_value=body['metadata']))
+        self.mock_object(
+            self.controller, '_update_all_metadata',
+            mock.Mock(return_value=body))
+        self.mock_object(
+            self.controller, '_get_metadata',
+            mock.Mock(return_value={
+                'key1': 'old1', 'removed': 'old2'}))
+        mock_reset = self.mock_object(
+            self.controller.share_api,
+            'reset_share_metadata_to_default')
+        self.mock_object(share_api.API, 'update_share_from_metadata')
+
+        req = fakes.HTTPRequest.blank(
+            '/v2/shares/%s/metadata' % id)
+        context = req.environ['manila.context']
+        self.controller.update_all_metadata(req, id, body)
+
+        mock_reset.assert_called_once_with(
+            context, id, 'removed')
+
     def test_delete_metadata(self):
         mock_delete = self.mock_object(
             self.controller, '_delete_metadata', mock.Mock())
+        self.mock_object(
+            self.controller.share_api, 'reset_share_metadata_to_default')
 
         req = fakes.HTTPRequest.blank(
             '/v2/shares/%s/metadata/fake_key' % id)
         self.controller.delete_metadata(req, id, 'fake_key')
         mock_delete.assert_called_once_with(req, id, 'fake_key')
+
+    def test_delete_metadata_driver_updatable_key_resets_driver(self):
+        driver_key = 'driver_key'
+        CONF.set_default('driver_updatable_metadata', [driver_key])
+        self.mock_object(self.controller, '_delete_metadata', mock.Mock())
+        mock_reset = self.mock_object(
+            self.controller.share_api, 'reset_share_metadata_to_default')
+
+        req = fakes.HTTPRequest.blank(
+            '/v2/shares/fake_share_id/metadata/%s' % driver_key)
+        context = req.environ['manila.context']
+        self.controller.delete_metadata(req, 'fake_share_id', driver_key)
+
+        mock_reset.assert_called_once_with(
+            context, 'fake_share_id', driver_key)
+
+    def test_delete_metadata_non_driver_key_also_calls_reset(self):
+        CONF.set_default('driver_updatable_metadata', ['driver_key'])
+        self.mock_object(self.controller, '_delete_metadata', mock.Mock())
+        mock_reset = self.mock_object(
+            self.controller.share_api, 'reset_share_metadata_to_default')
+
+        req = fakes.HTTPRequest.blank(
+            '/v2/shares/fake_share_id/metadata/regular_key')
+        context = req.environ['manila.context']
+        self.controller.delete_metadata(req, 'fake_share_id', 'regular_key')
+
+        # reset is always called; share/api.py filters non-driver keys
+        mock_reset.assert_called_once_with(context, 'fake_share_id',
+                                           'regular_key')
 
 
 def _fake_access_get(self, ctxt, access_id):
