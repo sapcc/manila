@@ -298,6 +298,25 @@ class API(base.Base):
             raise exception.ShareReplicaSizeExceedsAvailableQuota(
                 **exception_kwargs)
 
+    @staticmethod
+    def check_if_share_server_replica_quotas_exceeded(context,
+                                                      quota_exception):
+        overs = quota_exception.kwargs['overs']
+        usages = quota_exception.kwargs['usages']
+        quotas = quota_exception.kwargs['quotas']
+
+        def _consumed(name):
+            return (usages[name]['reserved'] + usages[name]['in_use'])
+
+        if 'share_server_replicas' in overs:
+            LOG.warning("Quota exceeded for %(s_pid)s, "
+                        "unable to create share-server-replica "
+                        "(%(d_consumed)d of %(d_quota)d already consumed).", {
+                            's_pid': context.project_id,
+                            'd_consumed': _consumed('share_server_replicas'),
+                            'd_quota': quotas['share_server_replicas']})
+            raise exception.ShareServerReplicasLimitExceeded()
+
     def create(self, context, share_proto, size, name, description,
                snapshot_id=None, availability_zone=None, metadata=None,
                share_network_id=None, share_type=None, is_public=False,
@@ -1703,6 +1722,18 @@ class API(base.Base):
         if share_groups:
             LOG.warning("share server '%(ssid)s' in use by share groups.",
                         {'ssid': server['id']})
+            raise exception.ShareServerInUse(share_server_id=server['id'])
+
+        if share_utils.is_share_server_replica(server):
+            msg = _(
+                'Share server %(share_server_id)s cannot be deleted '
+                'because it is a share server replica of %(source_id)s. '
+                'Use share server replica APIs to delete replicas.'
+            ) % {
+                'share_server_id': server['id'],
+                'source_id': server['source_share_server_id'],
+            }
+            LOG.error(msg)
             raise exception.ShareServerInUse(share_server_id=server['id'])
 
         # NOTE(vponomaryov): There is no share_server status update here,
@@ -3161,6 +3192,14 @@ class API(base.Base):
 
         dest_share_servers = self.db.share_server_get_all_with_filters(
             context, filters=filters)
+
+        # Filter out share server replicas (those with replica_state set)
+        # to ensure we only return migration destinations
+        dest_share_servers = [
+            server for server in dest_share_servers
+            if not server.get('replica_state')
+        ]
+
         if not dest_share_servers:
             msg = _("A destination share server wasn't found for source "
                     "share server %s.") % source_server_id
@@ -4437,3 +4476,304 @@ class API(base.Base):
 
     def delete_qos_type(self, context, qos_type):
         self.db.qos_type_delete(context, qos_type['id'])
+
+    ###########################################################################
+    # Share Server Replica operations
+    ###########################################################################
+
+    def _check_share_server_replica_actionable(self, replica, replica_id):
+        if replica.get('status') in (
+                constants.STATUS_DELETING,
+                constants.STATUS_ERROR_DELETING,
+                constants.STATUS_REPLICATION_CHANGE,
+                constants.STATUS_CREATING,
+        ):
+            raise exception.ReplicationException(
+                reason=_(
+                    'Share server replica %(replica)s is in '
+                    '%(status)s status.'
+                ) % {
+                    'replica': replica_id,
+                    'status': replica.get('status'),
+                })
+
+    def _get_share_network_subnets_in_az(self, context, share_network_id,
+                                         availability_zone_id):
+        return self.db.share_network_subnets_get_all_by_availability_zone_id(
+            context,
+            share_network_id=share_network_id,
+            availability_zone_id=availability_zone_id)
+
+    def _resolve_replica_az_from_share_network(self, context,
+                                               share_network_id):
+        """Pick the availability zone a replica lands in, from its network."""
+        # A default subnet is not bound to any availability zone and is
+        # reachable from all of them, so leave the zone unset and let the
+        # scheduler place the replica.
+        default_subnets = self.db.share_network_subnet_get_default_subnets(
+            context, share_network_id)
+        if default_subnets:
+            return None, default_subnets
+
+        compatible_azs_name, compatible_azs = (
+            self._get_all_availability_zones_with_subnets(
+                context, share_network_id))
+        if not compatible_azs:
+            raise exception.InvalidInput(
+                reason=_(
+                    'Share network %(share_network)s does not have any '
+                    'subnet to create a share server replica on.'
+                ) % {
+                    'share_network': share_network_id,
+                })
+        if len(compatible_azs) > 1:
+            raise exception.InvalidInput(
+                reason=_(
+                    'Share network %(share_network)s spans availability '
+                    'zones %(azs)s. Specify the availability zone to create '
+                    'the share server replica in.'
+                ) % {
+                    'share_network': share_network_id,
+                    'azs': ', '.join(sorted(compatible_azs_name)),
+                })
+
+        availability_zone_id = list(compatible_azs)[0]
+        az_subnets = self._get_share_network_subnets_in_az(
+            context, share_network_id, availability_zone_id)
+        return availability_zone_id, az_subnets
+
+    def create_share_server_replica(self, context, share_server_id,
+                                    availability_zone=None,
+                                    share_network_id=None, metadata=None):
+        """Create a share server replica."""
+
+        share_server = self.db.share_server_get(context, share_server_id)
+
+        if share_server.get('status') != constants.STATUS_ACTIVE:
+            raise exception.ReplicationException(
+                reason=_(
+                    'Share server %(share_server)s must be in active '
+                    'status to create a replica. Current status: %(status)s.'
+                ) % {
+                    'share_server': share_server_id,
+                    'status': share_server.get('status'),
+                })
+
+        source_share_server_id = share_server['id']
+        existing_replicas = share_utils.get_share_server_replicas(
+            context, self.db, source_share_server_id)
+        # Current implementation supports one destination replica per source.
+        if existing_replicas:
+            raise exception.ShareServerReplicaExists(
+                share_server_id=share_server_id,
+                host=existing_replicas[0]['host'])
+
+        source_host = share_utils.extract_host(share_server['host'])
+
+        replica_project_id = share_server.get('project_id')
+        if not replica_project_id:
+            raise exception.InvalidInput(
+                reason=_(
+                    'Share server %(share_server)s has no project '
+                    'association, so a replica cannot be created.'
+                ) % {
+                    'share_server': share_server_id,
+                })
+
+        # Resolve the share network the replica is created on: the one the
+        # caller asked for, once it is confirmed to belong to the project, or
+        # otherwise the share network of the source share server.
+        if share_network_id:
+            destination_share_network = self.db.share_network_get(
+                context, share_network_id)
+            if destination_share_network['project_id'] != replica_project_id:
+                raise exception.InvalidInput(
+                    reason=_(
+                        'Share network %(share_network)s is not accessible '
+                        'to project %(project)s.'
+                    ) % {
+                        'share_network': share_network_id,
+                        'project': replica_project_id,
+                    })
+        else:
+            share_network_id = share_server['share_network_id']
+            if not share_network_id:
+                raise exception.InvalidInput(
+                    reason=_(
+                        'Share server %(share_server)s is not associated '
+                        'with a share network. Specify the share network to '
+                        'create the replica on.'
+                    ) % {
+                        'share_server': share_server_id,
+                    })
+
+        if availability_zone:
+            try:
+                replica_availability_zone = self.db.availability_zone_get(
+                    context, availability_zone)
+            except exception.AvailabilityZoneNotFound:
+                raise exception.InvalidInput(
+                    reason=_(
+                        'Share server replica cannot be created because '
+                        'availability zone %(az)s does not exist.'
+                    ) % {
+                        'az': availability_zone,
+                    })
+            replica_availability_zone_id = replica_availability_zone['id']
+            az_subnets = self._get_share_network_subnets_in_az(
+                context, share_network_id, replica_availability_zone_id)
+            if not az_subnets:
+                raise exception.InvalidInput(
+                    reason=_(
+                        'Share network %(share_network)s does not have a '
+                        'subnet that spans availability zone %(az)s.'
+                    ) % {
+                        'share_network': share_network_id,
+                        'az': replica_availability_zone['name'],
+                    })
+        else:
+            replica_availability_zone_id, az_subnets = (
+                self._resolve_replica_az_from_share_network(
+                    context, share_network_id))
+
+        az_request_multiple_subnet_support_map = {}
+        if replica_availability_zone_id:
+            az_request_multiple_subnet_support_map[
+                replica_availability_zone_id] = len(az_subnets) > 1
+
+        # Request spec pins the source backend and conveys AZ/subnet
+        # constraints to the scheduler.
+        request_spec = {
+            'availability_zone_id': replica_availability_zone_id,
+            'availability_zones': None,
+            'az_request_multiple_subnet_support_map': (
+                az_request_multiple_subnet_support_map),
+            'source_host': source_host,
+        }
+
+        try:
+            reservations = QUOTAS.reserve(
+                context, share_server_replicas=1,
+                project_id=replica_project_id)
+        except exception.OverQuota as e:
+            self.check_if_share_server_replica_quotas_exceeded(context, e)
+
+        # Mark source as active replica explicitly to keep replica_state
+        # consistent for operations that rely on this field.
+        self.db.share_server_update(
+            context,
+            source_share_server_id,
+            {'replica_state': constants.REPLICA_STATE_ACTIVE},
+        )
+
+        replica_server_values = {
+            'id': uuidutils.generate_uuid(),
+            'host': '',
+            'status': constants.STATUS_CREATING,
+            'source_share_server_id': source_share_server_id,
+            'replica_state': constants.REPLICA_STATE_OUT_OF_SYNC,
+            'is_auto_deletable': False,
+            'share_network_subnets': az_subnets,
+        }
+        replica_server = None
+        try:
+            replica_server = self.db.share_server_create(
+                context, replica_server_values)
+
+            if metadata:
+                self.db.share_server_replica_metadata_update(
+                    context, replica_server['id'],
+                    {k: str(v) for k, v in metadata.items()},
+                    delete=False)
+
+            QUOTAS.commit(
+                context, reservations, project_id=replica_project_id)
+        except Exception:
+            # On any failure after reservation, remove provisional DB records
+            # and roll back quotas to avoid leaked resources.
+            with excutils.save_and_reraise_exception():
+                try:
+                    if replica_server:
+                        self.db.share_server_delete(
+                            context, replica_server['id'])
+                finally:
+                    QUOTAS.rollback(
+                        context, reservations,
+                        project_id=replica_project_id)
+
+        # Host selection happens asynchronously in the scheduler, which
+        # persists the chosen host and hands off to the share manager.
+        request_spec['share_server_replica_id'] = replica_server['id']
+        self.scheduler_rpcapi.create_share_server_replica(
+            context, request_spec=request_spec, filter_properties={})
+
+        return replica_server
+
+    def delete_share_server_replica(self, context, replica_id, force=False):
+        """Delete a share server replica."""
+
+        replica = self.db.share_server_get(context, replica_id)
+
+        self._check_share_server_replica_actionable(replica, replica_id)
+
+        if share_utils.is_active_share_server_replica(replica):
+            msg = _("Cannot delete the active share server replica "
+                    "%(replica_id)s. Delete its secondary replicas instead.")
+            raise exception.ReplicationException(
+                reason=msg % {'replica_id': replica_id})
+
+        if not share_utils.is_share_server_replica(replica):
+            msg = _("Share server %(replica_id)s is not a share server "
+                    "replica.")
+            raise exception.ReplicationException(
+                reason=msg % {'replica_id': replica_id})
+
+        self.db.share_server_update(
+            context, replica_id, {'status': constants.STATUS_DELETING})
+
+        self.share_rpcapi.delete_share_server_replica(
+            context, replica,
+            force=force)
+
+    def promote_share_server_replica(self, context, replica_id):
+        """Promote a share server replica to become the primary/active."""
+
+        replica = self.db.share_server_get(context, replica_id)
+        if replica.get('status') != constants.STATUS_INACTIVE:
+            msg = _(
+                "Share server replica %(replica_id)s must be in %(status)s "
+                "state to be promoted.")
+            raise exception.ReplicationException(
+                reason=msg % {'replica_id': replica['id'],
+                              'status': constants.STATUS_INACTIVE})
+
+        # Only a replica that caught up with the active share server can take
+        # over from it; promoting a lagging one would lose the data it has
+        # not received yet.
+        replica_state = replica.get('replica_state')
+        if replica_state != constants.REPLICA_STATE_IN_SYNC:
+            msg = _(
+                "Share server replica %(replica_id)s must have a "
+                "replica_state of %(expected)s to be promoted, but its "
+                "replica_state is %(replica_state)s.")
+            raise exception.ReplicationException(
+                reason=msg % {
+                    'replica_id': replica['id'],
+                    'expected': constants.REPLICA_STATE_IN_SYNC,
+                    'replica_state': replica_state,
+                })
+
+        self.db.share_server_update(
+            context, replica_id,
+            {'status': constants.STATUS_REPLICATION_CHANGE})
+
+        self.share_rpcapi.promote_share_server_replica(context, replica)
+
+    def update_share_server_replica_state(self, context, replica_id):
+        """Resynchronize a share server replica with the active replica."""
+
+        replica = self.db.share_server_get(context, replica_id)
+
+        self._check_share_server_replica_actionable(replica, replica_id)
+        self.share_rpcapi.update_share_server_replica_state(
+            context, replica)

@@ -20,10 +20,13 @@ location of the data's source and destination. This includes cloning,
 SnapMirror, and copy-offload as improvements to brute force data transfer.
 """
 
+import re
+
 from oslo_config import cfg
 from oslo_log import log
 from oslo_utils import excutils
 
+from manila.common import constants
 from manila import exception
 from manila.i18n import _
 from manila.share import configuration
@@ -135,6 +138,34 @@ def get_client_for_host(host):
     backend_name = share_utils.extract_host(host, level='backend_name')
     client = get_client_for_backend(backend_name)
     return client
+
+
+@na_utils.trace
+def validate_mediator_reachable(peer_cluster_name, mediators):
+    """Validate that a mediator is reachable and connected.
+
+    :param peer_cluster_name: name of the peer cluster (for error messages).
+    :param mediators: list of mediator records from get_cluster_mediators().
+    """
+    if not mediators:
+        msg = _("No mediator configured for cluster pair with "
+                "'%(peer)s'. Configure a mediator on both clusters "
+                "before retrying.")
+        raise exception.NetAppException(
+            msg % {'peer': peer_cluster_name})
+    mediator = mediators[0]
+    if not mediator.get('reachable'):
+        msg = _("Mediator for cluster pair with '%(peer)s' is not "
+                "reachable.")
+        raise exception.NetAppException(
+            msg % {'peer': peer_cluster_name})
+    if mediator.get('peer_mediator_connectivity') != 'connected':
+        msg = _("Peer mediator connectivity for '%(peer)s' is "
+                "'%(state)s', expected 'connected'.")
+        raise exception.NetAppException(
+            msg % {'peer': peer_cluster_name,
+                   'state': mediator.get(
+                       'peer_mediator_connectivity', 'unknown')})
 
 
 class DataMotionSession(object):
@@ -785,6 +816,183 @@ class DataMotionSession(object):
         dest_client.initialize_snapmirror_svm(src_vserver,
                                               dest_vserver)
 
+    def create_share_server_replica(self, source_share_server,
+                                    replica_share_server, replication_type,
+                                    replication_policy=None,
+                                    destination_ipspace=None):
+        """Creates a share server replica relationship at share server level.
+
+        :param source_share_server: active source share server.
+        :param replica_share_server: new replica share server; its
+            host identifies the peer backend and its id names the dp-dest SVM.
+        :param replication_type: 'sync' for SM-as NAS;
+        :param replication_policy: SnapMirror policy name.
+        :param destination_ipspace: optional IPspace name for the
+            auto-created dp-destination SVM on a custom-IPSpace network.
+
+        :return: dict with the relationship uuid, the post-init replica
+            status ('in_sync'/'out_of_sync'), and backend_details containing
+            vserver_name (dp-dest SVM) and, for AutomatedFailOver policy only,
+            ports propagated from the source share server's backend_details.
+        """
+        init_state = self._get_svm_relationship_init_state(replication_type)
+
+        src_client, src_vserver = self.get_client_and_vserver_name(
+            source_share_server)
+
+        dest_backend = share_utils.extract_host(
+            replica_share_server['host'], level='backend_name')
+        dest_config = get_backend_configuration(dest_backend)
+        dest_client = get_client_for_backend(dest_backend)
+
+        dp_dest_svm_name = (dest_config.netapp_vserver_name_template
+                            % replica_share_server['id'])
+        src_path = src_vserver + ':'
+        dest_path = dp_dest_svm_name + ':'
+        source_cluster_name = src_client.get_cluster_name()
+        destination_cluster_name = dest_client.get_cluster_name()
+
+        # Step 1: dual-cluster version gate + peering + mediator pre-checks.
+        self._validate_smas_prerequisites(
+            src_client, dest_client, source_cluster_name,
+            destination_cluster_name)
+
+        try:
+            # Step 2: auto-creates dp-dest SVM, SVM peering and relationship.
+            dest_client.create_snapmirror_relationship(
+                src_path, dest_path,
+                source_cluster_name=source_cluster_name,
+                destination_cluster_name=destination_cluster_name,
+                policy_name=replication_policy,
+                create_destination=True,
+                destination_ipspace=destination_ipspace)
+
+            relationships = dest_client.get_snapmirror_relationships(
+                src_path, dest_path, fields='uuid')
+            relationship_uuid = relationships[0]['uuid']
+
+            # Step 3: assign aggregates so destination volumes can be placed.
+            dp_dest_svm_uuid = dest_client._get_unique_svm_by_name(
+                dp_dest_svm_name)
+            aggregate_names = self._get_matching_aggregates(
+                dest_client, dest_config)
+            dest_client.assign_aggregates_to_svm(
+                dp_dest_svm_uuid, dp_dest_svm_name, aggregate_names)
+
+            # Step 4: initialize the relationship.
+            dest_client.update_snapmirror_state(
+                relationship_uuid, state=init_state)
+
+            # Single best-effort read (not a poll) of the post-init replica
+            # status; the periodic task confirms the eventual in_sync.
+            relationship = dest_client.get_svm_snapmirror_by_id(
+                relationship_uuid,
+                fields='state,healthy,unhealthy_reason')
+        except Exception:
+            # TODO(kumart): the auto-created dp-destination SVM, SVM peer and
+            # relationship are left behind. Enhance core and driver to send
+            # detail_data in the exception; do not duplicate the delete flow.
+            msg = _('Could not create the share server replica '
+                    'between source SVM %(src)s and destination SVM '
+                    '%(dst)s.')
+            msg_args = {'src': src_vserver, 'dst': dp_dest_svm_name}
+            LOG.exception(msg, msg_args)
+            raise exception.NetAppException(msg % msg_args)
+
+        # Step 5: return without waiting for baseline transfer.
+        backend_details = {'vserver_name': dp_dest_svm_name}
+        if replication_policy == na_utils.SMAS_POLICY_NAME:
+            source_backend_details = source_share_server.get(
+                'backend_details') or {}
+            source_ports = source_backend_details.get('ports')
+            if source_ports is not None:
+                backend_details['ports'] = source_ports
+
+        return {
+            'relationship_uuid': relationship_uuid,
+            'replica_status': self.map_snapmirror_state_to_replica_status(
+                relationship),
+            'backend_details': backend_details,
+        }
+
+    _SVM_REPLICATION_INIT_STATES = {
+        'sync': na_utils.SM_IN_SYNC_STATE,
+        'async': na_utils.SM_SNAPMIRRORED_STATE,
+    }
+
+    def _get_svm_relationship_init_state(self, replication_type):
+        """Returns the SnapMirror init state for a replication type.
+
+        :param replication_type: 'sync' for SM-as NAS, 'async' for SVM-DR.
+        """
+        init_state = self._SVM_REPLICATION_INIT_STATES.get(replication_type)
+        if init_state is None:
+            msg = _("Unsupported share server replication type: '%s'.")
+            raise exception.NetAppException(msg % replication_type)
+        return init_state
+
+    def _validate_smas_prerequisites(self, src_client, dest_client,
+                                     source_cluster_name,
+                                     destination_cluster_name):
+        """Validates ONTAP version, cluster peering and mediator for SM-as.
+
+        :param src_client: REST client for the source cluster.
+        :param dest_client: REST client for the destination cluster.
+        :param source_cluster_name: name of the source cluster.
+        :param destination_cluster_name: name of the destination cluster.
+        """
+        clusters = ((src_client, source_cluster_name),
+                    (dest_client, destination_cluster_name))
+        for client, cluster_name in clusters:
+            version = client.get_ontap_version(cached=False)
+            if version['version-tuple'] < na_utils.SMAS_MIN_ONTAP_VERSION:
+                msg = _("SMas NAS requires ONTAP 9.19.1 or later on both "
+                        "clusters. Cluster '%(cluster)s' is running "
+                        "'%(version)s', which is not supported.")
+                raise exception.NetAppException(
+                    msg % {'cluster': cluster_name,
+                           'version': version['version']})
+
+        src_client.validate_cluster_peering(destination_cluster_name)
+        mediators = src_client.get_cluster_mediators(
+            peer_cluster_name=destination_cluster_name)
+        validate_mediator_reachable(destination_cluster_name, mediators)
+
+    def _get_matching_aggregates(self, client, config):
+        """Returns destination aggregates matching the configured pattern.
+
+        :param client: REST client for the destination cluster.
+        :param config: configuration object for the destination backend.
+        """
+        pattern = config.netapp_aggregate_name_search_pattern
+        return [name for name in client.list_non_root_aggregates()
+                if re.match(pattern, name)]
+
+    def map_snapmirror_state_to_replica_status(self, relationship):
+        """Maps an ONTAP SnapMirror relationship to a Manila replica status.
+
+        :param relationship: SnapMirror relationship record carrying 'state',
+            'healthy' and optionally 'unhealthy_reason'.
+        """
+        state = relationship.get('state')
+        healthy = relationship.get('healthy')
+        synced_states = (na_utils.SM_IN_SYNC_STATE,
+                         na_utils.SM_SNAPMIRRORED_STATE)
+        if state in synced_states and healthy is True:
+            return constants.REPLICA_STATE_IN_SYNC
+
+        # ONTAP returns unhealthy_reason as a list of
+        # {arguments, code, message}; log the human-readable messages.
+        unhealthy_reason = relationship.get('unhealthy_reason')
+        if unhealthy_reason:
+            reasons = '; '.join(
+                r.get('message', '') for r in unhealthy_reason)
+            LOG.warning(
+                'SnapMirror relationship not yet synchronized '
+                '(state=%(state)s, healthy=%(healthy)s): %(reason)s.',
+                {'state': state, 'healthy': healthy, 'reason': reasons})
+        return constants.REPLICA_STATE_OUT_OF_SYNC
+
     def get_snapmirrors_svm(self, source_share_server, dest_share_server):
         """Get SnapMirrors between two vServers."""
 
@@ -890,6 +1098,10 @@ class DataMotionSession(object):
                      backoff_rate=1)
         def wait_for_state():
             vserver_info = client.get_vserver_info(vserver_name)
+            if vserver_info is None:
+                LOG.info('Vserver %s no longer exists; treating as already '
+                         'converted to default subtype.', vserver_name)
+                return
             if vserver_info.get('subtype') != 'default':
                 if is_dest_path:
                     client.break_snapmirror_svm(dest_vserver=vserver_name)
@@ -1253,3 +1465,47 @@ class DataMotionSession(object):
             msg = _("Timed out while wait for SnapMirror relationship to "
                     "be initialized")
             raise exception.NetAppException(message=msg)
+
+    @na_utils.trace
+    def delete_svm_snapmirror_relationship(self, src_share_server,
+                                           dest_share_server):
+        """Delete SVM SnapMirror relationship on destination cluster.
+
+        Performs a full destination-side delete of the SVM-scoped SnapMirror
+        relationship. The underlying REST call is asynchronous; the client
+        waits for the job to complete. 404 (relationship already gone) is
+        treated as success.
+
+        :param src_share_server: source share server dict.
+        :param dest_share_server: destination (replica) share server dict.
+        """
+        dest_client, dest_vserver = self.get_client_and_vserver_name(
+            dest_share_server)
+        _, src_vserver = self.get_client_and_vserver_name(
+            src_share_server)
+
+        src_path = src_vserver + ':'
+        dest_path = dest_vserver + ':'
+        snapmirrors = dest_client.get_snapmirror_relationships(
+            src_path, dest_path, fields='uuid')
+        if not snapmirrors:
+            LOG.debug('No SVM SnapMirror relationship found between source '
+                      'vserver %(src)s and destination vserver %(dest)s.',
+                      {'src': src_vserver, 'dest': dest_vserver})
+            return
+
+        rel_uuid = snapmirrors[0].get('uuid')
+        if not rel_uuid:
+            LOG.warning('SnapMirror relationship found but UUID is missing.'
+                        'Skipping relationship delete.')
+            return
+
+        LOG.debug('Deleting SVM SnapMirror relationship %(uuid)s '
+                  'from source vserver %(src)s to destination vserver '
+                  '%(dest)s.', {'uuid': rel_uuid, 'src': src_vserver,
+                                'dest': dest_vserver})
+        dest_client.delete_snapmirror_relationship(rel_uuid)
+        LOG.info('Deleted SVM SnapMirror relationship %(uuid)s '
+                 'from source vserver %(src)s to destination vserver '
+                 '%(dest)s.', {'uuid': rel_uuid, 'src': src_vserver,
+                               'dest': dest_vserver})

@@ -139,8 +139,8 @@ class NetAppRestClient(object):
         zapi_client = object.__getattribute__(self, 'zapi_client')
         return getattr(zapi_client, name)
 
-    def _wait_job_result(self, job_url):
-
+    def _wait_job_result(self, job_url, preserve_error_code=False):
+        """Poll a job until it reaches a terminal state."""
         interval = 2
         retries = (self.async_rest_timeout / interval)
 
@@ -156,6 +156,10 @@ class NetAppRestClient(object):
             elif job_state == 'failure':
                 message = response['error']['message']
                 code = response['error']['code']
+                # NaApiError is not retried, so it propagates.
+                if preserve_error_code:
+                    raise netapp_api.api.NaApiError(code=code,
+                                                    message=message)
                 raise netapp_api.NaRetryableError(message=message, code=code)
 
             msg_args = {'job': job_url, 'state': job_state}
@@ -3813,6 +3817,7 @@ class NetAppRestClient(object):
                             qos_policy_group=None,
                             adaptive_qos_policy_group=None,
                             mount_point_name=None,
+                            smas_protection=None,
                             **options):
         """Create volume clone in the same aggregate as parent volume."""
 
@@ -3824,6 +3829,10 @@ class NetAppRestClient(object):
             'clone.is_flexclone': 'true',
             'svm.name': self.connection.get_vserver(),
         }
+        if smas_protection is not None:
+            # NOTE: Passing 'unprotected' here lets a clone be created
+            # without getting added to SVM protection.
+            body['smas_protection'] = smas_protection
 
         self.send_request('/storage/volumes', 'post', body=body)
 
@@ -3881,6 +3890,23 @@ class NetAppRestClient(object):
                                dest_volume=dest_volume)
 
     @na_utils.trace
+    def break_snapmirror_svm(self, source_vserver=None, dest_vserver=None):
+        """Break an SVM-scoped SnapMirror relationship.
+
+        Uses POST /private/cli/snapmirror/break to break SVM-DR on the
+        destination and convert a dp-destination SVM to default subtype.
+        """
+        if dest_vserver:
+            body = {'destination-path': '%s:' % dest_vserver}
+        else:
+            msg = _('Either source_vserver or dest_vserver must be provided '
+                    'to break an SVM SnapMirror relationship.')
+            raise exception.NetAppException(message=msg)
+
+        self.send_request('/private/cli/snapmirror/break', 'post',
+                          body=body)
+
+    @na_utils.trace
     def _break_snapmirror(self, source_path=None, dest_path=None,
                           source_vserver=None, dest_vserver=None,
                           source_volume=None, dest_volume=None):
@@ -3903,7 +3929,7 @@ class NetAppRestClient(object):
             snapmirror_state = snapmirror[0].get('transferring-state')
             if snapmirror_state == 'success':
                 uuid = snapmirror[0]['uuid']
-                body = {'state': 'broken_off'}
+                body = {'state': na_utils.SM_BROKEN_OFF_STATE}
                 self.send_request(f'/snapmirror/relationships/{uuid}', 'patch',
                                   body=body)
                 return
@@ -4066,10 +4092,23 @@ class NetAppRestClient(object):
     @na_utils.trace
     def check_volume_clone_split_completed(self, volume_name):
         """Check if volume clone split operation already finished."""
-        volume = self._get_volume_by_args(vol_name=volume_name,
-                                          fields='clone.is_flexclone')
+        volume = self._get_volume_by_args(
+            vol_name=volume_name,
+            fields='clone.is_flexclone,clone.split_complete_percent')
 
-        return volume['clone']['is_flexclone'] is False
+        clone_info = volume.get('clone') or {}
+        percent = clone_info.get('split_complete_percent')
+        if percent is not None:
+            # clone.split_complete_percent helps in confirming if the clone
+            # split operation has fully completed. Sometimes the clone flag
+            # can change to False before that copy has actually finished.
+            try:
+                return int(percent) >= 100
+            except (TypeError, ValueError):
+                return False
+
+        # If the percentage is not available, then the clone is already split.
+        return clone_info.get('is_flexclone') is False
 
     @na_utils.trace
     def rehost_volume(self, volume_name, vserver, destination_vserver):
@@ -5629,6 +5668,19 @@ class NetAppRestClient(object):
         self.send_request(f'/svm/svms/{svm_uuid}', 'patch', body=body)
 
     @na_utils.trace
+    def patch_volume(self, svm_name, volume_name, body):
+        """Applies a PATCH body to a volume.
+
+        :param svm_name: name of the owning SVM.
+        :param volume_name: name of the volume.
+        :param body: dict forwarded as the PATCH body.
+        """
+        volume = self._get_volume_by_args(vol_name=volume_name,
+                                          vserver=svm_name, fields='uuid')
+        self.send_request('/storage/volumes/' + volume['uuid'],
+                          'patch', body=body)
+
+    @na_utils.trace
     def get_vserver_info(self, vserver_name):
         """Retrieves Vserver info."""
         LOG.debug('Retrieving Vserver %s information.', vserver_name)
@@ -5650,6 +5702,232 @@ class NetAppRestClient(object):
             'state': vserver['state'],
         }
         return vserver_info
+
+    @na_utils.trace
+    def validate_cluster_peering(self, peer_cluster_name):
+        """Validate that a cluster peer relationship is available.
+
+        :param peer_cluster_name: name of the peer cluster.
+        """
+        cluster_peers = self.get_cluster_peers(
+            remote_cluster_name=peer_cluster_name)
+        if not cluster_peers:
+            msg = _("Cluster peering with '%(peer)s' not found.")
+            raise exception.NetAppException(msg % {'peer': peer_cluster_name})
+        availability = cluster_peers[0].get('availability')
+        if availability != 'available':
+            msg = _("Cluster peer '%(peer)s' exists but is not in "
+                    "'available' state. Current state: %(state)s.")
+            raise exception.NetAppException(
+                msg % {'peer': peer_cluster_name,
+                       'state': availability or 'unknown'})
+
+    @na_utils.trace
+    def get_cluster_mediators(self, peer_cluster_name=None, fields=None):
+        """Get mediator records for the cluster.
+
+        :param peer_cluster_name: name of the peer cluster to filter by.
+        :param fields: comma-separated list of fields to retrieve.
+
+        :return: list of mediator records.
+        """
+        query = {}
+        if peer_cluster_name:
+            query['peer_cluster.name'] = peer_cluster_name
+        if fields:
+            query['fields'] = fields
+        else:
+            query['fields'] = 'reachable,peer_mediator_connectivity'
+        response = self.send_request('/cluster/mediators', 'get',
+                                     query=query,
+                                     enable_tunneling=False)
+        return response.get('records', [])
+
+    @na_utils.trace
+    def assign_aggregates_to_svm(self, svm_uuid, svm_name,
+                                 aggregate_names):
+        """Add aggregates to an SVM.
+
+        :param svm_uuid: uuid of the SVM.
+        :param svm_name: name of the SVM, used by the /private/cli
+            fallback.
+        :param aggregate_names: list of aggregate names to assign.
+        """
+        body = {
+            'aggregates': [{'name': name} for name in aggregate_names]
+        }
+        try:
+            response = self.send_request(
+                f'/svm/svms/{svm_uuid}', 'patch', body=body,
+                enable_tunneling=False, wait_on_accepted=False)
+            job = response.get('job') if response else None
+            if job:
+                job_url = job['_links']['self']['href'][4:]
+                self._wait_job_result(job_url, preserve_error_code=True)
+        except netapp_api.api.NaApiError as e:
+            if e.code != netapp_api.EREST_SVM_DR_OPERATION_NOT_PERMITTED:
+                raise
+            LOG.debug("PATCH /svm/svms rejected for SVM '%(svm)s' "
+                      "(code %(code)s). Falling back to "
+                      "/private/cli.",
+                      {'svm': svm_name, 'code': e.code})
+            # NOTE(kumart): Some ONTAP releases reject PATCH /svm/svms on
+            # SVMs configured as SVM-DR destinations even though the operation
+            # works via the CLI. Detect that failure (code 2621570) on the
+            # underlying job and
+            # fall back to /private/cli/vserver/add-aggregates.
+            self.send_request(
+                '/private/cli/vserver/add-aggregates', 'post',
+                body={'vserver': svm_name,
+                      'aggregates': aggregate_names},
+                enable_tunneling=False)
+
+    @na_utils.trace
+    def get_volume_details(self, svm_name, volume_name, fields=None):
+        """Get volume details by SVM and volume name.
+
+        :param svm_name: name of the SVM.
+        :param volume_name: name of the volume.
+        :param fields: comma-separated list of fields to retrieve.
+        """
+        return self._get_volume_by_args(
+            vol_name=volume_name, vserver=svm_name, fields=fields)
+
+    @na_utils.trace
+    def create_snapmirror_relationship(self, src_path, dest_path,
+                                       source_cluster_name,
+                                       destination_cluster_name,
+                                       policy_name=None,
+                                       create_destination=False,
+                                       destination_ipspace=None):
+        """Creates a SnapMirror relationship.
+
+        :param src_path: source endpoint path (e.g. 'src_vserver:').
+        :param dest_path: destination endpoint path (e.g.
+            'dst_vserver:'); the SVM name encoded here is auto-created
+            when create_destination is True.
+        :param source_cluster_name: name of the source cluster.
+        :param destination_cluster_name: name of the destination cluster.
+        :param policy_name: SnapMirror policy name to apply.
+        :param create_destination: when True, ONTAP auto-creates the
+            destination SVM and SVM peering.
+        :param destination_ipspace: optional IPspace name for the
+            auto-created destination SVM.
+        """
+        body = {
+            'source': {
+                'path': src_path,
+                'cluster': {'name': source_cluster_name},
+            },
+            'destination': {
+                'path': dest_path,
+                'cluster': {'name': destination_cluster_name},
+            },
+        }
+        if policy_name:
+            body['policy'] = policy_name
+        if create_destination:
+            body['create_destination'] = {'enabled': True}
+        if destination_ipspace:
+            body['destination']['ipspace'] = destination_ipspace
+        return self.send_request('/snapmirror/relationships/', 'post',
+                                 body=body)
+
+    @na_utils.trace
+    def update_snapmirror_state(self, relationship_uuid, state=None):
+        """Updates the state of a SnapMirror relationship.
+
+        :param relationship_uuid: uuid of the SnapMirror relationship.
+        :param state: target state; defaults to 'in_sync'.
+        """
+        body = {'state': state or 'in_sync'}
+        return self.send_request(
+            f'/snapmirror/relationships/{relationship_uuid}', 'patch',
+            body=body)
+
+    @na_utils.trace
+    def failover_svm_snapmirror(self, rel_id, source_path, destination_path,
+                                state='in_sync'):
+        """Failover SVM snapmirror relationship by swapping endpoints.
+
+        PATCH /api/snapmirror/relationships/{rel_id}
+
+        Swaps source and destination SVM paths on the relationship and sets
+        the target state, causing ONTAP to perform the role reversal. The
+        request returns HTTP 202 (Accepted); ``send_request`` automatically
+        awaits the resulting job to a terminal state.
+
+        :param rel_id: UUID of the SnapMirror relationship.
+        :param source_path: new source SVM path
+        :param destination_path: new destination SVM path
+        :param state: target SnapMirror state; defaults to 'in_sync'.
+        """
+        body = {
+            'source': {'path': source_path},
+            'destination': {'path': destination_path},
+            'state': state,
+        }
+        return self.send_request(
+            f'/snapmirror/relationships/{rel_id}', 'patch', body=body)
+
+    @na_utils.trace
+    def get_smas_protected_volumes(self, svm_name):
+        """Return names of SMAS-protected data volumes on an SVM.
+
+        GET /storage/volumes?svm.name=<svm>&smas_protection=protected
+                             &is_svm_root=false&fields=name,is_svm_root
+
+        The SVM root volume is excluded via ``is_svm_root=false``
+
+        :param svm_name: name of the SVM to query.
+        :returns: list of volume name strings whose smas_protection is
+            'protected'. Volumes with no SMAS configuration omit the field
+            entirely in the ONTAP response; they are not included.
+        """
+        query = {
+            'svm.name': svm_name,
+            'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED,
+            'is_svm_root': 'false',
+            'fields': 'name',
+        }
+        response = self.send_request('/storage/volumes', 'get', query=query)
+        return [r['name'] for r in response.get('records', [])]
+
+    @na_utils.trace
+    def get_svm_snapmirror_by_id(self, relationship_uuid, fields=None):
+        """Gets an SVM-level SnapMirror relationship by uuid.
+
+        :param relationship_uuid: uuid of the SnapMirror relationship.
+        :param fields: comma-separated list of fields to retrieve.
+        """
+        query = {}
+        query['fields'] = fields or 'state,policy,healthy'
+        return self.send_request(
+            f'/snapmirror/relationships/{relationship_uuid}', 'get',
+            query=query)
+
+    @na_utils.trace
+    def get_snapmirror_relationships(self, source_path, dest_path,
+                                     fields=None,
+                                     list_destinations_only=None):
+        """Gets SnapMirror relationships matching the given paths.
+
+        :param source_path: source endpoint path (e.g. 'src_vserver:').
+        :param dest_path: destination endpoint path (e.g. 'dst_vserver:').
+        :param fields: comma-separated list of fields to retrieve.
+        :param list_destinations_only: when True, query the source endpoint
+            for destination relationships.
+        """
+        query = {
+            'source.path': source_path,
+            'destination.path': dest_path,
+        }
+        query['fields'] = fields or 'state,policy,healthy'
+        if list_destinations_only:
+            query['list_destinations_only'] = 'true'
+        response = self.send_request('/snapmirror/relationships', 'get',
+                                     query=query)
+        return response.get('records', [])
 
     @na_utils.trace
     def get_nfs_config(self, desired_args, vserver):
@@ -5691,6 +5969,14 @@ class NetAppRestClient(object):
             return response['records'][0].get('ipspace', {}).get('name')
 
         return None
+
+    @na_utils.trace
+    def get_vserver_custom_ipspace_name(self, vserver_name):
+        """Get the custom (non-cluster) IPspace name for a Vserver."""
+        ipspace_name = self.get_vserver_ipspace(vserver_name)
+        if not ipspace_name or ipspace_name in CLUSTER_IPSPACES:
+            return None
+        return ipspace_name
 
     @na_utils.trace
     def get_snapmirror_policies(self, vserver_name):
@@ -5763,6 +6049,12 @@ class NetAppRestClient(object):
         if vserver_info is None:
             LOG.error("Vserver %s does not exist.", vserver_name)
             return
+        if vserver_info.get('state') == 'deleting':
+            msg = _('Vserver %s is in a deleting state on ONTAP. '
+                    'If stuck in this state, manual cleanup on the '
+                    'storage backend may be required.') % vserver_name
+            LOG.error(msg)
+            raise exception.NetAppException(message=msg)
         svm_uuid = self._get_unique_svm_by_name(vserver_name)
 
         is_dp_destination = vserver_info.get('subtype') == 'dp_destination'
@@ -6088,6 +6380,11 @@ class NetAppRestClient(object):
     def get_ipspaces(self, ipspace_name=None, vserver_name=None):
         """Gets one or more IPSpaces."""
 
+        if vserver_name and not ipspace_name:
+            ipspace_name = self.get_vserver_custom_ipspace_name(vserver_name)
+            if not ipspace_name:
+                return []
+
         query = {
             'name': ipspace_name
         }
@@ -6100,7 +6397,8 @@ class NetAppRestClient(object):
         ipspace_info = result.get('records')[0]
 
         query = {
-            'broadcast_domain.ipspace.name': ipspace_name
+            'broadcast_domain.ipspace.name': ipspace_name,
+            'fields': 'node.name,name',
         }
         ports = self.send_request('/network/ethernet/ports',
                                   'get', query=query)
@@ -6121,7 +6419,12 @@ class NetAppRestClient(object):
         }
 
         for port in ports.get('records'):
-            ipspace['ports'].append(port.get('name'))
+            node_name = port.get('node', {}).get('name')
+            port_name = port.get('name')
+            if node_name:
+                ipspace['ports'].append(f"{node_name}:{port_name}")
+            else:
+                ipspace['ports'].append(port_name)
 
         for vserver in vservers.get('records'):
             ipspace['vservers'].append(vserver.get('name'))
@@ -6133,6 +6436,9 @@ class NetAppRestClient(object):
 
         ipspace['uuid'] = ipspace_info.get('uuid')
 
+        if vserver_name:
+            return [ipspace]
+
         return ipspace
 
     @na_utils.trace
@@ -6143,6 +6449,8 @@ class NetAppRestClient(object):
         ports = ipspace['ports']
 
         for port in ports:
+            if ':' in port:
+                _, port = port.split(':', 1)
             self._delete_port_by_ipspace_and_broadcast_domain(
                 port,
                 domain,
@@ -6381,3 +6689,126 @@ class NetAppRestClient(object):
     def get_desired_sync_snapmirror_state(self):
         """Returns the desired Sync SnapMirror state for REST."""
         return na_utils.SM_IN_SYNC_STATE
+
+    @na_utils.trace
+    def delete_snapmirror_relationship(self, relationship_uuid,
+                                       source_only=False):
+        """Delete a SnapMirror relationship by UUID.
+
+        :param relationship_uuid: UUID of the SnapMirror relationship.
+        :param source_only: if True, performs source-side-only release
+            (removes snapmirror-created snapshots on the source cluster
+            without touching the destination). If False, performs a full
+            destination-side delete.
+        """
+        query = {}
+        if source_only:
+            query['source_only'] = 'true'
+
+        try:
+            self.send_request(
+                f'/snapmirror/relationships/{relationship_uuid}',
+                'delete', query=query)
+        except netapp_api.api.NaApiError as e:
+            if e.code == netapp_api.EREST_ENTRY_NOT_FOUND:
+                LOG.info('SnapMirror relationship %s already removed.',
+                         relationship_uuid)
+            else:
+                raise
+
+    @na_utils.trace
+    def _get_volumes_on_svm(self, svm_name, is_root=None, is_flexclone=None):
+        """Get volumes on an SVM with optional filters."""
+        query = {
+            'svm.name': svm_name,
+            'style': 'flex*',
+            'fields': 'uuid,name,type,style,clone.is_flexclone,'
+                      'clone.parent_volume.name,is_svm_root',
+        }
+        if is_root is not None:
+            query['is_svm_root'] = str(is_root).lower()
+        if is_flexclone is not None:
+            query['clone.is_flexclone'] = str(is_flexclone).lower()
+
+        response = self.send_request('/storage/volumes/', 'get', query=query)
+        return response.get('records', [])
+
+    @na_utils.trace
+    def get_svm_volumes_with_aggregates(self, svm_name):
+        """Return a name-keyed dict of non-root volumes with aggregate info.
+
+        Issues a single bulk GET against the volumes collection, filtered to
+        non-root volumes on *svm_name*, requesting aggregate names alongside
+        the volume name and UUID. Intended for building
+        ``instance_host_mappings`` after a Planned Failover without issuing
+        per-volume requests.
+
+        GET /storage/volumes?svm.name=<svm>&is_svm_root=false
+                             &fields=name,uuid,aggregates
+
+        :param svm_name: name of the SVM to query.
+        :returns: dict of {volume_name: record_dict} where each record_dict
+            contains at least ``name``, ``uuid``, and ``aggregates``.
+        """
+        query = {
+            'svm.name': svm_name,
+            'is_svm_root': 'false',
+            'fields': 'name,uuid,aggregates',
+        }
+        response = self.send_request('/storage/volumes', 'get', query=query)
+        return {r['name']: r for r in response.get('records', [])}
+
+    @na_utils.trace
+    def delete_volumes_by_uuids(self, volume_uuids):
+        """Delete multiple volumes by their UUIDs using a single bulk request.
+
+        Issues a single record-based bulk DELETE (JSON body with a
+        ``records`` array of UUIDs) with ``continue_on_failure=true``.
+        Without this flag, ONTAP stops processing at the first failed
+        record and silently strands every subsequent record in the
+        array (not deleted, not reported), so it must always be set.
+
+        The operation runs asynchronously as an ONTAP job. The job is
+        polled to completion; when ONTAP reports a (possibly partial)
+        failure, it aggregates every failed record's reason into the
+        job's own ``error.message``/``error.code``, so that is the
+        only source of error information used here.
+
+        :param volume_uuids: list of volume UUID strings to delete.
+
+        :raises NaApiError: if the job terminates in a failure state,
+            preserving the job's original error code and message.
+        """
+        if not volume_uuids:
+            return
+
+        body = {'records': [{'uuid': uuid} for uuid in volume_uuids]}
+
+        response = self.send_request(
+            '/storage/volumes', 'delete', body=body,
+            query={'continue_on_failure': 'true'},
+            wait_on_accepted=False)
+
+        job = response.get('job') if response else None
+        if job:
+            job_url = job['_links']['self']['href'][4:]
+            self._wait_job_result(job_url, preserve_error_code=True)
+
+    @na_utils.trace
+    def delete_cifs_service_force(self, vserver_name):
+        """Force-delete CIFS service on a vserver.
+
+        :param vserver_name: name of the vserver whose CIFS service to delete.
+        """
+        svm_uuid = self._get_unique_svm_by_name(vserver_name)
+        body = {'force': True}
+        try:
+            self.send_request(
+                f'/protocols/cifs/services/{svm_uuid}', 'delete',
+                body=body)
+        except netapp_api.api.NaApiError as e:
+            if e.code == netapp_api.EREST_ENTRY_NOT_FOUND:
+                LOG.info('No CIFS service to delete on SVM %s.',
+                         vserver_name)
+            else:
+                raise
