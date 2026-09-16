@@ -1169,6 +1169,58 @@ class DataMotionSession(object):
                     "Retries exhausted. Aborting") % src_volume_name
             raise exception.NetAppException(message=msg)
 
+    def has_leftover_source_snapmirrors(self, replica, replica_list):
+        """Check for stale relationships where replica is still the source.
+
+        After a replica is promoted, the previously active replica is demoted
+        and becomes a SnapMirror destination of the new source. Its old
+        outgoing relationships (demoted_replica -> other replicas) should have
+        been released during promotion, but that release is best-effort and is
+        skipped when the demoted replica's host is unreachable at promote time
+        (see delete_snapmirror). Once the host is reachable again, such a
+        relationship lingers as a broken-off orphan on this source endpoint.
+
+        Returns True if this replica still has a source-side relationship
+        pointing at another replica in replica_list, i.e. a leftover from when
+        it was the active source that must be cleaned up.
+        """
+        src_vol_name, src_vserver, src_backend = (
+            self.get_backend_info_for_share(replica))
+        try:
+            src_client = get_client_for_backend(src_backend,
+                                                vserver_name=src_vserver)
+        except Exception:
+            # Source host still unreachable; nothing we can do this cycle.
+            LOG.debug('Could not reach source backend %(backend)s to check '
+                      'for leftover snapmirror relationships for replica '
+                      '%(replica)s.',
+                      {'backend': src_backend, 'replica': replica['id']})
+            return False
+
+        # Only relationships whose destination is another known replica are
+        # considered ours to clean up (known pairings only).
+        expected_dest_volumes = {
+            self.get_backend_info_for_share(r)[0]
+            for r in replica_list if r['id'] != replica['id']}
+
+        try:
+            destinations = src_client.get_snapmirror_destinations(
+                source_vserver=src_vserver, source_volume=src_vol_name)
+        except netapp_api.NaApiError:
+            LOG.exception('Error listing snapmirror destinations for replica '
+                          '%s.', replica['id'])
+            return False
+
+        for destination in destinations:
+            if destination.get('destination-volume') in expected_dest_volumes:
+                LOG.debug('Found leftover source snapmirror relationship for '
+                          'replica %(replica)s to destination volume '
+                          '%(vol)s.',
+                          {'replica': replica['id'],
+                           'vol': destination.get('destination-volume')})
+                return True
+        return False
+
     def cleanup_previous_snapmirror_relationships(self, replica, replica_list):
         """Cleanup previous snapmirrors relationships for replica."""
         LOG.debug("Cleaning up old snapmirror relationships for replica %s.",

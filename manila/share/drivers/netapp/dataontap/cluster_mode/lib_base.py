@@ -3941,6 +3941,15 @@ class NetAppCmodeFileStorageLibrary(object):
         if replica['replica_state'] == constants.REPLICA_STATE_OUT_OF_SYNC:
             dm_session.cleanup_previous_snapmirror_relationships(
                 replica, replica_list)
+        elif dm_session.has_leftover_source_snapmirrors(replica, replica_list):
+            # NOTE(mescher): A replica that reached 'in-sync' can still carry a
+            # broken-off relationship left from when it was the active source,
+            # if the release was skipped during promotion because its host was
+            # unreachable at that time (see delete_snapmirror). Now that the
+            # host is reachable, release the leftover so it does not linger as
+            # an orphan on the backend. This does not affect the replica_state.
+            dm_session.cleanup_previous_snapmirror_relationships(
+                replica, replica_list)
 
         return constants.REPLICA_STATE_IN_SYNC
 

@@ -5104,6 +5104,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.mock_object(self.mock_dm_session,
                          'get_policy_from_share_replica_metadata',
                          mock.Mock(return_value=('MirrorAllSnapshots', False)))
+        self.mock_dm_session.has_leftover_source_snapmirrors = mock.Mock(
+            return_value=False)
 
         result = self.library.update_replica_state(None, [fake.SHARE],
                                                    fake.SHARE, None, [],
@@ -5111,6 +5113,53 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
         (self.mock_dm_session.cleanup_previous_snapmirror_relationships
          .assert_not_called())
+        self.assertEqual(constants.REPLICA_STATE_IN_SYNC, result)
+
+    def test_update_replica_state_in_sync_with_leftover_snapmirror(self):
+        # A replica already 'in-sync' that still has a leftover source-side
+        # relationship from when it was the active source must trigger a
+        # one-time cleanup, without changing the reported replica_state.
+        fake_snapmirror = {
+            'mirror-state': 'snapmirrored',
+            'schedule': self.library.configuration.netapp_snapmirror_schedule,
+            'source-vserver': 'fake_source_vserver',
+            'source-volume': 'fake_source_volume',
+            'policy-type': 'async',
+            'relationship-status': 'idle',
+            'last-transfer-end-timestamp': '%s' % float(time.time())
+        }
+        active_replica = fake.SHARE
+        in_sync_replica = copy.deepcopy(fake.SHARE)
+        in_sync_replica['replica_state'] = constants.REPLICA_STATE_IN_SYNC
+        replica_list = [in_sync_replica, active_replica]
+        vserver_client = mock.Mock()
+        self.mock_object(vserver_client, 'volume_exists',
+                         mock.Mock(return_value=True))
+        self.mock_object(self.library,
+                         '_get_vserver',
+                         mock.Mock(return_value=(fake.VSERVER1,
+                                                 vserver_client)))
+        self.mock_dm_session.get_snapmirrors = mock.Mock(
+            return_value=[fake_snapmirror])
+        self.mock_object(self.library,
+                         '_is_readable_replica',
+                         mock.Mock(return_value=False))
+        mock_backend_config = fake.get_config_cmode()
+        self.mock_object(data_motion, 'get_backend_configuration',
+                         mock.Mock(return_value=mock_backend_config))
+        self.mock_object(self.mock_dm_session,
+                         'get_policy_from_share_replica_metadata',
+                         mock.Mock(return_value=('MirrorAllSnapshots', False)))
+        self.mock_dm_session.has_leftover_source_snapmirrors = mock.Mock(
+            return_value=True)
+
+        result = self.library.update_replica_state(
+            None, replica_list, in_sync_replica, None, [], share_server=None)
+
+        (self.mock_dm_session.has_leftover_source_snapmirrors
+         .assert_called_once_with(in_sync_replica, replica_list))
+        (self.mock_dm_session.cleanup_previous_snapmirror_relationships
+         .assert_called_once_with(in_sync_replica, replica_list))
         self.assertEqual(constants.REPLICA_STATE_IN_SYNC, result)
 
     def test_update_replica_state_replica_change_to_in_sync(self):
@@ -5240,6 +5289,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         mock_backend_config = fake.get_config_cmode()
         self.mock_object(data_motion, 'get_backend_configuration',
                          mock.Mock(return_value=mock_backend_config))
+        self.mock_dm_session.has_leftover_source_snapmirrors = mock.Mock(
+            return_value=False)
 
         result = self.library.update_replica_state(None, [fake.SHARE],
                                                    fake.SHARE, None, snapshots,
