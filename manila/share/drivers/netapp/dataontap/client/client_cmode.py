@@ -2800,7 +2800,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 adaptive_qos_policy_group)
 
         # special case for multi-protocol shares:
-        if unix_permissions is not None:
+        if unix_permissions is not None and volume_type != 'dp':
             api_args['unix-permissions'] = unix_permissions
 
         if encrypt is not None:
