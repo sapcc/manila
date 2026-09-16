@@ -73,6 +73,7 @@ SM_PREPARING_STATE = 'preparing'
 SM_TRANSFERRING_STATE = 'transferring'
 SM_FINALIZING_STATE = 'finalizing'
 SM_SYNCHRONIZING_STATE = 'synchronizing'
+SM_UNINITIALIZED_STATE = 'uninitialized'
 
 
 class NetAppDriverException(exception.ShareBackendException):

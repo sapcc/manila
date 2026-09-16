@@ -1357,6 +1357,28 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
         # SnapMirror state instead of grinding through 3 retries.
         mock_client.mount_volume.assert_not_called()
 
+    def test_wait_for_mount_replica_clone_split_retries(self):
+        mock_client = mock.Mock()
+        self.mock_object(time, 'sleep')
+        mock_warning_log = self.mock_object(data_motion.LOG, 'warning')
+        mock_client.get_snapmirrors.return_value = [{
+            'policy-type': 'async_mirror',
+            'mirror-state': 'uninitialized',
+            'relationship-status': 'idle',
+            'last-transfer-error': (
+                'Failed to create snapshot snapmirror.foo on volume '
+                'bar. (Volume Clone Split is in progress on the source '
+                'volume.)'),
+        }]
+
+        self.assertRaises(exception.NetAppException,
+                          self.dm_session.wait_for_mount_replica,
+                          mock_client, fake.SHARE_NAME, timeout=30)
+
+        self.assertEqual(3, mock_client.get_snapmirrors.call_count)
+        self.assertEqual(3, mock_warning_log.call_count)
+        mock_client.mount_volume.assert_not_called()
+
     def test_wait_for_mount_replica_async_idle_mounts_immediately(self):
         """Async DP relationship in idle/snapmirrored should mount."""
 
