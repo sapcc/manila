@@ -881,24 +881,15 @@ class ShareManager(manager.SchedulerDependentManager):
             return available_share_servers
 
         for ss in available_share_servers[:]:
-            share_instances = self.db.share_instance_get_all_by_share_server(
-                context, ss['id'], with_share_data=True)
-            if not share_instances:
+            num_instances, instances_size_sum = (
+                self.db.share_instance_count_and_size_sum_by_server(
+                    context, ss['id']))
+            if num_instances == 0:
                 continue
-            share_instance_ids = [si['id'] for si in share_instances]
-            share_snapshot_instances = (
-                self.db.share_snapshot_instance_get_all_with_filters(
-                    context, {"share_instance_ids": share_instance_ids},
-                    with_share_data=True))
+            snapshot_size_sum = self.db.share_snapshot_size_sum_by_server(
+                context, ss['id'])
 
-            server_instances_size_sum = 0
-            num_instances = 0
-
-            server_instances_size_sum += sum(
-                instance['size'] for instance in share_instances)
-            server_instances_size_sum += sum(
-                instance['size'] for instance in share_snapshot_instances)
-            num_instances += len(share_instances)
+            server_instances_size_sum = instances_size_sum + snapshot_size_sum
 
             # NOTE(carloss): If a share instance was not provided, means that
             # a share group is being requested and there aren't shares to
