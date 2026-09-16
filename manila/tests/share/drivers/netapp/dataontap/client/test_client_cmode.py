@@ -3738,6 +3738,28 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         self.assertEqual(expected_api_args, result_api_args)
 
+    @ddt.data('rw', 'dp')
+    def test_get_create_volume_api_args_unix_permissions(self, volume_type):
+        """unix-permissions must not be set on DP (replica) volumes.
+
+        ONTAP rejects volume-create/volume-create-async with error 13001
+        ("Only volumes of type "RW" can be assigned UNIX permissions") when
+        unix-permissions is combined with volume-type=dp, which happens for
+        multi-protocol share replicas.
+        """
+        self.client.features.add_feature('FLEXVOL_ENCRYPTION')
+        cmnt = 'fake_comment'
+        unix_permissions = '0777'
+
+        result_api_args = self.client._get_create_volume_api_args(
+            fake.SHARE_NAME, False, None, None, None, volume_type, cmnt,
+            None, None, None, unix_permissions=unix_permissions)
+
+        if volume_type == 'dp':
+            self.assertNotIn('unix-permissions', result_api_args)
+        else:
+            self.assertEqual('0777', result_api_args['unix-permissions'])
+
     def test_get_create_volume_api_args_encrypted_not_supported(self):
 
         encrypt = True
