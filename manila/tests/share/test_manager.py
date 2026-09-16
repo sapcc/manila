@@ -3653,7 +3653,7 @@ class ShareManagerTestCase(test.TestCase):
         )
         share = db_utils.create_share(encryption_key_ref='fake_ref')
 
-        self.share_manager.driver.encryption_support = 'share_server'
+        self.share_manager.driver.encryption_support = ['share_server']
 
         db_method_mock = self.mock_object(
             db, 'share_network_subnets_get_all_by_availability_zone_id',
