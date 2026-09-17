@@ -786,7 +786,7 @@ class API(base.Base):
             az_request_multiple_subnet_support_map=None,
             mount_point_name=None, share_instance_id=None,
             encryption_key_ref=None, qos_type_id=None,
-            share_instance_metadata=None):
+            share_instance_metadata=None, is_replica=False):
 
         availability_zone_id = None
         if availability_zone:
@@ -832,7 +832,11 @@ class API(base.Base):
             'share_group_id': share['share_group_id'],
             'source_share_group_snapshot_member_id': share[
                 'source_share_group_snapshot_member_id'],
-            'snapshot_id': share['snapshot_id'],
+            # Replicas are placed on a different backend than the source
+            # share, so the snapshot origin is irrelevant for scheduling:
+            # capacity and affinity filters must not use snapshot_percentage
+            # or steer toward the snapshot host.
+            'snapshot_id': None if is_replica else share['snapshot_id'],
             'replication_type': share['replication_type'],
         }
         share_instance_properties = {
@@ -859,7 +863,7 @@ class API(base.Base):
             'share_instance_properties': share_instance_properties,
             'share_proto': share['share_proto'],
             'share_id': share['id'],
-            'snapshot_id': share['snapshot_id'],
+            'snapshot_id': None if is_replica else share['snapshot_id'],
             'snapshot_host': snapshot_host,
             'share_type': share_type,
             'share_group': share_group,
@@ -1016,7 +1020,8 @@ class API(base.Base):
                         az_request_multiple_subnet_support_map),
                     qos_type_id=qos_type_id,
                     share_instance_metadata=metadata,
-                    mount_point_name=active_replica.get('mount_point_name'))
+                    mount_point_name=active_replica.get('mount_point_name'),
+                    is_replica=True)
             )
             QUOTAS.commit(
                 context, reservations, project_id=share['project_id'],
