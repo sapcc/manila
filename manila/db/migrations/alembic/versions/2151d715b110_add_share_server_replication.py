@@ -33,6 +33,23 @@ LOG = log.getLogger(__name__)
 share_servers_table = 'share_servers'
 share_server_metadata_table = 'share_server_metadata'
 
+# New share_servers.status ENUM values introduced alongside share server
+# replication. On MySQL the status column is an ENUM, so the physical column
+# definition must be altered to accept these values; without this an upgraded
+# deployment raises LookupError when a row with one of these values is read.
+share_server_status_enum_new = (
+    'inactive', 'active', 'error', 'error_deleting', 'deleting',
+    'creating', 'deleted', 'manage_starting', 'unmanage_starting',
+    'unmanage_error', 'manage_error', 'server_migrating',
+    'server_migrating_to', 'network_change', 'replication_change',
+)
+share_server_status_enum_old = (
+    'inactive', 'active', 'error', 'deleting',
+    'creating', 'deleted', 'manage_starting', 'unmanage_starting',
+    'unmanage_error', 'manage_error', 'server_migrating',
+    'server_migrating_to', 'network_change',
+)
+
 
 def upgrade():
     try:
@@ -48,6 +65,21 @@ def upgrade():
     mysql_dl = context.bind.dialect.name == 'mysql'
     datetime_type = (sa.dialects.mysql.DATETIME(fsp=6)
                      if mysql_dl else sa.DateTime)
+
+    # Teach the DB about the new status values ('error_deleting',
+    # 'replication_change'). Only MySQL enforces the ENUM at the column level;
+    # other backends store status as a plain string and need no change.
+    if mysql_dl:
+        try:
+            op.alter_column(
+                share_servers_table, 'status',
+                existing_type=sa.Enum(*share_server_status_enum_old),
+                type_=sa.Enum(*share_server_status_enum_new),
+                existing_nullable=True)
+        except Exception:
+            LOG.error("Column 'status' ENUM can not be altered for the "
+                      "'share_servers' table!")
+            raise
 
     try:
         op.create_table(
@@ -76,6 +108,31 @@ def downgrade():
     except Exception:
         LOG.error("%s table not dropped", share_server_metadata_table)
         raise
+
+    context = op.get_context()
+    mysql_dl = context.bind.dialect.name == 'mysql'
+
+    if mysql_dl:
+        # Rows carrying a status value that the reverted ENUM does not accept
+        # would break the ALTER; map them to 'error' first.
+        try:
+            share_servers = sa.Table(
+                share_servers_table, sa.MetaData(),
+                autoload_with=op.get_bind())
+            op.execute(
+                share_servers.update().where(
+                    share_servers.c.status.in_(
+                        ('error_deleting', 'replication_change'))
+                ).values(status='error'))
+            op.alter_column(
+                share_servers_table, 'status',
+                existing_type=sa.Enum(*share_server_status_enum_new),
+                type_=sa.Enum(*share_server_status_enum_old),
+                existing_nullable=True)
+        except Exception:
+            LOG.error("Column 'status' ENUM can not be reverted for the "
+                      "'share_servers' table!")
+            raise
 
     try:
         op.drop_column(share_servers_table, 'replica_state')
