@@ -1584,11 +1584,14 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
         mock_dest_client.get_cluster_name.return_value = (
             fake.CLUSTER_NAME_2)
         self.mock_object(
-            self.dm_session, 'get_client_and_vserver_name',
-            mock.Mock(return_value=(mock_src_client, 'src_vs')))
+            self.dm_session, 'get_backend_name_and_config_obj',
+            mock.Mock(return_value=(fake.BACKEND_NAME, None)))
+        self.mock_object(
+            self.dm_session, 'get_vserver_from_share_server',
+            mock.Mock(return_value='src_vs'))
         self.mock_object(
             data_motion, 'get_client_for_backend',
-            mock.Mock(return_value=mock_dest_client))
+            mock.Mock(side_effect=[mock_src_client, mock_dest_client]))
         mock_config = na_fakes.create_configuration()
         mock_config.netapp_vserver_name_template = 'os_%s'
         mock_config.netapp_aggregate_name_search_pattern = 'aggr.*'
@@ -1732,11 +1735,14 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
         mock_dest_client.get_cluster_name.return_value = (
             fake.CLUSTER_NAME_2)
         self.mock_object(
-            self.dm_session, 'get_client_and_vserver_name',
-            mock.Mock(return_value=(mock_src_client, 'src_vs')))
+            self.dm_session, 'get_backend_name_and_config_obj',
+            mock.Mock(return_value=(fake.BACKEND_NAME, None)))
+        self.mock_object(
+            self.dm_session, 'get_vserver_from_share_server',
+            mock.Mock(return_value='src_vs'))
         self.mock_object(
             data_motion, 'get_client_for_backend',
-            mock.Mock(return_value=mock_dest_client))
+            mock.Mock(side_effect=[mock_src_client, mock_dest_client]))
         mock_config = na_fakes.create_configuration()
         mock_config.netapp_vserver_name_template = 'os_%s'
         mock_config.netapp_aggregate_name_search_pattern = 'aggr.*'
@@ -1910,11 +1916,18 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
 
     def test_delete_svm_snapmirror_relationship_no_snapmirrors(self):
         self.mock_object(
+            self.dm_session, 'get_backend_name_and_config_obj',
+            mock.Mock(return_value=(fake.BACKEND_NAME, None)))
+        self.mock_object(
+            self.dm_session, 'get_vserver_from_share_server',
+            mock.Mock(return_value=self.dest_vserver))
+        self.mock_object(
+            data_motion, 'get_client_for_backend',
+            mock.Mock(return_value=self.mock_dest_client))
+        self.mock_object(
             self.dm_session, 'get_client_and_vserver_name',
-            mock.Mock(side_effect=[
-                (self.mock_dest_client, self.dest_vserver),
-                (self.mock_src_client, self.source_vserver),
-            ]))
+            mock.Mock(return_value=(self.mock_src_client,
+                                    self.source_vserver)))
         dest_get_sm = self.mock_dest_client.get_snapmirror_relationships
         dest_get_sm.return_value = []
 
