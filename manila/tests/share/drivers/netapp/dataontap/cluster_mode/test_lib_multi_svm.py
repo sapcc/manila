@@ -523,16 +523,21 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.mock_object(
             self.library, '_get_backend_share_name',
             mock.Mock(return_value='fake_vol_name'))
-        mock_get_volume = self.mock_object(
-            self.client, 'get_volume_details',
-            mock.Mock(return_value={
-                'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED}))
+        rest_client = mock.Mock()
+        rest_client.get_volume_details.return_value = {
+            'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED}
+        mock_get_client = self.mock_object(
+            data_motion, 'get_client_for_backend',
+            mock.Mock(return_value=rest_client))
 
         result = self.library._verify_smas_protected(
             fake.SHARE, share_server)
 
         self.assertIsNone(result)
-        mock_get_volume.assert_called_once_with(
+        mock_get_client.assert_called_once_with(
+            self.library._backend_name, vserver_name=fake.VSERVER1,
+            force_rest_client=True)
+        rest_client.get_volume_details.assert_called_once_with(
             fake.VSERVER1, 'fake_vol_name',
             fields='smas_protection,uuid')
 
@@ -547,9 +552,11 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.mock_object(
             self.library, '_get_backend_share_name',
             mock.Mock(return_value='fake_vol_name'))
+        rest_client = mock.Mock()
+        rest_client.get_volume_details.return_value = volume
         self.mock_object(
-            self.client, 'get_volume_details',
-            mock.Mock(return_value=volume))
+            data_motion, 'get_client_for_backend',
+            mock.Mock(return_value=rest_client))
 
         self.assertRaises(
             exception.NetAppException,
@@ -563,12 +570,19 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             mock.Mock(return_value='fake_vol_name'))
         mock_verify = self.mock_object(
             self.library, '_verify_smas_protected')
+        rest_client = mock.Mock()
+        mock_get_client = self.mock_object(
+            data_motion, 'get_client_for_backend',
+            mock.Mock(return_value=rest_client))
 
         result = self.library._protect_smas_volume_after_break(
             fake.SHARE, share_server)
 
         self.assertIsNone(result)
-        self.client.patch_volume.assert_called_once_with(
+        mock_get_client.assert_called_once_with(
+            self.library._backend_name, vserver_name=fake.VSERVER1,
+            force_rest_client=True)
+        rest_client.patch_volume.assert_called_once_with(
             fake.VSERVER1, 'fake_vol_name',
             {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED})
         mock_verify.assert_called_once_with(fake.SHARE, share_server)
@@ -738,21 +752,26 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
     def test_unprotect_smas_share_no_vserver_name(self):
         share_server = {'backend_details': {}}
+        mock_get_client = self.mock_object(
+            data_motion, 'get_client_for_backend')
 
         result = self.library._unprotect_smas_share(
             fake.SHARE, share_server)
 
         self.assertIsNone(result)
-        self.client.get_volume_details.assert_not_called()
+        mock_get_client.assert_not_called()
 
     def test_unprotect_smas_share_source_volume_gone(self):
         share_server = copy.deepcopy(fake.SHARE_SERVER)
         self.mock_object(
             self.library, '_get_backend_share_name',
             mock.Mock(return_value='fake_vol_name'))
+        rest_client = mock.Mock()
+        rest_client.get_volume_details.side_effect = (
+            exception.NetAppException('gone'))
         self.mock_object(
-            self.client, 'get_volume_details',
-            mock.Mock(side_effect=exception.NetAppException('gone')))
+            data_motion, 'get_client_for_backend',
+            mock.Mock(return_value=rest_client))
 
         result = self.library._unprotect_smas_share(
             fake.SHARE, share_server)
@@ -764,26 +783,30 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.mock_object(
             self.library, '_get_backend_share_name',
             mock.Mock(return_value='fake_vol_name'))
+        rest_client = mock.Mock()
+        rest_client.get_volume_details.return_value = {
+            'smas_protection': na_utils.SMAS_PROTECTION_UNPROTECTED}
         self.mock_object(
-            self.client, 'get_volume_details',
-            mock.Mock(return_value={
-                'smas_protection': na_utils.SMAS_PROTECTION_UNPROTECTED}))
+            data_motion, 'get_client_for_backend',
+            mock.Mock(return_value=rest_client))
 
         result = self.library._unprotect_smas_share(
             fake.SHARE, share_server)
 
         self.assertIsNone(result)
-        self.client.patch_volume.assert_not_called()
+        rest_client.patch_volume.assert_not_called()
 
     def test_unprotect_smas_share_no_relationship(self):
         share_server = copy.deepcopy(fake.SHARE_SERVER)
         self.mock_object(
             self.library, '_get_backend_share_name',
             mock.Mock(return_value='fake_vol_name'))
+        rest_client = mock.Mock()
+        rest_client.get_volume_details.return_value = {
+            'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED}
         self.mock_object(
-            self.client, 'get_volume_details',
-            mock.Mock(return_value={
-                'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED}))
+            data_motion, 'get_client_for_backend',
+            mock.Mock(return_value=rest_client))
         self.mock_object(
             self.library, '_get_smas_relationship_from_share_server',
             mock.Mock(return_value=None))
@@ -793,17 +816,19 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             self.library._unprotect_smas_share,
             fake.SHARE, share_server)
 
-        self.client.patch_volume.assert_not_called()
+        rest_client.patch_volume.assert_not_called()
 
     def test_unprotect_smas_share_not_in_sync(self):
         share_server = copy.deepcopy(fake.SHARE_SERVER)
         self.mock_object(
             self.library, '_get_backend_share_name',
             mock.Mock(return_value='fake_vol_name'))
+        rest_client = mock.Mock()
+        rest_client.get_volume_details.return_value = {
+            'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED}
         self.mock_object(
-            self.client, 'get_volume_details',
-            mock.Mock(return_value={
-                'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED}))
+            data_motion, 'get_client_for_backend',
+            mock.Mock(return_value=rest_client))
         self.mock_object(
             self.library, '_get_smas_relationship_from_share_server',
             mock.Mock(return_value={'state': 'out_of_sync'}))
@@ -817,19 +842,21 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             fake.SHARE, share_server)
 
         mock_wait.assert_called_once_with(share_server)
-        self.client.patch_volume.assert_not_called()
+        rest_client.patch_volume.assert_not_called()
 
     def test_unprotect_smas_share_waits_out_transient_state(self):
         share_server = copy.deepcopy(fake.SHARE_SERVER)
         self.mock_object(
             self.library, '_get_backend_share_name',
             mock.Mock(return_value='fake_vol_name'))
+        rest_client = mock.Mock()
+        rest_client.get_volume_details.side_effect = [
+            {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED},
+            {'smas_protection': na_utils.SMAS_PROTECTION_UNPROTECTED},
+        ]
         self.mock_object(
-            self.client, 'get_volume_details',
-            mock.Mock(side_effect=[
-                {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED},
-                {'smas_protection': na_utils.SMAS_PROTECTION_UNPROTECTED},
-            ]))
+            data_motion, 'get_client_for_backend',
+            mock.Mock(return_value=rest_client))
         self.mock_object(
             self.library, '_get_smas_relationship_from_share_server',
             mock.Mock(return_value={'state': 'shrinking'}))
@@ -845,7 +872,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
         self.assertIsNone(result)
         mock_wait.assert_called_once_with(share_server)
-        self.client.patch_volume.assert_called_once_with(
+        rest_client.patch_volume.assert_called_once_with(
             fake.VSERVER1, 'fake_vol_name',
             {'smas_protection': na_utils.SMAS_PROTECTION_UNPROTECTED})
 
@@ -854,12 +881,14 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.mock_object(
             self.library, '_get_backend_share_name',
             mock.Mock(return_value='fake_vol_name'))
+        rest_client = mock.Mock()
+        rest_client.get_volume_details.side_effect = [
+            {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED},
+            {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED},
+        ]
         self.mock_object(
-            self.client, 'get_volume_details',
-            mock.Mock(side_effect=[
-                {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED},
-                {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED},
-            ]))
+            data_motion, 'get_client_for_backend',
+            mock.Mock(return_value=rest_client))
         self.mock_object(
             self.library, '_get_smas_relationship_from_share_server',
             mock.Mock(return_value={'state': na_utils.SM_IN_SYNC_STATE}))
@@ -871,7 +900,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             self.library._unprotect_smas_share,
             fake.SHARE, share_server)
 
-        self.client.patch_volume.assert_called_once_with(
+        rest_client.patch_volume.assert_called_once_with(
             fake.VSERVER1, 'fake_vol_name',
             {'smas_protection': na_utils.SMAS_PROTECTION_UNPROTECTED})
         mock_get_peer.assert_not_called()
@@ -881,12 +910,14 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.mock_object(
             self.library, '_get_backend_share_name',
             mock.Mock(return_value='fake_vol_name'))
+        rest_client = mock.Mock()
+        rest_client.get_volume_details.side_effect = [
+            {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED},
+            {'smas_protection': na_utils.SMAS_PROTECTION_UNPROTECTED},
+        ]
         self.mock_object(
-            self.client, 'get_volume_details',
-            mock.Mock(side_effect=[
-                {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED},
-                {'smas_protection': na_utils.SMAS_PROTECTION_UNPROTECTED},
-            ]))
+            data_motion, 'get_client_for_backend',
+            mock.Mock(return_value=rest_client))
         self.mock_object(
             self.library, '_get_smas_relationship_from_share_server',
             mock.Mock(return_value={'state': na_utils.SM_IN_SYNC_STATE}))
@@ -904,12 +935,14 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.mock_object(
             self.library, '_get_backend_share_name',
             mock.Mock(return_value='fake_vol_name'))
+        rest_client = mock.Mock()
+        rest_client.get_volume_details.side_effect = [
+            {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED},
+            {'smas_protection': na_utils.SMAS_PROTECTION_UNPROTECTED},
+        ]
         self.mock_object(
-            self.client, 'get_volume_details',
-            mock.Mock(side_effect=[
-                {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED},
-                {'smas_protection': na_utils.SMAS_PROTECTION_UNPROTECTED},
-            ]))
+            data_motion, 'get_client_for_backend',
+            mock.Mock(return_value=rest_client))
         self.mock_object(
             self.library, '_get_smas_relationship_from_share_server',
             mock.Mock(return_value={'state': na_utils.SM_IN_SYNC_STATE}))
@@ -929,12 +962,14 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.mock_object(
             self.library, '_get_backend_share_name',
             mock.Mock(return_value='fake_vol_name'))
+        rest_client = mock.Mock()
+        rest_client.get_volume_details.side_effect = [
+            {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED},
+            {'smas_protection': na_utils.SMAS_PROTECTION_UNPROTECTED},
+        ]
         self.mock_object(
-            self.client, 'get_volume_details',
-            mock.Mock(side_effect=[
-                {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED},
-                {'smas_protection': na_utils.SMAS_PROTECTION_UNPROTECTED},
-            ]))
+            data_motion, 'get_client_for_backend',
+            mock.Mock(return_value=rest_client))
         self.mock_object(
             self.library, '_get_smas_relationship_from_share_server',
             mock.Mock(return_value={'state': na_utils.SM_IN_SYNC_STATE}))
@@ -952,7 +987,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
         self.assertIsNone(result)
         mock_wait.assert_not_called()
-        self.client.patch_volume.assert_called_once_with(
+        rest_client.patch_volume.assert_called_once_with(
             fake.VSERVER1, 'fake_vol_name',
             {'smas_protection': na_utils.SMAS_PROTECTION_UNPROTECTED})
         mock_peer_client.patch_volume.assert_called_once_with(
@@ -965,12 +1000,14 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.mock_object(
             self.library, '_get_backend_share_name',
             mock.Mock(return_value='fake_vol_name'))
+        rest_client = mock.Mock()
+        rest_client.get_volume_details.side_effect = [
+            {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED},
+            {'smas_protection': na_utils.SMAS_PROTECTION_UNPROTECTED},
+        ]
         self.mock_object(
-            self.client, 'get_volume_details',
-            mock.Mock(side_effect=[
-                {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED},
-                {'smas_protection': na_utils.SMAS_PROTECTION_UNPROTECTED},
-            ]))
+            data_motion, 'get_client_for_backend',
+            mock.Mock(return_value=rest_client))
         self.mock_object(
             self.library, '_get_smas_relationship_from_share_server',
             mock.Mock(return_value={'state': na_utils.SM_IN_SYNC_STATE}))
@@ -995,12 +1032,14 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.mock_object(
             self.library, '_get_backend_share_name',
             mock.Mock(return_value='fake_vol_name'))
+        rest_client = mock.Mock()
+        rest_client.get_volume_details.side_effect = [
+            {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED},
+            {'smas_protection': na_utils.SMAS_PROTECTION_UNPROTECTED},
+        ]
         self.mock_object(
-            self.client, 'get_volume_details',
-            mock.Mock(side_effect=[
-                {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED},
-                {'smas_protection': na_utils.SMAS_PROTECTION_UNPROTECTED},
-            ]))
+            data_motion, 'get_client_for_backend',
+            mock.Mock(return_value=rest_client))
         self.mock_object(
             self.library, '_get_smas_relationship_from_share_server',
             mock.Mock(return_value={'state': na_utils.SM_IN_SYNC_STATE}))
@@ -5123,7 +5162,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             fake.NETWORK_INFO_LIST, replica_share_server)
 
         data_motion.get_client_for_backend.assert_called_once_with(
-            fake.BACKEND_NAME_2)
+            fake.BACKEND_NAME_2, force_rest_client=True)
         if existing_ipspace in (None, 'Default', 'Cluster'):
             mock_create_ipspace.assert_called_once_with(
                 fake.NETWORK_INFO_LIST[0], client=mock_dest_client)
@@ -5694,16 +5733,17 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         delete_sm = dm_session_mock.delete_svm_snapmirror_relationship
         delete_sm.assert_called_once_with(fake_src_ss, fake_dest_ss)
         dm_session_mock.convert_svm_to_default_subtype.assert_called_once_with(
-            dest_vserver, mock_dest_client,
+            dest_vserver, mock_cluster_client,
             timeout=na_utils.SMAS_DELETE_POLL_TIMEOUT)
         self.library._cleanup_flexclones_on_svm.assert_called_once_with(
-            dest_vserver, mock_dest_client)
+            dest_vserver, mock_cluster_client)
         self.library._cleanup_data_volumes_on_svm.assert_called_once_with(
-            dest_vserver, mock_dest_client)
+            dest_vserver, mock_cluster_client)
         self.library._delete_cifs_service_force.assert_called_once_with(
-            dest_vserver, mock_dest_client)
+            dest_vserver, mock_cluster_client)
         self.library._delete_svm_peer.assert_called_once_with(
-            src_vserver, dest_vserver, mock_src_client, mock_dest_client)
+            src_vserver, dest_vserver, mock_cluster_client,
+            mock_cluster_client)
         data_motion.get_client_for_backend.assert_called()
         self.library._get_vserver_custom_ipspace.assert_called_once_with(
             mock_cluster_client, dest_vserver)
@@ -5848,11 +5888,12 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             None, fake_dest_ss_replica, fake_replica_list)
 
         self.library._cleanup_data_volumes_on_svm.assert_called_once_with(
-            dest_vserver, mock_dest_client)
+            dest_vserver, mock_cluster_client)
         self.library._delete_cifs_service_force.assert_called_once_with(
-            dest_vserver, mock_dest_client)
+            dest_vserver, mock_cluster_client)
         self.library._delete_svm_peer.assert_called_once_with(
-            src_vserver, dest_vserver, mock_src_client, mock_dest_client)
+            src_vserver, dest_vserver, mock_cluster_client,
+            mock_cluster_client)
         mock_cluster_client.delete_vserver.assert_called_once()
 
     def test_delete_share_server_replica_step3_failure(self):
