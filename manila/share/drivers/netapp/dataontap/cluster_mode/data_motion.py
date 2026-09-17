@@ -837,13 +837,22 @@ class DataMotionSession(object):
         """
         init_state = self._get_svm_relationship_init_state(replication_type)
 
-        src_client, src_vserver = self.get_client_and_vserver_name(
-            source_share_server)
+        # NOTE: The SM-as NAS flow (version gate, cluster peering and mediator
+        # checks, and the SnapMirror relationship create/get calls below) is
+        # only implemented on the REST client. Force REST clients here so the
+        # flow works on backends still configured with netapp_use_legacy_client
+        # (ZAPI), mirroring share_server_migrate / lib_multi_svm.
+        src_backend, __ = self.get_backend_name_and_config_obj(
+            source_share_server.get('host'))
+        src_vserver = self.get_vserver_from_share_server(source_share_server)
+        src_client = get_client_for_backend(
+            src_backend, vserver_name=src_vserver, force_rest_client=True)
 
         dest_backend = share_utils.extract_host(
             replica_share_server['host'], level='backend_name')
         dest_config = get_backend_configuration(dest_backend)
-        dest_client = get_client_for_backend(dest_backend)
+        dest_client = get_client_for_backend(
+            dest_backend, force_rest_client=True)
 
         dp_dest_svm_name = (dest_config.netapp_vserver_name_template
                             % replica_share_server['id'])
@@ -1479,8 +1488,15 @@ class DataMotionSession(object):
         :param src_share_server: source share server dict.
         :param dest_share_server: destination (replica) share server dict.
         """
-        dest_client, dest_vserver = self.get_client_and_vserver_name(
-            dest_share_server)
+        # NOTE: The SVM SnapMirror relationship lookup/delete below is only
+        # implemented on the REST client. Force a REST client so the SM-as
+        # delete flow works on backends still configured with
+        # netapp_use_legacy_client (ZAPI).
+        dest_backend, __ = self.get_backend_name_and_config_obj(
+            dest_share_server.get('host'))
+        dest_vserver = self.get_vserver_from_share_server(dest_share_server)
+        dest_client = get_client_for_backend(
+            dest_backend, vserver_name=dest_vserver, force_rest_client=True)
         _, src_vserver = self.get_client_and_vserver_name(
             src_share_server)
 

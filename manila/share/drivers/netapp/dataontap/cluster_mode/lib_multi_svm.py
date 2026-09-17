@@ -911,7 +911,8 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
 
         dest_backend = share_utils.extract_host(
             replica_share_server['host'], level='backend_name')
-        dest_client = data_motion.get_client_for_backend(dest_backend)
+        dest_client = data_motion.get_client_for_backend(
+            dest_backend, force_rest_client=True)
 
         node_name = dest_client.list_cluster_nodes()[0]
         port = self._get_node_data_port(node_name, client=dest_client)
@@ -958,7 +959,8 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         dest_backend = share_utils.extract_host(
             replica_share_server['host'], level='backend_name')
         dest_config = data_motion.get_backend_configuration(dest_backend)
-        dest_client = data_motion.get_client_for_backend(dest_backend)
+        dest_client = data_motion.get_client_for_backend(
+            dest_backend, force_rest_client=True)
         backend_details = replica_share_server.get('backend_details') or {}
         dp_dest_svm_name = (backend_details.get('vserver_name')
                             or dest_config.netapp_vserver_name_template
@@ -1206,7 +1208,8 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         peer_backend = share_utils.extract_host(
             peer_host, level='backend_name')
         peer_config = data_motion.get_backend_configuration(peer_backend)
-        peer_client = data_motion.get_client_for_backend(peer_backend)
+        peer_client = data_motion.get_client_for_backend(
+            peer_backend, force_rest_client=True)
         peer_backend_details = peer_server.get('backend_details') or {}
         dp_dest_svm = (peer_backend_details.get('vserver_name')
                        or peer_config.netapp_vserver_name_template
@@ -1264,6 +1267,20 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             msg % {'share': share_id, 'replica': replica_id,
                    'state': state})
 
+    def _get_smas_rest_client(self, share_server, vserver_name):
+        """REST client for a share server's backend, scoped to its vserver.
+
+        The smas_protection volume field (get_volume_details / patch_volume) is
+        REST-only, so force a REST client even on netapp_use_legacy_client
+        backends. Derive the backend from the share server's host (the config
+        stanza), not self._backend_name (the logical share_backend_name, which
+        is not a stanza).
+        """
+        backend = share_utils.extract_host(
+            share_server['host'], level='backend_name')
+        return data_motion.get_client_for_backend(
+            backend, vserver_name=vserver_name, force_rest_client=True)
+
     def _verify_smas_protected(self, share, share_server):
         """Read-back ONTAP smas_protection; raise unless protected."""
         backend_details = share_server.get('backend_details') or {}
@@ -1273,7 +1290,8 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                     "backend details are missing the vserver name.")
             raise exception.VserverNotSpecified(msg)
         share_name = self._get_backend_share_name(share['id'])
-        volume = self._client.get_volume_details(
+        rest_client = self._get_smas_rest_client(share_server, src_svm)
+        volume = rest_client.get_volume_details(
             src_svm, share_name,
             fields='smas_protection,uuid')
         if (volume.get('smas_protection')
@@ -1295,7 +1313,8 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                     "vserver name.")
             raise exception.NetAppException(msg)
         share_name = self._get_backend_share_name(share['id'])
-        self._client.patch_volume(
+        rest_client = self._get_smas_rest_client(share_server, dest_svm)
+        rest_client.patch_volume(
             dest_svm, share_name,
             {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED})
         self._verify_smas_protected(share, share_server)
@@ -1586,7 +1605,8 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                        or peer_config.netapp_vserver_name_template
                        % peer_server.get('id'))
         try:
-            peer_client = data_motion.get_client_for_backend(peer_backend)
+            peer_client = data_motion.get_client_for_backend(
+                peer_backend, force_rest_client=True)
         except Exception:
             return peer_server, None, dp_dest_svm
         return peer_server, peer_client, dp_dest_svm
@@ -1603,8 +1623,9 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         if not src_svm:
             return
         share_volume_name = self._get_backend_share_name(share['id'])
+        rest_client = self._get_smas_rest_client(share_server, src_svm)
         try:
-            volume = self._client.get_volume_details(
+            volume = rest_client.get_volume_details(
                 src_svm, share_volume_name,
                 fields='smas_protection,uuid')
         except exception.NetAppException:
@@ -1621,12 +1642,12 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         self._wait_for_smas_in_sync_or_reject(share['id'], share_server)
 
         # Step 2: Unprotect the share.
-        self._client.patch_volume(
+        rest_client.patch_volume(
             src_svm, share_volume_name,
             {'smas_protection': na_utils.SMAS_PROTECTION_UNPROTECTED})
 
         # Post-job verification (single GET, no poll).
-        vol_info = self._client.get_volume_details(
+        vol_info = rest_client.get_volume_details(
             src_svm, share_volume_name, fields='smas_protection,uuid')
         if (vol_info.get('smas_protection')
                 == na_utils.SMAS_PROTECTION_PROTECTED):
@@ -3281,7 +3302,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         dest_backend_name = share_utils.extract_host(
             dest_share_server['host'], level='backend_name')
         try:
-            dest_vserver, dest_client = self._get_vserver(
+            dest_vserver, _dest_client = self._get_vserver(
                 share_server=dest_share_server,
                 backend_name=dest_backend_name)
         except exception.VserverNotFound:
@@ -3296,8 +3317,19 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         share_server = active_replica['share_server']
         src_backend_name = share_utils.extract_host(
             share_server['host'], level='backend_name')
-        src_vserver, src_client = self._get_vserver(
+        src_vserver, _src_client = self._get_vserver(
             share_server=share_server, backend_name=src_backend_name)
+
+        # The SVM cleanup below (volume/CIFS/peer deletes) is REST-only. Use
+        # _get_vserver above only to resolve/validate the vservers, then force
+        # REST clients so this works on backends configured with
+        # netapp_use_legacy_client (ZAPI).
+        dest_client = data_motion.get_client_for_backend(
+            dest_backend_name, vserver_name=dest_vserver,
+            force_rest_client=True)
+        src_client = data_motion.get_client_for_backend(
+            src_backend_name, vserver_name=src_vserver,
+            force_rest_client=True)
 
         LOG.debug('Deleting share server replica from source SVM %(src)s '
                   'to destination SVM %(dest)s.',
@@ -3366,7 +3398,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
 
         # Fetch destination SVM's custom IPspace name before it is deleted.
         dest_cluster_client = data_motion.get_client_for_backend(
-            dest_backend_name)
+            dest_backend_name, force_rest_client=True)
         dest_ipspace_name = None
         try:
             dest_ipspace_name = self._get_vserver_custom_ipspace(
@@ -3378,7 +3410,8 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         # Destination SVM delete.
         try:
             dest_vserver_client = data_motion.get_client_for_backend(
-                dest_backend_name, vserver_name=dest_vserver)
+                dest_backend_name, vserver_name=dest_vserver,
+                force_rest_client=True)
             dest_cluster_client.delete_vserver(
                 dest_vserver, dest_vserver_client)
             LOG.info('Deleted destination SVM %(dest)s.',
@@ -3479,9 +3512,9 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             dest_share_server['host'], level='backend_name')
 
         src_cluster_client = data_motion.get_client_for_backend(
-            src_backend_name)
+            src_backend_name, force_rest_client=True)
         dest_cluster_client = data_motion.get_client_for_backend(
-            dest_backend_name)
+            dest_backend_name, force_rest_client=True)
 
         return (src_vserver, dest_vserver, src_cluster_client,
                 dest_cluster_client)
