@@ -5185,22 +5185,14 @@ class NetAppRestClient(object):
 
     @na_utils.trace
     def _sort_data_ports_by_speed(self, ports):
-        """Sort ports by speed."""
+        """Sort ports by speed, fastest first.
 
-        def sort_key(port):
-            value = port.get('speed')
-            if not (value and isinstance(value, str)):
-                return 0
-            elif value.isdigit():
-                return int(value)
-            elif value == 'auto':
-                return 3
-            elif value == 'undef':
-                return 2
-            else:
-                return 1
-
-        return sorted(ports, key=sort_key, reverse=True)
+        ONTAP REST returns ``speed`` as an int (e.g. 100000); a missing speed
+        sorts last. Sorting fastest-first means a slow port (e.g. a management
+        port at 1000) ranks below fast data ports.
+        """
+        return sorted(ports, key=lambda port: port.get('speed') or 0,
+                      reverse=True)
 
     @na_utils.trace
     def get_node_data_ports(self, node):
@@ -5208,9 +5200,9 @@ class NetAppRestClient(object):
         query = {
             'node.name': node,
             'state': 'up',
-            'type': 'physical',
-            'broadcast_domain.name': 'Default',
-            'fields': 'node.name,speed,name'
+            'type': 'physical|lag',
+            'broadcast_domain.ipspace.name': '!Cluster',
+            'fields': 'node.name,speed,name,type,lag.member_ports'
         }
 
         result = self.send_request('/network/ethernet/ports', 'get',
@@ -5221,30 +5213,25 @@ class NetAppRestClient(object):
         ports = []
         if net_port_info_list:
 
-            # NOTE(pulluri): This query selects the ports that are
-            # being exclusively used for data management
-            query_interfaces = {
-                'service_policy.name': '!default-management',
-                'services': 'data_*',
-                'fields': 'location.port.name'
-            }
-            response = self.send_request('/network/ip/interfaces', 'get',
-                                         query=query_interfaces,
-                                         enable_tunneling=False)
-
-            data_ports = set(
-                [record['location']['port']['name']
-                    for record in response.get('records', [])]
-            )
+            # Skip physical ports that are members of an interface group; the
+            # data LIF is hosted on the LAG, not on its members.
+            member_port_names = set()
+            for port_info in net_port_info_list:
+                if port_info.get('type') == 'lag':
+                    for member in (port_info.get('lag') or {}).get(
+                            'member_ports', []):
+                        member_port_names.add(member['name'])
 
             for port_info in net_port_info_list:
-                if port_info['name'] in data_ports:
-                    port = {
-                        'node': port_info['node']['name'],
-                        'port': port_info['name'],
-                        'speed': port_info['speed'],
-                    }
-                    ports.append(port)
+                if (port_info.get('type') == 'physical'
+                        and port_info['name'] in member_port_names):
+                    continue
+                port = {
+                    'node': port_info['node']['name'],
+                    'port': port_info['name'],
+                    'speed': port_info['speed'],
+                }
+                ports.append(port)
 
             ports = self._sort_data_ports_by_speed(ports)
 
