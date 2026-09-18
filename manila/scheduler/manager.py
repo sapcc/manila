@@ -75,7 +75,7 @@ MAPPING = {
 class SchedulerManager(manager.Manager):
     """Chooses a host to create shares."""
 
-    RPC_API_VERSION = '1.11'
+    RPC_API_VERSION = '1.12'
 
     def __init__(self, scheduler_driver=None, service_name=None,
                  *args, **kwargs):
@@ -338,6 +338,42 @@ class SchedulerManager(manager.Manager):
             with excutils.save_and_reraise_exception():
                 self._set_share_replica_error_state(
                     context, 'create_share_replica', exc, request_spec)
+
+    def _set_share_server_replica_error_state(self, context, method, exc,
+                                              request_spec, action=None):
+
+        LOG.warning("Failed to schedule_%(method)s: %(exc)s",
+                    {'method': method, 'exc': exc})
+        replica_id = request_spec.get('share_server_replica_id')
+        if not replica_id:
+            return
+
+        db.share_server_update(
+            context, replica_id,
+            {'status': constants.STATUS_ERROR,
+             'replica_state': constants.STATUS_ERROR})
+
+        if action:
+            self.message_api.create(
+                context, action, context.project_id,
+                resource_type=message_field.Resource.SHARE_SERVER_REPLICA,
+                resource_id=replica_id, exception=exc)
+
+    def create_share_server_replica(self, context, request_spec=None,
+                                    filter_properties=None):
+        try:
+            self.driver.schedule_create_share_server_replica(
+                context, request_spec, filter_properties)
+
+        except exception.NoValidHost as exc:
+            self._set_share_server_replica_error_state(
+                context, 'create_share_server_replica', exc, request_spec,
+                message_field.Action.ALLOCATE_HOST)
+
+        except Exception as exc:
+            with excutils.save_and_reraise_exception():
+                self._set_share_server_replica_error_state(
+                    context, 'create_share_server_replica', exc, request_spec)
 
     @periodic_task.periodic_task(spacing=CONF.message_reap_interval,
                                  run_immediately=True)

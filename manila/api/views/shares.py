@@ -40,6 +40,7 @@ class ViewBuilder(common.ViewBuilder):
         "add_share_recycle_bin_field",
         "add_source_backup_id_field",
         "add_encryption_key_ref_field",
+        "add_protected_via_share_server_replica_field",
     ]
 
     def summary_list(self, request, shares, count=None):
@@ -216,3 +217,10 @@ class ViewBuilder(common.ViewBuilder):
     def add_encryption_key_ref_field(self, context, share_dict, share):
         share_dict['encryption_key_ref'] = share.get('instance', {}).get(
             'encryption_key_ref')
+
+    @common.ViewBuilder.versioned_method("2.100")
+    def add_protected_via_share_server_replica_field(
+            self, context, share_dict, share):
+        if 'protected_via_share_server_replica' in share:
+            share_dict['protected_via_share_server_replica'] = share.get(
+                'protected_via_share_server_replica')

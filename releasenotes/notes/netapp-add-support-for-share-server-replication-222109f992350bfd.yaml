@@ -1,0 +1,8 @@
+---
+features:
+  - |
+    The NetApp ONTAP driver now supports share server replication (DHSS=True)
+    using SnapMirror Active Sync for NAS. This provides SVM-level disaster
+    recovery, including detection of unplanned failovers performed on the
+    storage. Only synchronous replication is supported; both clusters require
+    ONTAP 9.19.1 or later.

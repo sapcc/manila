@@ -3766,6 +3766,77 @@ class ShareServerDatabaseAPITestCase(test.TestCase):
         self.assertEqual(expected.host, server.host)
         self.assertEqual(expected.status, server.status)
 
+    @ddt.data(
+        (
+            'fake_replica_project_id',
+            [
+                {'is_source': True},
+                {'replica_state': constants.REPLICA_STATE_OUT_OF_SYNC},
+                {'replica_state': constants.REPLICA_STATE_IN_SYNC},
+            ],
+            2,
+        ),
+        (
+            'fake_migration_project_id',
+            [
+                {'replica_state': None},
+                {'replica_state': constants.REPLICA_STATE_OUT_OF_SYNC},
+            ],
+            1,
+        ),
+        (
+            'fake_empty_state_project_id',
+            [
+                {'replica_state': ''},
+            ],
+            0,
+        ),
+        (
+            'fake_empty_project_id',
+            [
+                {'is_source': True},
+            ],
+            0,
+        ),
+    )
+    @ddt.unpack
+    def test_share_server_replica_data_get_for_project(
+            self, project_id, server_rows, expected_count):
+        share_network = db_utils.create_share_network(project_id=project_id)
+        subnet = db_utils.create_share_network_subnet(
+            id=uuidutils.generate_uuid(),
+            share_network_id=share_network['id'])
+
+        for row in server_rows:
+            kwargs = {'share_network_subnets': [subnet]}
+            if not row.get('is_source'):
+                kwargs['source_share_server_id'] = uuidutils.generate_uuid()
+                kwargs['replica_state'] = row.get('replica_state')
+            db_utils.create_share_server(**kwargs)
+
+        with db_api.context_manager.reader.using(self.ctxt):
+            count = db_api._share_server_replica_data_get_for_project(
+                self.ctxt, project_id)
+
+        self.assertEqual(expected_count, count)
+
+    def test_sync_share_server_replicas(self):
+        project_id = 'fake_sync_project_id'
+        share_network = db_utils.create_share_network(project_id=project_id)
+        subnet = db_utils.create_share_network_subnet(
+            id=uuidutils.generate_uuid(),
+            share_network_id=share_network['id'])
+        db_utils.create_share_server(
+            share_network_subnets=[subnet],
+            source_share_server_id=uuidutils.generate_uuid(),
+            replica_state=constants.REPLICA_STATE_OUT_OF_SYNC)
+
+        with db_api.context_manager.reader.using(self.ctxt):
+            result = db_api._sync_share_server_replicas(
+                self.ctxt, project_id, self.ctxt.user_id)
+
+        self.assertEqual({'share_server_replicas': 1}, result)
+
     def test_get_not_found(self):
         fake_id = 'FAKE_UUID'
         self.assertRaises(exception.ShareServerNotFound,
@@ -3789,6 +3860,31 @@ class ShareServerDatabaseAPITestCase(test.TestCase):
         db_api.share_server_delete(self.ctxt, server['id'])
         self.assertEqual(num_records - 1,
                          len(db_api.share_server_get_all(self.ctxt)))
+
+    def test_delete_fails_if_child_replica_exists(self):
+        source_server = db_utils.create_share_server()
+        db_utils.create_share_server(
+            source_share_server_id=source_server['id'],
+            replica_state=constants.REPLICA_STATE_OUT_OF_SYNC,
+        )
+
+        self.assertRaises(
+            exception.ShareServerInUse,
+            db_api.share_server_delete,
+            self.ctxt,
+            source_server['id'],
+        )
+
+    @ddt.data(None, '')
+    def test_delete_ignores_child_without_replica_state(self, replica_state):
+        source_server = db_utils.create_share_server()
+        db_utils.create_share_server(
+            source_share_server_id=source_server['id'],
+            replica_state=replica_state,
+        )
+
+        # Children without replica_state should not block source deletion.
+        db_api.share_server_delete(self.ctxt, source_server['id'])
 
     def test_delete_not_found(self):
         fake_id = 'FAKE_UUID'
@@ -4065,6 +4161,27 @@ class ShareServerDatabaseAPITestCase(test.TestCase):
             self.ctxt, host, updated_before)
         self.assertEqual(expected_len, len(unused_deletable))
 
+    def test_share_server_get_all_unused_deletable_error_deleting_status(self):
+        error_deleting_server = {
+            'host': 'hostname',
+            'status': constants.STATUS_ERROR_DELETING,
+            'is_auto_deletable': True,
+            'updated_at': datetime.datetime(2018, 5, 1),
+        }
+        db_utils.create_share_server(**error_deleting_server)
+
+        unused_deletable = db_api.share_server_get_all_unused_deletable(
+            self.ctxt,
+            host='hostname',
+            updated_before=datetime.datetime(2019, 5, 1),
+        )
+
+        self.assertEqual(1, len(unused_deletable))
+        self.assertEqual(
+            constants.STATUS_ERROR_DELETING,
+            unused_deletable[0]['status'],
+        )
+
     @ddt.data({'host': 'fakepool@fakehost'},
               {'status': constants.STATUS_SERVER_MIGRATING_TO},
               {'source_share_server_id': 'fake_ss_id'},
@@ -4107,6 +4224,100 @@ class ShareServerDatabaseAPITestCase(test.TestCase):
         for share_server in share_servers:
             self.assertEqual(host, share_server['host'])
 
+    def test_share_server_replicas_get_all_filters_scopes_and_paginates(self):
+        source_1 = db_utils.create_share_server(
+            id='source-server-1-id',
+            source_share_server_id=None,
+            replica_state=constants.REPLICA_STATE_ACTIVE,
+            status=constants.STATUS_ACTIVE,
+            host='hostA@backend#pool',
+        )
+        replica_1a = db_utils.create_share_server(
+            id='replica-1a-id',
+            source_share_server_id=source_1['id'],
+            replica_state=constants.REPLICA_STATE_IN_SYNC,
+            status=constants.STATUS_INACTIVE,
+            host='hostA@backend#pool',
+        )
+        replica_1b = db_utils.create_share_server(
+            id='replica-1b-id',
+            source_share_server_id=source_1['id'],
+            replica_state=constants.REPLICA_STATE_OUT_OF_SYNC,
+            status=constants.STATUS_INACTIVE,
+            host='hostB@backend#pool',
+        )
+        source_2 = db_utils.create_share_server(
+            id='source-server-2-id',
+            source_share_server_id=None,
+            replica_state=constants.REPLICA_STATE_ACTIVE,
+            host='hostC@backend#pool',
+        )
+        replica_2 = db_utils.create_share_server(
+            id='replica-2-id',
+            source_share_server_id=source_2['id'],
+            replica_state=constants.REPLICA_STATE_IN_SYNC,
+            host='hostD@backend#pool',
+        )
+        # Excluded rows: one with NULL replica_state and one with empty value.
+        db_utils.create_share_server(
+            source_share_server_id=source_1['id'],
+            replica_state=None,
+            host='hostE@backend#pool',
+        )
+        db_utils.create_share_server(
+            source_share_server_id=source_1['id'],
+            replica_state='',
+            host='hostF@backend#pool',
+        )
+
+        # 1) Global list excludes NULL/empty replica_state rows.
+        all_result = db_api.share_server_replicas_get_all(self.ctxt)
+        all_result_ids = [row['id'] for row in all_result]
+        self.assertCountEqual(
+            [source_1['id'], replica_1a['id'], replica_1b['id'],
+             source_2['id'], replica_2['id']],
+            all_result_ids,
+        )
+
+        # 2) Source scope returns only the replicas of that share server,
+        # never the active share server itself.
+        replicas_of_source_1 = db_api.share_server_replicas_get_all(
+            self.ctxt, source_share_server_id=source_1['id'])
+        self.assertCountEqual(
+            [replica_1a['id'], replica_1b['id']],
+            [row['id'] for row in replicas_of_source_1],
+        )
+
+        # 3) Source scope + sort + limit/offset are applied in query layer.
+        scoped_result = db_api.share_server_replicas_get_all(
+            self.ctxt,
+            source_share_server_id=source_1['id'],
+            sort_key='host',
+            sort_dir='asc',
+            limit=1,
+            offset=1,
+        )
+        ordered_ids = [row['id'] for row in sorted(
+            [replica_1a, replica_1b],
+            key=lambda r: (r['host'], r['id']))]
+        self.assertEqual(
+            [ordered_ids[1]],
+            [row['id'] for row in scoped_result],
+        )
+
+    def test_share_server_replicas_get_all_invalid_sort_key(self):
+        db_utils.create_share_server(
+            source_share_server_id=None,
+            replica_state=constants.REPLICA_STATE_ACTIVE,
+        )
+
+        self.assertRaises(
+            exception.InvalidInput,
+            db_api.share_server_replicas_get_all,
+            self.ctxt,
+            sort_key='fake_sort_key',
+        )
+
     def test_share_servers_update(self):
         servers = [db_utils.create_share_server()
                    for __ in range(1, 3)]
@@ -4122,6 +4333,99 @@ class ShareServerDatabaseAPITestCase(test.TestCase):
 
         for ss in share_servers:
             self.assertEqual(constants.STATUS_NETWORK_CHANGE, ss['status'])
+
+    def test_share_server_metadata_get_empty(self):
+        server = db_utils.create_share_server()
+
+        result = db_api.share_server_metadata_get(self.ctxt, server['id'])
+
+        self.assertEqual({}, result)
+
+    def test_share_server_metadata_create_and_get_item(self):
+        server = db_utils.create_share_server()
+
+        result = db_api.share_server_metadata_create(
+            self.ctxt, server['id'], 'k1', 'v1')
+        item = db_api.share_server_metadata_get_item(
+            self.ctxt, server['id'], 'k1')
+
+        self.assertEqual({'k1': 'v1'}, result)
+        self.assertEqual({'k1': 'v1'}, item)
+
+    def test_share_server_metadata_get_item_not_found(self):
+        server = db_utils.create_share_server()
+
+        self.assertRaises(
+            exception.MetadataItemNotFound,
+            db_api.share_server_metadata_get_item,
+            self.ctxt,
+            server['id'],
+            'missing_key',
+        )
+
+    def test_share_server_metadata_update(self):
+        server = db_utils.create_share_server()
+        db_api.share_server_metadata_create(
+            self.ctxt, server['id'], 'k1', 'v1')
+
+        result = db_api.share_server_metadata_update(
+            self.ctxt,
+            server['id'],
+            {'k1': 'v2', 'k2': 'v3'},
+            delete='False',
+        )
+
+        self.assertEqual({'k1': 'v2', 'k2': 'v3'}, result)
+
+    def test_share_server_metadata_update_with_delete(self):
+        server = db_utils.create_share_server()
+        db_api.share_server_metadata_update(
+            self.ctxt, server['id'], {'k1': 'v1', 'k2': 'v2'}, delete='False')
+
+        result = db_api.share_server_metadata_update(
+            self.ctxt, server['id'], {'k2': 'new-v2'}, delete='True')
+
+        self.assertEqual({'k2': 'new-v2'}, result)
+
+    def test_share_server_metadata_update_default_delete_false(self):
+        server = db_utils.create_share_server()
+        db_api.share_server_metadata_update(
+            self.ctxt, server['id'], {'k1': 'v1'}, delete='False')
+
+        # Omit delete argument and ensure existing keys are preserved.
+        result = db_api.share_server_metadata_update(
+            self.ctxt, server['id'], {'k2': 'v2'})
+
+        self.assertEqual({'k1': 'v1', 'k2': 'v2'}, result)
+
+    def test_share_server_metadata_update_with_none_metadata(self):
+        server = db_utils.create_share_server()
+        db_api.share_server_metadata_create(
+            self.ctxt, server['id'], 'k1', 'v1')
+
+        result = db_api.share_server_metadata_update(
+            self.ctxt, server['id'], metadata=None, delete='True')
+
+        self.assertEqual({}, result)
+
+    def test_share_server_metadata_delete(self):
+        server = db_utils.create_share_server()
+        db_api.share_server_metadata_create(
+            self.ctxt, server['id'], 'k1', 'v1')
+
+        db_api.share_server_metadata_delete(self.ctxt, server['id'], 'k1')
+        result = db_api.share_server_metadata_get(self.ctxt, server['id'])
+
+        self.assertEqual({}, result)
+
+    def test_share_server_metadata_delete_missing_key(self):
+        server = db_utils.create_share_server()
+
+        # Non-existent key deletion should be a no-op.
+        db_api.share_server_metadata_delete(self.ctxt, server['id'], 'k-miss')
+        result = db_api.share_server_metadata_get(self.ctxt, server['id'])
+
+        self.assertEqual({}, result)
 
     def test_encryption_keys_get_count(self):
         servers = [db_utils.create_share_server(
@@ -5518,6 +5822,71 @@ class ShareResourcesAPITestCase(test.TestCase):
 
         for instance in instances:
             self.assertEqual(constants.STATUS_AVAILABLE, instance['status'])
+
+    def test_share_instances_update_for_server_promotion_no_instances(self):
+        mock_model_query = self.mock_object(db_api, 'model_query')
+
+        result = db_api.share_instances_update_for_server_promotion(
+            self.context,
+            {},
+            uuidutils.generate_uuid(),
+            uuidutils.generate_uuid(),
+            uuidutils.generate_uuid(),
+        )
+
+        self.assertIsNone(result)
+        mock_model_query.assert_not_called()
+
+    def test_share_instances_update_for_server_promotion(self):
+        share = db_utils.create_share_without_instance()
+        az_id = uuidutils.generate_uuid()
+        server_id = uuidutils.generate_uuid()
+        network_id = uuidutils.generate_uuid()
+
+        instance_a = db_utils.create_share_instance(
+            share_id=share['id'], host='old-host-a',
+            status=constants.STATUS_AVAILABLE)
+        instance_b = db_utils.create_share_instance(
+            share_id=share['id'], host='old-host-b',
+            status=constants.STATUS_AVAILABLE)
+        instance_c = db_utils.create_share_instance(
+            share_id=share['id'], host='old-host-c',
+            status=constants.STATUS_AVAILABLE)
+
+        instance_host_mapping = {
+            instance_a['id']: 'new-host-a',
+            instance_b['id']: 'new-host-b',
+        }
+
+        with db_api.context_manager.writer.using(self.context):
+            db_api.share_instances_update_for_server_promotion(
+                self.context,
+                instance_host_mapping,
+                az_id,
+                server_id,
+                network_id,
+            )
+
+        instance_a_updated = db_api.share_instance_get(
+            self.context, instance_a['id'])
+        instance_b_updated = db_api.share_instance_get(
+            self.context, instance_b['id'])
+        instance_c_updated = db_api.share_instance_get(
+            self.context, instance_c['id'])
+
+        self.assertEqual('new-host-a', instance_a_updated['host'])
+        self.assertEqual('new-host-b', instance_b_updated['host'])
+        self.assertEqual(az_id, instance_a_updated['availability_zone_id'])
+        self.assertEqual(az_id, instance_b_updated['availability_zone_id'])
+        self.assertEqual(server_id, instance_a_updated['share_server_id'])
+        self.assertEqual(server_id, instance_b_updated['share_server_id'])
+        self.assertEqual(network_id, instance_a_updated['share_network_id'])
+        self.assertEqual(network_id, instance_b_updated['share_network_id'])
+
+        self.assertEqual('old-host-c', instance_c_updated['host'])
+        self.assertNotEqual(az_id, instance_c_updated['availability_zone_id'])
+        self.assertNotEqual(server_id, instance_c_updated['share_server_id'])
+        self.assertNotEqual(network_id, instance_c_updated['share_network_id'])
 
     def test_share_snapshot_instances_status_update(self):
         share_instance = db_utils.create_share_instance(

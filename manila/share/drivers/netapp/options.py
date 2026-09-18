@@ -320,7 +320,29 @@ netapp_provisioning_opts = [
                default='ADAPTIVE_QOS',
                help='This option enables user to configure the prefix of '
                     'adaptive QoS policies created on vserver.'),
-
+    cfg.BoolOpt('netapp_cifs_smb_signing',
+                default=False,
+                help='This option enable/disable SMB signing that protects '
+                     'the security of the data fabric by making sure that '
+                     'traffic between storage systems and clients is not '
+                     'compromised.'),
+    cfg.IntOpt('netapp_smas_wait_for_insync_timeout',
+               min=0,
+               default=600,  # 10 minutes
+               help='The maximum time in seconds to wait for a SnapMirror '
+                    'active sync (SMas) relationship to reach the '
+                    '"in_sync" state. The driver waits before each of '
+                    'these operations: creating a share, unprotecting a '
+                    'share, and deleting its volume.'),
+    cfg.BoolOpt('netapp_smas_require_insync_after_unprotect',
+                default=False,
+                help='If disabled (the default), delete_share only logs '
+                     'a warning and proceeds to attempt the share '
+                     'deletion anyway once '
+                     '"netapp_smas_wait_for_insync_timeout" is reached '
+                     'without the SMas SnapMirror relationship '
+                     'returning to "in_sync" state. If enabled, '
+                     'delete_share aborts the share deletion instead.'),
 ]
 
 netapp_cluster_opts = [
