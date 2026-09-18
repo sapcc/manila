@@ -4719,61 +4719,61 @@ FAKE_PEER_GET_RESPONSE = {
     'num_records': 1
 }
 
-REST_SPEED_SORTED_PORTS = [
-    {'node': NODE_NAME, 'port': 'e0d', 'speed': 10000},
-    {'node': NODE_NAME, 'port': 'e0c', 'speed': 1000},
-    {'node': NODE_NAME, 'port': 'e0b', 'speed': 100},
-]
-
-REST_SPEED_NOT_SORTED_PORTS = [
-    {'node': NODE_NAME, 'port': 'e0b', 'speed': 100},
-    {'node': NODE_NAME, 'port': 'e0c', 'speed': 1000},
-    {'node': NODE_NAME, 'port': 'e0d', 'speed': 10000},
-]
-
 REST_ETHERNET_PORTS = {
     "records": [
         {
-            "uuid": "fake_uuid1",
-            "name": "e0a",
-            "type": "physical",
+            "uuid": "fake_uuid_lag",
+            "name": "a0b",
+            "type": "lag",
             "node": {
                 "name": NODE_NAME
             },
             "broadcast_domain": {
-                "name": "fake_domain_1",
+                "name": "broadcast_a0b",
                 "ipspace": {
                     "name": "Default"
                 }
             },
             "state": "up",
-            "speed": 10,
+            "speed": 0,
+            "lag": {
+                "member_ports": [
+                    {"uuid": "fake_uuid_e6a", "name": "e6a",
+                     "node": {"name": NODE_NAME}},
+                    {"uuid": "fake_uuid_e8a", "name": "e8a",
+                     "node": {"name": NODE_NAME}},
+                ]
+            },
         },
         {
-            "uuid": "fake_uuid2",
-            "name": "e0b",
+            "uuid": "fake_uuid_e6a",
+            "name": "e6a",
             "type": "physical",
             "node": {
                 "name": NODE_NAME
-            },
-            "broadcast_domain": {
-                "name": "fake_domain_2",
-                "ipspace": {
-                    "name": "Default"
-                }
             },
             "state": "up",
-            "speed": 100,
+            "speed": 100000,
         },
         {
-            "uuid": "fake_uuid3",
-            "name": "e0c",
+            "uuid": "fake_uuid_e8a",
+            "name": "e8a",
+            "type": "physical",
+            "node": {
+                "name": NODE_NAME
+            },
+            "state": "up",
+            "speed": 100000,
+        },
+        {
+            "uuid": "fake_uuid_e0m",
+            "name": "e0M",
             "type": "physical",
             "node": {
                 "name": NODE_NAME
             },
             "broadcast_domain": {
-                "name": "fake_domain_3",
+                "name": "broadcast_MGMT",
                 "ipspace": {
                     "name": "Default"
                 }
@@ -4781,24 +4781,48 @@ REST_ETHERNET_PORTS = {
             "state": "up",
             "speed": 1000,
         },
-        {
-            "uuid": "fake_uuid4",
-            "name": "e0d",
-            "type": "physical",
-            "node": {
-                "name": NODE_NAME
-            },
-            "broadcast_domain": {
-                "name": "fake_domain_4",
-                "ipspace": {
-                    "name": "Default"
-                }
-            },
-            "state": "up",
-            "speed": 10000,
-        }
     ],
 }
+
+# Expected result of get_node_data_ports for REST_ETHERNET_PORTS: the LAG (a0b)
+# and the standalone physical (e0M) are kept, in API order; the LAG member
+# physicals (e6a, e8a) are dropped.
+REST_DATA_PORTS = [
+    {'node': NODE_NAME, 'port': 'a0b', 'speed': 0},
+    {'node': NODE_NAME, 'port': 'e0M', 'speed': 1000},
+]
+
+# A record set with no interface group, to prove member filtering does not
+# drop standalone physical ports.
+REST_ETHERNET_PORTS_NO_LAG = {
+    "records": [
+        {
+            "uuid": "fake_uuid1",
+            "name": "e0a",
+            "type": "physical",
+            "node": {"name": NODE_NAME},
+            "broadcast_domain": {"name": "fake_domain_1",
+                                 "ipspace": {"name": "Default"}},
+            "state": "up",
+            "speed": 10,
+        },
+        {
+            "uuid": "fake_uuid2",
+            "name": "e0b",
+            "type": "physical",
+            "node": {"name": NODE_NAME},
+            "broadcast_domain": {"name": "fake_domain_2",
+                                 "ipspace": {"name": "Default"}},
+            "state": "up",
+            "speed": 100,
+        },
+    ],
+}
+
+REST_DATA_PORTS_NO_LAG = [
+    {'node': NODE_NAME, 'port': 'e0a', 'speed': 10},
+    {'node': NODE_NAME, 'port': 'e0b', 'speed': 100},
+]
 
 SVM_ITEM_SIMPLE_RESPONSE_REST = {
     "uuid": "fake_uuid",
