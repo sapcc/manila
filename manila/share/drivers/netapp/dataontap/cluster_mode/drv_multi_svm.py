@@ -139,6 +139,17 @@ class NetAppCmodeMultiSvmShareDriver(driver.ShareDriver):
     def get_network_allocations_number(self):
         return self.library.get_network_allocations_number()
 
+    def allocate_network(self, context, share_server, share_network,
+                         share_network_subnet, **kwargs):
+        """Allocate network, injecting the ifgroup MAC for the first port."""
+
+        mac = self.library.get_node_mac_for_network_allocation()
+        if mac:
+            kwargs.setdefault('mac_address', mac)
+        return super().allocate_network(
+            context, share_server, share_network, share_network_subnet,
+            **kwargs)
+
     def get_admin_network_allocations_number(self):
         return self.library.get_admin_network_allocations_number(
             self.admin_network_api)

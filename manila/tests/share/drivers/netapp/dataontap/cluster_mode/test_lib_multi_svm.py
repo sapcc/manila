@@ -28,6 +28,7 @@ from manila import context
 from manila import exception
 from manila.share.drivers.netapp.dataontap.client import api as netapp_api
 from manila.share.drivers.netapp.dataontap.cluster_mode import data_motion
+from manila.share.drivers.netapp.dataontap.cluster_mode import drv_multi_svm
 from manila.share.drivers.netapp.dataontap.cluster_mode import lib_base
 from manila.share.drivers.netapp.dataontap.cluster_mode import lib_multi_svm
 from manila.share.drivers.netapp import utils as na_utils
@@ -1037,6 +1038,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                          '_get_lif_name',
                          mock.Mock(side_effect=['fake_lif1', 'fake_lif2']))
         self.mock_object(self.library, '_create_lif')
+        self.mock_object(self.library, '_sync_lif_mac_to_db')
 
         self.library._create_vserver_lifs(fake.VSERVER1,
                                           'fake_vserver_client',
@@ -1062,6 +1064,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                          '_get_lif_name',
                          mock.Mock(side_effect=['fake_lif1', 'fake_lif2']))
         self.mock_object(self.library, '_create_lif')
+        self.mock_object(self.library, '_sync_lif_mac_to_db')
 
         lif_home_ports = {
             fake.CLUSTER_NODES[0]: 'fake_port1',
@@ -1093,6 +1096,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                          '_get_lif_name',
                          mock.Mock(return_value='fake_admin_lif'))
         self.mock_object(self.library, '_create_lif')
+        self.mock_object(self.library, '_sync_lif_mac_to_db')
 
         self.library._create_vserver_admin_lif(fake.VSERVER1,
                                                'fake_vserver_client',
@@ -1124,6 +1128,116 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                                                fake.IPSPACE)
 
         self.assertFalse(self.library._create_lif.called)
+
+    def test_create_vserver_lifs_syncs_mac(self):
+        self.mock_object(self.library._client,
+                         'list_cluster_nodes',
+                         mock.Mock(return_value=fake.CLUSTER_NODES))
+        self.mock_object(self.library,
+                         '_get_lif_name',
+                         mock.Mock(side_effect=['fake_lif1', 'fake_lif2']))
+        self.mock_object(self.library, '_create_lif')
+        self.mock_object(self.library, '_sync_lif_mac_to_db')
+
+        self.library._create_vserver_lifs(fake.VSERVER1,
+                                          'fake_vserver_client',
+                                          fake.NETWORK_INFO,
+                                          fake.IPSPACE)
+
+        self.library._sync_lif_mac_to_db.assert_has_calls([
+            mock.call(fake.CLUSTER_NODES[0],
+                      fake.NETWORK_INFO['network_allocations'][0]),
+            mock.call(fake.CLUSTER_NODES[1],
+                      fake.NETWORK_INFO['network_allocations'][1])])
+
+    def test_create_vserver_admin_lif_syncs_mac(self):
+        self.mock_object(self.library._client,
+                         'list_cluster_nodes',
+                         mock.Mock(return_value=fake.CLUSTER_NODES))
+        self.mock_object(self.library,
+                         '_get_lif_name',
+                         mock.Mock(return_value='fake_admin_lif'))
+        self.mock_object(self.library, '_create_lif')
+        self.mock_object(self.library, '_sync_lif_mac_to_db')
+
+        self.library._create_vserver_admin_lif(fake.VSERVER1,
+                                               'fake_vserver_client',
+                                               fake.NETWORK_INFO,
+                                               fake.IPSPACE)
+
+        self.library._sync_lif_mac_to_db.assert_called_once_with(
+            fake.CLUSTER_NODES[0],
+            fake.NETWORK_INFO['admin_network_allocations'][0])
+
+    def test_sync_lif_mac_to_db(self):
+        fake_mac = 'd2:39:ea:ac:06:9c'
+        fake_allocation = fake.NETWORK_INFO['network_allocations'][0]
+        self.mock_object(self.library,
+                         '_get_node_data_port_mac',
+                         mock.Mock(return_value=fake_mac))
+        self.mock_object(context,
+                         'get_admin_context',
+                         mock.Mock(return_value='fake_admin_context'))
+        mock_db_update = self.mock_object(lib_multi_svm.db,
+                                          'network_allocation_update')
+
+        self.library._sync_lif_mac_to_db(
+            fake.CLUSTER_NODES[0], fake_allocation)
+
+        self.library._get_node_data_port_mac.assert_called_once_with(
+            fake.CLUSTER_NODES[0])
+        mock_db_update.assert_called_once_with(
+            'fake_admin_context', fake_allocation['id'],
+            {'mac_address': fake_mac})
+
+    def test_sync_lif_mac_to_db_no_mac(self):
+        fake_allocation = fake.NETWORK_INFO['network_allocations'][0]
+        self.mock_object(self.library,
+                         '_get_node_data_port_mac',
+                         mock.Mock(return_value=None))
+        mock_db_update = self.mock_object(lib_multi_svm.db,
+                                          'network_allocation_update')
+
+        self.library._sync_lif_mac_to_db(
+            fake.CLUSTER_NODES[0], fake_allocation)
+
+        mock_db_update.assert_not_called()
+
+    def test_get_node_mac_for_network_allocation(self):
+        fake_mac = 'd2:39:ea:ac:06:9c'
+        self.mock_object(self.library._client,
+                         'list_cluster_nodes',
+                         mock.Mock(return_value=fake.CLUSTER_NODES))
+        self.mock_object(self.library,
+                         '_get_node_data_port_mac',
+                         mock.Mock(return_value=fake_mac))
+
+        result = self.library.get_node_mac_for_network_allocation()
+
+        self.assertEqual(fake_mac, result)
+        self.library._get_node_data_port_mac.assert_called_once_with(
+            fake.CLUSTER_NODES[0])
+
+    def test_get_node_mac_for_network_allocation_no_nodes(self):
+        self.mock_object(self.library._client,
+                         'list_cluster_nodes',
+                         mock.Mock(return_value=[]))
+
+        result = self.library.get_node_mac_for_network_allocation()
+
+        self.assertIsNone(result)
+
+    def test_get_node_mac_for_network_allocation_no_mac(self):
+        self.mock_object(self.library._client,
+                         'list_cluster_nodes',
+                         mock.Mock(return_value=fake.CLUSTER_NODES))
+        self.mock_object(self.library,
+                         '_get_node_data_port_mac',
+                         mock.Mock(return_value=None))
+
+        result = self.library.get_node_mac_for_network_allocation()
+
+        self.assertIsNone(result)
 
     @ddt.data(
         fake.get_network_info(fake.USER_NETWORK_ALLOCATIONS,
@@ -4370,3 +4484,75 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             self.library._check_data_lif_count_limit_reached_for_ha_pair,
             self.client,
         )
+
+
+class NetAppMultiSvmDriverAllocateNetworkTestCase(test.TestCase):
+
+    def setUp(self):
+        super(NetAppMultiSvmDriverAllocateNetworkTestCase, self).setUp()
+        self.mock_object(drv_multi_svm.NetAppCmodeMultiSvmShareDriver,
+                         '__init__',
+                         mock.Mock(return_value=None))
+        self.driver = drv_multi_svm.NetAppCmodeMultiSvmShareDriver()
+        self.driver.library = mock.Mock()
+        self.driver.network_api = mock.Mock()
+        self.fake_context = 'fake_context'
+        self.fake_share_server = {'id': 'fake-ss-id'}
+        self.fake_share_network = {'project_id': 'fake-project'}
+        self.fake_share_network_subnet = {'neutron_net_id': 'fake-net'}
+
+    def test_allocate_network_injects_mac_from_library(self):
+        fake_mac = 'd2:39:ea:ac:06:9c'
+        mock_get_mac = (
+            self.driver.library.get_node_mac_for_network_allocation)
+        mock_get_mac.return_value = fake_mac
+        super_mock = self.mock_object(
+            drv_multi_svm.driver.ShareDriver, 'allocate_network')
+
+        self.driver.allocate_network(
+            self.fake_context,
+            self.fake_share_server,
+            self.fake_share_network,
+            self.fake_share_network_subnet)
+
+        super_mock.assert_called_once_with(
+            self.fake_context,
+            self.fake_share_server,
+            self.fake_share_network,
+            self.fake_share_network_subnet,
+            mac_address=fake_mac)
+
+    def test_allocate_network_no_mac_does_not_inject(self):
+        mock_get_mac = (
+            self.driver.library.get_node_mac_for_network_allocation)
+        mock_get_mac.return_value = None
+        super_mock = self.mock_object(
+            drv_multi_svm.driver.ShareDriver, 'allocate_network')
+
+        self.driver.allocate_network(
+            self.fake_context,
+            self.fake_share_server,
+            self.fake_share_network,
+            self.fake_share_network_subnet)
+
+        _, call_kwargs = super_mock.call_args
+        self.assertNotIn('mac_address', call_kwargs)
+
+    def test_allocate_network_does_not_overwrite_caller_mac(self):
+        caller_mac = 'aa:bb:cc:dd:ee:ff'
+        lib_mac = 'd2:39:ea:ac:06:9c'
+        mock_get_mac = (
+            self.driver.library.get_node_mac_for_network_allocation)
+        mock_get_mac.return_value = lib_mac
+        super_mock = self.mock_object(
+            drv_multi_svm.driver.ShareDriver, 'allocate_network')
+
+        self.driver.allocate_network(
+            self.fake_context,
+            self.fake_share_server,
+            self.fake_share_network,
+            self.fake_share_network_subnet,
+            mac_address=caller_mac)
+
+        _, call_kwargs = super_mock.call_args
+        self.assertEqual(caller_mac, call_kwargs['mac_address'])

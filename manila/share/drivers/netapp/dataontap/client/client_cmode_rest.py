@@ -5143,7 +5143,7 @@ class NetAppRestClient(object):
             'state': 'up',
             'type': 'physical',
             'broadcast_domain.name': 'Default',
-            'fields': 'node.name,speed,name'
+            'fields': 'node.name,speed,name,mac_address'
         }
 
         result = self.send_request('/network/ethernet/ports', 'get',
@@ -5176,6 +5176,7 @@ class NetAppRestClient(object):
                         'node': port_info['node']['name'],
                         'port': port_info['name'],
                         'speed': port_info['speed'],
+                        'mac-address': port_info.get('mac_address'),
                     }
                     ports.append(port)
 
