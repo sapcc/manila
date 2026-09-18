@@ -5302,44 +5302,40 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
     def test_get_node_data_ports(self):
         self.mock_object(
             self.client, 'send_request', mock.Mock(
-                side_effect=[fake.REST_ETHERNET_PORTS,
-                             fake.REST_DATA_INTERFACES]))
-        self.mock_object(
-            self.client, '_sort_data_ports_by_speed', mock.Mock(
-                return_value=fake.REST_SPEED_SORTED_PORTS))
+                return_value=fake.REST_ETHERNET_PORTS))
 
         test_result = self.client.get_node_data_ports(fake.NODE_NAME)
 
         fake_query = {
             'node.name': fake.NODE_NAME,
             'state': 'up',
-            'type': 'physical',
-            'broadcast_domain.name': 'Default',
-            'fields': 'node.name,speed,name'
+            'type': 'physical|lag',
+            'broadcast_domain.ipspace.name': '!Cluster',
+            'fields': 'node.name,speed,name,type,lag.member_ports',
         }
 
-        query_interfaces = {
-            'service_policy.name': '!default-management',
-            'services': 'data_*',
-            'fields': 'location.port.name'
-        }
+        self.client.send_request.assert_called_once_with(
+            '/network/ethernet/ports', 'get', query=fake_query)
+        # LAG a0b and standalone e0M kept; LAG members e6a/e8a dropped.
+        self.assertEqual(fake.REST_DATA_PORTS, test_result)
 
-        self.client.send_request.assert_has_calls([
-            mock.call('/network/ethernet/ports', 'get', query=fake_query),
-            mock.call('/network/ip/interfaces', 'get',
-                      query=query_interfaces, enable_tunneling=False),
-        ])
-        self.client._sort_data_ports_by_speed.assert_called_once_with(
-            fake.REST_SPEED_NOT_SORTED_PORTS)
-        self.assertEqual(fake.REST_SPEED_SORTED_PORTS, test_result)
+    def test_get_node_data_ports_no_lag(self):
+        self.mock_object(
+            self.client, 'send_request', mock.Mock(
+                return_value=fake.REST_ETHERNET_PORTS_NO_LAG))
+
+        test_result = self.client.get_node_data_ports(fake.NODE_NAME)
+
+        # No interface group present: all physical ports are kept.
+        self.assertEqual(fake.REST_DATA_PORTS_NO_LAG, test_result)
 
     def test_list_node_data_ports(self):
 
-        expected_resulted = ['e0d', 'e0c', 'e0b']
+        expected_resulted = ['a0b', 'e0M']
 
         mock_ports = (
             self.mock_object(self.client, 'get_node_data_ports', mock.Mock(
-                return_value=fake.REST_SPEED_SORTED_PORTS)))
+                return_value=fake.REST_DATA_PORTS)))
 
         test_result = self.client.list_node_data_ports(fake.NODE_NAME)
 
@@ -5731,7 +5727,7 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
                                                             fake.PORT)
 
         expected = {
-            'broadcast-domain': "fake_domain_1",
+            'broadcast-domain': "broadcast_a0b",
             'ipspace': "Default",
         }
         self.client.send_request.assert_has_calls([

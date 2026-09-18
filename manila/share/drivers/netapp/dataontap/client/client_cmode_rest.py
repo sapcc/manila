@@ -5214,9 +5214,9 @@ class NetAppRestClient(object):
         query = {
             'node.name': node,
             'state': 'up',
-            'type': 'physical',
-            'broadcast_domain.name': 'Default',
-            'fields': 'node.name,speed,name'
+            'type': 'physical|lag',
+            'broadcast_domain.ipspace.name': '!Cluster',
+            'fields': 'node.name,speed,name,type,lag.member_ports'
         }
 
         result = self.send_request('/network/ethernet/ports', 'get',
@@ -5227,30 +5227,25 @@ class NetAppRestClient(object):
         ports = []
         if net_port_info_list:
 
-            # NOTE(pulluri): This query selects the ports that are
-            # being exclusively used for data management
-            query_interfaces = {
-                'service_policy.name': '!default-management',
-                'services': 'data_*',
-                'fields': 'location.port.name'
-            }
-            response = self.send_request('/network/ip/interfaces', 'get',
-                                         query=query_interfaces,
-                                         enable_tunneling=False)
-
-            data_ports = set(
-                [record['location']['port']['name']
-                    for record in response.get('records', [])]
-            )
+            # Skip physical ports that are members of an interface group; the
+            # data LIF is hosted on the LAG, not on its members.
+            member_port_names = set()
+            for port_info in net_port_info_list:
+                if port_info.get('type') == 'lag':
+                    for member in (port_info.get('lag') or {}).get(
+                            'member_ports', []):
+                        member_port_names.add(member['name'])
 
             for port_info in net_port_info_list:
-                if port_info['name'] in data_ports:
-                    port = {
-                        'node': port_info['node']['name'],
-                        'port': port_info['name'],
-                        'speed': port_info['speed'],
-                    }
-                    ports.append(port)
+                if (port_info.get('type') == 'physical'
+                        and port_info['name'] in member_port_names):
+                    continue
+                port = {
+                    'node': port_info['node']['name'],
+                    'port': port_info['name'],
+                    'speed': port_info['speed'],
+                }
+                ports.append(port)
 
             ports = self._sort_data_ports_by_speed(ports)
 
