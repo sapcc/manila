@@ -132,6 +132,44 @@ def locked_share_server_update_allocations_operation(operation):
     return wrapped
 
 
+def _validate_dns_metadata(metadata):
+    """Validate dns_name and dns_domain share metadata values.
+
+    Normalizes ``dns_domain`` by appending a trailing dot if absent.
+    Mutates the *metadata* dict in-place so callers receive the canonical
+    form without having to do extra work.
+    """
+
+    if not metadata:
+        return
+    dns_name = metadata.get('dns_name')
+    dns_domain = metadata.get('dns_domain')
+    if dns_name and not dns_domain:
+        raise exception.InvalidInput(
+            reason=_("'dns_domain' is required when 'dns_name' is set."))
+    if dns_domain and not dns_name:
+        raise exception.InvalidInput(
+            reason=_("'dns_name' is required when 'dns_domain' is set."))
+    if dns_name:
+        if '.' in dns_name:
+            raise exception.InvalidInput(
+                reason=_("'dns_name' must be a single DNS label and must "
+                         "not contain dots. Got: '%s'.") % dns_name)
+        # RFC 1035 label: 1-63 chars, [a-zA-Z0-9-], no leading/trailing '-'
+        if not re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$',
+                        dns_name):
+            raise exception.InvalidInput(
+                reason=_("'dns_name' must be a valid RFC 1035 DNS label: "
+                         "1-63 characters, alphanumeric and hyphens only, "
+                         "not starting or ending with a hyphen. "
+                         "Got: '%s'.") % dns_name)
+    if dns_domain:
+        # Normalize: silently append the trailing dot for user convenience.
+        if not dns_domain.endswith('.'):
+            dns_domain = dns_domain + '.'
+            metadata['dns_domain'] = dns_domain
+
+
 class API(base.Base):
     """API for interacting with the share manager."""
 
@@ -309,6 +347,7 @@ class API(base.Base):
         """Create new share."""
 
         api_common.check_metadata_properties(metadata)
+        _validate_dns_metadata(metadata)
 
         if snapshot_id is not None:
             snapshot = self.get_snapshot(context, snapshot_id)
@@ -598,19 +637,31 @@ class API(base.Base):
         return metadata_from_share_type
 
     def update_share_from_metadata(self, context, share_id, metadata):
-        driver_keys = getattr(CONF, 'driver_updatable_metadata', [])
-        if not driver_keys:
+        driver_keys = set(getattr(CONF, 'driver_updatable_metadata', []))
+        dns_keys = {'dns_name', 'dns_domain'}
+
+        relevant_metadata = {k: v for k, v in metadata.items()
+                             if k in driver_keys or k in dns_keys}
+
+        if not relevant_metadata:
             return
 
-        driver_metadata = {}
-        for k, v in metadata.items():
-            if k in driver_keys:
-                driver_metadata.update({k: v})
+        share = self.get(context, share_id)
 
-        if driver_metadata:
-            share = self.get(context, share_id)
-            self.share_rpcapi.update_share_from_metadata(context, share,
-                                                         driver_metadata)
+        has_dns_keys = bool(
+            relevant_metadata.keys() & dns_keys)
+        if has_dns_keys:
+            if (share['status'] != constants.STATUS_AVAILABLE
+                    or share.get('task_state') is not None):
+                raise exception.InvalidShare(
+                    reason=_("DNS metadata can only be updated when the "
+                             "share is in 'available' status with no "
+                             "pending task. Current status: '%s', "
+                             "task_state: '%s'.")
+                    % (share['status'], share.get('task_state')))
+
+        self.share_rpcapi.update_share_from_metadata(context, share,
+                                                     relevant_metadata)
 
     def update_share_network_subnet_from_metadata(self, context,
                                                   share_network_id,

@@ -37,6 +37,7 @@ from manila.i18n import _
 from manila.lock import api as resource_locks
 from manila import policy
 from manila import share
+from manila.share import api as share_api
 from manila import utils
 
 LOG = log.getLogger(__name__)
@@ -676,6 +677,11 @@ class ShareController(wsgi.Controller,
             _metadata = current_share_metadata.copy()
             _metadata.update(metadata_copy)
 
+        try:
+            share_api._validate_dns_metadata(_metadata)
+        except exception.InvalidInput as e:
+            raise exc.HTTPBadRequest(explanation=e.msg)
+
         return _metadata
 
     # NOTE: (ashrod98) original metadata method and policy overrides
@@ -747,7 +753,21 @@ class ShareController(wsgi.Controller,
         if key in self._conf_admin_only_metadata_keys:
             policy.check_policy(context, 'share',
                                 'update_admin_only_metadata')
-        return self._delete_metadata(req, resource_id, key)
+
+        if key in ('dns_name', 'dns_domain'):
+            current = self.share_api.db.share_metadata_get(
+                context, resource_id)
+            other_key = 'dns_domain' if key == 'dns_name' else 'dns_name'
+            if current.get(other_key):
+                raise exc.HTTPBadRequest(explanation=_(
+                    "'dns_name' and 'dns_domain' must be deleted together. "
+                    "Delete both keys or use metadata update to change them."))
+
+        pre_delete_metadata = self.share_api.db.share_metadata_get(
+            context, resource_id)
+        self._delete_metadata(req, resource_id, key)
+        self.share_api.update_share_from_metadata(
+            context, resource_id, pre_delete_metadata)
 
 
 def create_resource():
