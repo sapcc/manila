@@ -1,0 +1,10 @@
+---
+fixes:
+  - |
+    Fixed a NetApp Data ONTAP driver failure where managing access on a
+    CIFS share with a custom ``mount_point_name`` failed with
+    ``NaApiError 13001: The share <name> does not exist``. The driver
+    derived the CIFS share name from the share's export location, which
+    carries the volume junction path basename instead of the share name
+    when a custom mount point is used. The driver now uses the backend
+    share (volume) name, which is always the CIFS share name.

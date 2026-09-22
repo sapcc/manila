@@ -80,7 +80,6 @@ class NetAppCmodeCIFSHelper(base.NetAppBaseHelper):
     @na_utils.trace
     def delete_share(self, share, share_name):
         """Deletes CIFS share on Data ONTAP Vserver."""
-        host_ip, share_name = self._get_export_location(share)
         self._client.remove_cifs_share(share_name)
 
     @na_utils.trace
@@ -101,8 +100,9 @@ class NetAppCmodeCIFSHelper(base.NetAppBaseHelper):
 
         new_rules = {r['access_to']: r['access_level'] for r in valid_rules}
 
-        # Get rules from share
-        _, cifs_share_name = self._get_export_location(share)
+        # The CIFS share name is the volume name, which can differ from
+        # the junction path basename in the export location.
+        cifs_share_name = share_name
         existing_rules = self._get_access_rules(share, cifs_share_name)
 
         # Update rules in an order that will prevent transient disruptions
