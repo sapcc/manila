@@ -4891,6 +4891,31 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         return self._has_records(result)
 
     @na_utils.trace
+    def get_cifs_share(self, share_name):
+        api_args = {
+            'query': {
+                'cifs-share': {
+                    'share-name': share_name,
+                },
+            },
+            'desired-attributes': {
+                'cifs-share': {
+                    'share-name': None,
+                    'path': None,
+                }
+            },
+        }
+        result = self.send_iter_request('cifs-share-get-iter', api_args)
+        attributes_list = result.get_child_by_name(
+            'attributes-list') or netapp_api.NaElement('none')
+        for cifs_share in attributes_list.get_children():
+            return {
+                'share-name': cifs_share.get_child_content('share-name'),
+                'path': cifs_share.get_child_content('path'),
+            }
+        return None
+
+    @na_utils.trace
     def get_cifs_share_access(self, share_name):
         api_args = {
             'query': {

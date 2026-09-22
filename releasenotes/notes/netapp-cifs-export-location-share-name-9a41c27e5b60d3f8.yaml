@@ -1,0 +1,9 @@
+---
+upgrade:
+  - |
+    For newly created NetApp Data ONTAP CIFS shares, the export location
+    is now ``\\\\<vserver>\<share name>`` instead of
+    ``\\\\<vserver>\<junction path>``. The junction path is not a valid
+    UNC for CIFS clients, as they connect by share name. Existing shares
+    keep their previously stored export location until it is regenerated
+    (for example during a replica promotion or re-manage).
