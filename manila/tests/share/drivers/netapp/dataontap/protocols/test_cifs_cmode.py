@@ -88,6 +88,19 @@ class NetAppClusteredCIFSHelperTestCase(test.TestCase):
                           fake.CIFS_SHARE, fake.SHARE_NAME,
                           ensure_share_already_exists=True)
 
+    def test_create_share_with_mount_point_name(self):
+        """Export location must use the CIFS share name, not the junction."""
+        self.mock_client.cifs_share_exists.return_value = False
+        self.mock_client.get_volume_junction_path.return_value = '/sapmnt25'
+
+        result = self.helper.create_share(fake.CIFS_SHARE, fake.SHARE_NAME)
+
+        self.assertEqual(
+            r'\\%s\%s' % (fake.SHARE_ADDRESS_1, fake.SHARE_NAME),
+            result(fake.SHARE_ADDRESS_1))
+        self.mock_client.create_cifs_share.assert_called_once_with(
+            fake.SHARE_NAME, '/sapmnt25')
+
     def test_create_share_junction_path_retry(self):
         """CIFS create_share retries on transient NaApiError 13001."""
         self.mock_client.cifs_share_exists.return_value = False
@@ -266,6 +279,24 @@ class NetAppClusteredCIFSHelperTestCase(test.TestCase):
 
     def test_get_share_name_for_share(self):
 
+        self.mock_client.get_cifs_share.return_value = {
+            'share-name': fake.SHARE_NAME,
+            'path': fake.CIFS_SHARE_PATH,
+        }
+        self.mock_client.get_volume_at_junction_path.return_value = (
+            fake.VOLUME)
+
+        share_name = self.helper.get_share_name_for_share(fake.CIFS_SHARE)
+
+        self.assertEqual(fake.SHARE_NAME, share_name)
+        self.mock_client.get_cifs_share.assert_called_once_with(
+            fake.SHARE_NAME)
+        self.mock_client.get_volume_at_junction_path.assert_called_once_with(
+            fake.CIFS_SHARE_PATH)
+
+    def test_get_share_name_for_share_legacy_export_location(self):
+        """Falls back to junction path lookup for pre-share-name UNC rows."""
+        self.mock_client.get_cifs_share.return_value = None
         self.mock_client.get_volume_at_junction_path.return_value = (
             fake.VOLUME)
 
@@ -277,6 +308,10 @@ class NetAppClusteredCIFSHelperTestCase(test.TestCase):
 
     def test_get_share_name_for_share_not_found(self):
 
+        self.mock_client.get_cifs_share.return_value = {
+            'share-name': fake.SHARE_NAME,
+            'path': fake.CIFS_SHARE_PATH,
+        }
         self.mock_client.get_volume_at_junction_path.return_value = None
 
         share_name = self.helper.get_share_name_for_share(fake.CIFS_SHARE)
