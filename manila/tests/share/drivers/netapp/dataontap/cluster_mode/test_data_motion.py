@@ -1602,10 +1602,11 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
             self.dm_session, '_validate_smas_prerequisites')
         mock_dest_client.get_snapmirror_relationships.return_value = [
             {'uuid': c_fake.SVM_SM_RELATIONSHIP_UUID}]
-        mock_dest_client._get_unique_svm_by_name.return_value = (
-            c_fake.FAKE_SVM_UUID)
+        mock_dest_client.get_vserver_peers.return_value = []
         mock_dest_client.list_non_root_aggregates.return_value = [
             'aggr1', 'other', 'aggr2']
+        mock_src_client._get_volumes_on_svm.return_value = [
+            {'name': 'share_vol_1'}, {'name': 'share_vol_2'}]
         mock_dest_client.get_svm_snapmirror_by_id.return_value = {
             'state': 'in_sync', 'healthy': True,
         }
@@ -1624,16 +1625,29 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
             },
         }
         self.assertEqual(expected, result)
+        mock_dest_client.create_vserver_dp_destination.assert_called_once_with(
+            dp_dest_name, ['aggr1', 'aggr2'], None,
+            mock_config.netapp_delete_retention_hours)
+        mock_dest_client.create_vserver_peer.assert_called_once_with(
+            dp_dest_name, 'src_vs', peer_cluster_name=fake.CLUSTER_NAME)
+        mock_src_client.accept_vserver_peer.assert_called_once_with(
+            'src_vs', dp_dest_name)
         mock_create = mock_dest_client.create_snapmirror_relationship
         mock_create.assert_called_once_with(
             'src_vs:', dp_dest_name + ':',
             source_cluster_name=fake.CLUSTER_NAME,
             destination_cluster_name=fake.CLUSTER_NAME_2,
             policy_name='AutomatedFailOver',
-            create_destination=True,
-            destination_ipspace=None)
-        mock_dest_client.assign_aggregates_to_svm.assert_called_once_with(
-            c_fake.FAKE_SVM_UUID, dp_dest_name, ['aggr1', 'aggr2'])
+            create_destination=False)
+        # Source data volumes protected before init; root left untouched.
+        mock_src_client._get_volumes_on_svm.assert_called_once_with(
+            'src_vs', is_root=False)
+        mock_src_client.patch_volume.assert_has_calls([
+            mock.call('src_vs', 'share_vol_1',
+                      {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED}),
+            mock.call('src_vs', 'share_vol_2',
+                      {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED}),
+        ])
         mock_dest_client.update_snapmirror_state.assert_called_once_with(
             c_fake.SVM_SM_RELATIONSHIP_UUID,
             state=na_utils.SM_IN_SYNC_STATE)
@@ -1652,26 +1666,100 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
         mock_dest_client.get_cluster_name.return_value = (
             fake.CLUSTER_NAME_2)
         self.mock_object(
-            self.dm_session, 'get_client_and_vserver_name',
-            mock.Mock(return_value=(mock_src_client, 'src_vs')))
+            self.dm_session, 'get_backend_name_and_config_obj',
+            mock.Mock(return_value=(fake.BACKEND_NAME, None)))
+        self.mock_object(
+            self.dm_session, 'get_vserver_from_share_server',
+            mock.Mock(return_value='src_vs'))
         self.mock_object(
             data_motion, 'get_client_for_backend',
-            mock.Mock(return_value=mock_dest_client))
+            mock.Mock(side_effect=[mock_src_client, mock_dest_client]))
         mock_config = na_fakes.create_configuration()
         mock_config.netapp_vserver_name_template = 'os_%s'
+        mock_config.netapp_aggregate_name_search_pattern = 'aggr.*'
         self.mock_object(
             data_motion, 'get_backend_configuration',
             mock.Mock(return_value=mock_config))
         self.mock_object(
             self.dm_session, '_validate_smas_prerequisites')
+        mock_dest_client.get_vserver_peers.return_value = []
+        mock_dest_client.list_non_root_aggregates.return_value = ['aggr1']
+        # Fail after the SVM and peer have been created.
         mock_dest_client.create_snapmirror_relationship.side_effect = (
             Exception('boom'))
+        mock_cleanup = self.mock_object(
+            self.dm_session, '_cleanup_failed_replica_create')
 
         self.assertRaises(
             exception.NetAppException,
             self.dm_session.create_share_server_replica,
             source_ss, replica_ss, 'sync',
             replication_policy='AutomatedFailOver')
+
+        # SVM + peer were created before the failing relationship call, so
+        # cleanup is invoked with those flags set and no relationship uuid.
+        mock_cleanup.assert_called_once_with(
+            mock_src_client, mock_dest_client, fake.BACKEND_NAME_2, 'src_vs',
+            'os_replica-uuid-1234', None, True, True)
+
+    def test_protect_source_volumes(self):
+        mock_src_client = mock.Mock()
+        mock_src_client._get_volumes_on_svm.return_value = [
+            {'name': 'vol_a'}, {'name': 'vol_b'}]
+
+        self.dm_session._protect_source_volumes(mock_src_client, 'src_vs')
+
+        # Only non-root data volumes are listed and protected; the root is
+        # left untouched (ONTAP rejects smas_protection changes on it).
+        mock_src_client._get_volumes_on_svm.assert_called_once_with(
+            'src_vs', is_root=False)
+        mock_src_client.patch_volume.assert_has_calls([
+            mock.call('src_vs', 'vol_a',
+                      {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED}),
+            mock.call('src_vs', 'vol_b',
+                      {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED}),
+        ])
+        self.assertEqual(2, mock_src_client.patch_volume.call_count)
+
+    def test_cleanup_failed_replica_create_deletes_svm(self):
+        mock_src_client = mock.Mock()
+        mock_dest_client = mock.Mock()
+        mock_dp_dest_client = mock.Mock()
+        self.mock_object(
+            data_motion, 'get_client_for_backend',
+            mock.Mock(return_value=mock_dp_dest_client))
+
+        self.dm_session._cleanup_failed_replica_create(
+            mock_src_client, mock_dest_client, fake.BACKEND_NAME_2, 'src_vs',
+            'dp_dest_svm', c_fake.SVM_SM_RELATIONSHIP_UUID,
+            peer_created=True, svm_created=True)
+
+        # Relationship, peer, and the dp-destination SVM are all torn down.
+        mock_rel_delete = mock_dest_client.delete_snapmirror_relationship
+        mock_rel_delete.assert_called_once_with(
+            c_fake.SVM_SM_RELATIONSHIP_UUID)
+        mock_dest_client.delete_vserver_peer.assert_called_once_with(
+            'dp_dest_svm', 'src_vs')
+        data_motion.get_client_for_backend.assert_called_once_with(
+            fake.BACKEND_NAME_2, vserver_name='dp_dest_svm',
+            force_rest_client=True)
+        mock_dest_client.delete_vserver.assert_called_once_with(
+            'dp_dest_svm', mock_dp_dest_client)
+
+    def test_cleanup_failed_replica_create_svm_not_created(self):
+        mock_src_client = mock.Mock()
+        mock_dest_client = mock.Mock()
+        self.mock_object(data_motion, 'get_client_for_backend')
+
+        # Nothing was created past the SVM check: no teardown calls.
+        self.dm_session._cleanup_failed_replica_create(
+            mock_src_client, mock_dest_client, fake.BACKEND_NAME_2, 'src_vs',
+            'dp_dest_svm', None, peer_created=False, svm_created=False)
+
+        mock_dest_client.delete_snapmirror_relationship.assert_not_called()
+        mock_dest_client.delete_vserver_peer.assert_not_called()
+        mock_dest_client.delete_vserver.assert_not_called()
+        data_motion.get_client_for_backend.assert_not_called()
 
     def test_create_share_server_replica_non_smas_policy(self):
         source_ss = copy.deepcopy(fake.SHARE_SERVER)
@@ -1688,11 +1776,14 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
         mock_dest_client.get_cluster_name.return_value = (
             fake.CLUSTER_NAME_2)
         self.mock_object(
-            self.dm_session, 'get_client_and_vserver_name',
-            mock.Mock(return_value=(mock_src_client, 'src_vs')))
+            self.dm_session, 'get_backend_name_and_config_obj',
+            mock.Mock(return_value=(fake.BACKEND_NAME, None)))
+        self.mock_object(
+            self.dm_session, 'get_vserver_from_share_server',
+            mock.Mock(return_value='src_vs'))
         self.mock_object(
             data_motion, 'get_client_for_backend',
-            mock.Mock(return_value=mock_dest_client))
+            mock.Mock(side_effect=[mock_src_client, mock_dest_client]))
         mock_config = na_fakes.create_configuration()
         mock_config.netapp_vserver_name_template = 'os_%s'
         mock_config.netapp_aggregate_name_search_pattern = 'aggr.*'
@@ -1703,10 +1794,11 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
             self.dm_session, '_validate_smas_prerequisites')
         mock_dest_client.get_snapmirror_relationships.return_value = [
             {'uuid': c_fake.SVM_SM_RELATIONSHIP_UUID}]
-        mock_dest_client._get_unique_svm_by_name.return_value = (
-            c_fake.FAKE_SVM_UUID)
+        mock_dest_client.get_vserver_peers.return_value = []
         mock_dest_client.list_non_root_aggregates.return_value = [
             'aggr1', 'other', 'aggr2']
+        mock_src_client._get_volumes_on_svm.return_value = [
+            {'name': 'share_vol_1'}, {'name': 'share_vol_2'}]
         mock_dest_client.get_svm_snapmirror_by_id.return_value = {
             'state': 'in_sync', 'healthy': True,
         }
@@ -1753,10 +1845,11 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
             self.dm_session, '_validate_smas_prerequisites')
         mock_dest_client.get_snapmirror_relationships.return_value = [
             {'uuid': c_fake.SVM_SM_RELATIONSHIP_UUID}]
-        mock_dest_client._get_unique_svm_by_name.return_value = (
-            c_fake.FAKE_SVM_UUID)
+        mock_dest_client.get_vserver_peers.return_value = []
         mock_dest_client.list_non_root_aggregates.return_value = [
             'aggr1', 'other', 'aggr2']
+        mock_src_client._get_volumes_on_svm.return_value = [
+            {'name': 'share_vol_1'}, {'name': 'share_vol_2'}]
         mock_dest_client.get_svm_snapmirror_by_id.return_value = {
             'state': 'in_sync', 'healthy': True,
         }
@@ -1767,14 +1860,18 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
             replication_policy='AutomatedFailOver',
             destination_ipspace=fake.IPSPACE)
 
+        # destination_ipspace flows into the pre-created dp-dest SVM only;
+        # the relationship create uses create_destination=False.
+        mock_dest_client.create_vserver_dp_destination.assert_called_once_with(
+            dp_dest_name, ['aggr1', 'aggr2'], fake.IPSPACE,
+            mock_config.netapp_delete_retention_hours)
         mock_create = mock_dest_client.create_snapmirror_relationship
         mock_create.assert_called_once_with(
             'src_vs:', dp_dest_name + ':',
             source_cluster_name=fake.CLUSTER_NAME,
             destination_cluster_name=fake.CLUSTER_NAME_2,
             policy_name='AutomatedFailOver',
-            create_destination=True,
-            destination_ipspace=fake.IPSPACE)
+            create_destination=False)
 
     @ddt.data(
         ('sync', na_utils.SM_IN_SYNC_STATE),

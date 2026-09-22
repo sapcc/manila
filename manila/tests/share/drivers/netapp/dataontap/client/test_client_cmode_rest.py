@@ -6670,6 +6670,34 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             mock.call(f'/svm/svms/{fake.FAKE_UUID}', 'patch', body=body_patch)
         ])
 
+    def test__create_vserver_dp_destination_omits_aggregates(self):
+        # A dp_destination SVM rejects aggregates / space-reporting options at
+        # creation (error 2621580); the POST body carries only name/subtype/
+        # ipspace.
+        mock_sr = self.mock_object(self.client, 'send_request')
+        self.mock_object(self.client, '_get_unique_svm_by_name',
+                         mock.Mock(return_value=fake.FAKE_UUID))
+        body_post = {
+            'name': fake.VSERVER_NAME,
+            'subtype': 'dp_destination',
+            'ipspace.name': fake.IPSPACE_NAME,
+        }
+        body_patch = {
+            'retention_period': fake.DELETE_RETENTION_HOURS,
+        }
+
+        self.client._create_vserver(
+            fake.VSERVER_NAME,
+            [fake.SHARE_AGGREGATE_NAME],
+            fake.IPSPACE_NAME,
+            fake.DELETE_RETENTION_HOURS,
+            subtype='dp_destination')
+
+        mock_sr.assert_has_calls([
+            mock.call('/svm/svms', 'post', body=body_post),
+            mock.call(f'/svm/svms/{fake.FAKE_UUID}', 'patch', body=body_patch)
+        ])
+
     def test_create_barbican_kms_config_for_specified_vserver(self):
         mock_sr = self.mock_object(self.client, 'send_request')
         body = {
@@ -7553,6 +7581,12 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
 
     def test_create_vserver_dp_destination(self):
         mock_vserver = self.mock_object(self.client, '_create_vserver')
+        mock_get_uuid = self.mock_object(
+            self.client, '_get_unique_svm_by_name',
+            mock.Mock(return_value=fake.FAKE_SVM_UUID))
+        mock_assign = self.mock_object(
+            self.client, 'assign_aggregates_to_svm')
+
         self.client.create_vserver_dp_destination(fake.VSERVER_NAME,
                                                   fake.FAKE_AGGR_LIST,
                                                   fake.IPSPACE_NAME,
@@ -7562,6 +7596,10 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
                                              fake.IPSPACE_NAME,
                                              fake.DELETE_RETENTION_HOURS,
                                              subtype='dp_destination')
+        # A dp_destination SVM gets aggregates assigned in a separate step.
+        mock_get_uuid.assert_called_once_with(fake.VSERVER_NAME)
+        mock_assign.assert_called_once_with(
+            fake.FAKE_SVM_UUID, fake.VSERVER_NAME, fake.FAKE_AGGR_LIST)
 
     @ddt.data(':', '.')
     def test_create_route_no_destination(self, gateway):
