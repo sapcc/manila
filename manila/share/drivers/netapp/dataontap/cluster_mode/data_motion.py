@@ -866,29 +866,64 @@ class DataMotionSession(object):
             src_client, dest_client, source_cluster_name,
             destination_cluster_name)
 
+        # NOTE: Neither bundled create_snapmirror_relationship mode works for
+        # tenant SVMs in a dedicated (non-Default) IPspace:
+        #  - create_destination=True runs ONTAP's own SVM-peering, which
+        #    requires the SVM IPspace to match the cluster-peer IPspace and
+        #    fails.
+        #  - create_destination=False peers cleanly (we do it explicitly,
+        #    which works across IPspaces) but ONTAP no longer auto-protects the
+        #    source volumes.
+        # So: pre-create the dp-dest SVM, peer explicitly, create the
+        # relationship with create_destination=False, then explicitly mark the
+        # source data volumes smas_protection=protected before initialize.
+        svm_created = False
+        peer_created = False
+        relationship_uuid = None
         try:
-            # Step 2: auto-creates dp-dest SVM, SVM peering and relationship.
+            # Step 2: pre-create the dp-destination SVM (also assigns
+            # aggregates) in the replica network's IPspace (resolved by
+            # _setup_share_server_replica_dest_network).
+            aggregate_names = self._get_matching_aggregates(
+                dest_client, dest_config)
+            dest_client.create_vserver_dp_destination(
+                dp_dest_svm_name, aggregate_names, destination_ipspace,
+                dest_config.netapp_delete_retention_hours)
+            svm_created = True
+
+            # Step 3: explicitly peer the SVMs (skip if already peered).
+            existing_peers = dest_client.get_vserver_peers(
+                dp_dest_svm_name, src_vserver)
+            if not existing_peers:
+                dest_client.create_vserver_peer(
+                    dp_dest_svm_name, src_vserver,
+                    peer_cluster_name=source_cluster_name)
+                src_client.accept_vserver_peer(src_vserver, dp_dest_svm_name)
+                peer_created = True
+
+            # Step 4: create the relationship against the pre-created,
+            # pre-peered destination SVM. create_destination=False: ONTAP's
+            # bundled peering would re-fail the IPspace check, so we peered
+            # explicitly above.
             dest_client.create_snapmirror_relationship(
                 src_path, dest_path,
                 source_cluster_name=source_cluster_name,
                 destination_cluster_name=destination_cluster_name,
                 policy_name=replication_policy,
-                create_destination=True,
-                destination_ipspace=destination_ipspace)
+                create_destination=False)
 
             relationships = dest_client.get_snapmirror_relationships(
                 src_path, dest_path, fields='uuid')
             relationship_uuid = relationships[0]['uuid']
 
-            # Step 3: assign aggregates so destination volumes can be placed.
-            dp_dest_svm_uuid = dest_client._get_unique_svm_by_name(
-                dp_dest_svm_name)
-            aggregate_names = self._get_matching_aggregates(
-                dest_client, dest_config)
-            dest_client.assign_aggregates_to_svm(
-                dp_dest_svm_uuid, dp_dest_svm_name, aggregate_names)
+            # Step 5: mark the source SVM's data volumes protected. With
+            # create_destination=False ONTAP does not auto-protect them, and
+            # initialize rejects volumes whose smas_protection is unset
+            # ("offline or restricted"). The SVM root cannot be SM-as protected
+            # and is excluded (is_root=False).
+            self._protect_source_volumes(src_client, src_vserver)
 
-            # Step 4: initialize the relationship.
+            # Step 6: initialize the relationship.
             dest_client.update_snapmirror_state(
                 relationship_uuid, state=init_state)
 
@@ -898,9 +933,11 @@ class DataMotionSession(object):
                 relationship_uuid,
                 fields='state,healthy,unhealthy_reason')
         except Exception:
-            # TODO(kumart): the auto-created dp-destination SVM, SVM peer and
-            # relationship are left behind. Enhance core and driver to send
-            # detail_data in the exception; do not duplicate the delete flow.
+            # Best-effort teardown of what we created so a retry starts clean;
+            # cleanup failures must not mask the original error.
+            self._cleanup_failed_replica_create(
+                src_client, dest_client, dest_backend, src_vserver,
+                dp_dest_svm_name, relationship_uuid, peer_created, svm_created)
             msg = _('Could not create the share server replica '
                     'between source SVM %(src)s and destination SVM '
                     '%(dst)s.')
@@ -908,7 +945,7 @@ class DataMotionSession(object):
             LOG.exception(msg, msg_args)
             raise exception.NetAppException(msg % msg_args)
 
-        # Step 5: return without waiting for baseline transfer.
+        # Step 6: return without waiting for baseline transfer.
         backend_details = {'vserver_name': dp_dest_svm_name}
         if replication_policy == na_utils.SMAS_POLICY_NAME:
             source_backend_details = source_share_server.get(
@@ -923,6 +960,57 @@ class DataMotionSession(object):
                 relationship),
             'backend_details': backend_details,
         }
+
+    def _protect_source_volumes(self, src_client, src_vserver):
+        """Mark the source SVM's data volumes smas_protection=protected.
+
+        Required before initializing an SM-as relationship created with
+        create_destination=False -- ONTAP does not auto-protect the volumes in
+        that mode, and initialize rejects data volumes whose smas_protection is
+        unset. The SVM root volume is left untouched: ONTAP rejects any
+        smas_protection change on the root (error 32833683) and does not
+        require it to be set.
+        """
+        data_volumes = src_client._get_volumes_on_svm(
+            src_vserver, is_root=False)
+        for volume in data_volumes:
+            src_client.patch_volume(
+                src_vserver, volume['name'],
+                {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED})
+
+    def _cleanup_failed_replica_create(self, src_client, dest_client,
+                                       dest_backend, src_vserver,
+                                       dp_dest_svm_name, relationship_uuid,
+                                       peer_created, svm_created):
+        """Best-effort teardown of a partial replica create; never raises.
+
+        Tears down, in reverse order of creation, the SnapMirror relationship,
+        the SVM peer, and the dp-destination SVM we created, so a failed create
+        leaves nothing behind and a retry starts clean.
+        """
+        if relationship_uuid:
+            try:
+                dest_client.delete_snapmirror_relationship(relationship_uuid)
+            except Exception:
+                LOG.exception("Cleanup: failed to delete SnapMirror "
+                              "relationship %s.", relationship_uuid)
+        if peer_created:
+            try:
+                dest_client.delete_vserver_peer(dp_dest_svm_name, src_vserver)
+            except Exception:
+                LOG.exception("Cleanup: failed to delete SVM peer between "
+                              "%(dst)s and %(src)s.",
+                              {'dst': dp_dest_svm_name, 'src': src_vserver})
+        if svm_created:
+            try:
+                dp_dest_client = get_client_for_backend(
+                    dest_backend, vserver_name=dp_dest_svm_name,
+                    force_rest_client=True)
+                dest_client.delete_vserver(dp_dest_svm_name, dp_dest_client)
+            except Exception:
+                LOG.exception("Cleanup: failed to delete dp-destination SVM "
+                              "%s; manual removal on the backend may be "
+                              "required.", dp_dest_svm_name)
 
     _SVM_REPLICATION_INIT_STATES = {
         'sync': na_utils.SM_IN_SYNC_STATE,
