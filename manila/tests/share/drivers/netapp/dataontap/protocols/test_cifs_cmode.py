@@ -113,6 +113,17 @@ class NetAppClusteredCIFSHelperTestCase(test.TestCase):
         self.mock_client.remove_cifs_share.assert_called_once_with(
             fake.SHARE_NAME)
 
+    def test_delete_share_with_mount_point_name(self):
+        """CIFS share name must come from share_name, not the junction path."""
+        share = copy.copy(fake.CIFS_SHARE)
+        share['export_location'] = (
+            r'\\%s%s' % (fake.SHARE_ADDRESS_1, '\\sapmnt25'))
+
+        self.helper.delete_share(share, fake.SHARE_NAME)
+
+        self.mock_client.remove_cifs_share.assert_called_once_with(
+            fake.SHARE_NAME)
+
     def test_update_access(self):
 
         mock_validate_access_rule = self.mock_object(self.helper,
@@ -145,6 +156,23 @@ class NetAppClusteredCIFSHelperTestCase(test.TestCase):
             fake.SHARE_NAME, fake.EXISTING_CIFS_RULES, new_rules)
         mock_handle_deleted_rules.assert_called_once_with(
             fake.SHARE_NAME, fake.EXISTING_CIFS_RULES, new_rules)
+
+    def test_update_access_with_mount_point_name(self):
+        """update_access must use share_name, not the junction path."""
+        share = copy.copy(fake.CIFS_SHARE)
+        share['export_location'] = (
+            r'\\%s%s' % (fake.SHARE_ADDRESS_1, '\\sapmnt25'))
+        mock_get_access_rules = self.mock_object(
+            self.helper, '_get_access_rules',
+            mock.Mock(return_value=fake.EXISTING_CIFS_RULES))
+        self.mock_object(self.helper, '_handle_added_rules')
+        self.mock_object(self.helper, '_handle_ro_to_rw_rules')
+        self.mock_object(self.helper, '_handle_rw_to_ro_rules')
+        self.mock_object(self.helper, '_handle_deleted_rules')
+
+        self.helper.update_access(share, fake.SHARE_NAME, [fake.USER_ACCESS])
+
+        mock_get_access_rules.assert_called_once_with(share, fake.SHARE_NAME)
 
     def test_validate_access_rule(self):
 
