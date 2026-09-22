@@ -73,14 +73,14 @@ class NetAppCmodeCIFSHelper(base.NetAppBaseHelper):
                                                    security_style='ntfs')
 
         # Return a callback that may be used for generating export paths
-        # for this share.
-        return (lambda export_address, export_path=export_path:
-                r'\\%s%s' % (export_address, export_path.replace('/', '\\')))
+        # for this share. CIFS clients connect by share name, so the
+        # junction path is not a valid UNC.
+        return (lambda export_address, share_name=share_name:
+                r'\\%s\%s' % (export_address, share_name))
 
     @na_utils.trace
     def delete_share(self, share, share_name):
         """Deletes CIFS share on Data ONTAP Vserver."""
-        host_ip, share_name = self._get_export_location(share)
         self._client.remove_cifs_share(share_name)
 
     @na_utils.trace
@@ -101,8 +101,9 @@ class NetAppCmodeCIFSHelper(base.NetAppBaseHelper):
 
         new_rules = {r['access_to']: r['access_level'] for r in valid_rules}
 
-        # Get rules from share
-        _, cifs_share_name = self._get_export_location(share)
+        # The CIFS share name is the volume name, which can differ from
+        # the junction path basename in the export location.
+        cifs_share_name = share_name
         existing_rules = self._get_access_rules(share, cifs_share_name)
 
         # Update rules in an order that will prevent transient disruptions
@@ -191,9 +192,18 @@ class NetAppCmodeCIFSHelper(base.NetAppBaseHelper):
     @na_utils.trace
     def get_share_name_for_share(self, share):
         """Returns the flexvol name that hosts a share."""
-        _, volume_junction_path = self._get_export_location(share)
-        volume = self._client.get_volume_at_junction_path(
-            f"/{volume_junction_path}")
+        _, cifs_share_name = self._get_export_location(share)
+        cifs_share = None
+        if cifs_share_name:
+            cifs_share = self._client.get_cifs_share(cifs_share_name)
+        if cifs_share:
+            volume = self._client.get_volume_at_junction_path(
+                cifs_share['path'])
+        else:
+            # Export locations persisted before CIFS share names were
+            # used carry the junction path instead.
+            volume = self._client.get_volume_at_junction_path(
+                f"/{cifs_share_name}")
         return volume.get('name') if volume else None
 
     @na_utils.trace
