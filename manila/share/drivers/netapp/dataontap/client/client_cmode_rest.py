@@ -5021,6 +5021,13 @@ class NetAppRestClient(object):
         self._create_vserver(
             vserver_name, aggregate_names, ipspace_name,
             delete_retention_hours, subtype='dp_destination')
+        # A dp_destination SVM rejects aggregates at creation time (ONTAP only
+        # allows name/comment/ipspace for an SVM-DR destination), so assign
+        # them in a separate step.
+        if aggregate_names:
+            svm_uuid = self._get_unique_svm_by_name(vserver_name)
+            self.assign_aggregates_to_svm(
+                svm_uuid, vserver_name, aggregate_names)
 
     @na_utils.trace
     def _create_vserver(self, vserver_name, aggregate_names, ipspace_name,
@@ -5028,6 +5035,7 @@ class NetAppRestClient(object):
                         name_server_switch=None, subtype=None,
                         logical_space_reporting=False):
         """Creates new vserver and assigns aggregates."""
+        is_dp_destination = subtype == 'dp_destination'
         body = {
             'name': vserver_name,
         }
@@ -5041,14 +5049,18 @@ class NetAppRestClient(object):
         if ipspace_name:
             body['ipspace.name'] = ipspace_name
 
-        body['aggregates'] = []
-        for aggr_name in aggregate_names:
-            body['aggregates'].append({'name': aggr_name})
+        # A dp_destination SVM accepts only name/comment/ipspace at creation;
+        # aggregates and space-reporting options are rejected (and assigned
+        # separately by the caller).
+        if not is_dp_destination:
+            body['aggregates'] = []
+            for aggr_name in aggregate_names:
+                body['aggregates'].append({'name': aggr_name})
 
-        body['is_space_reporting_logical'] = (
-            'true' if logical_space_reporting else 'false')
-        body['is_space_enforcement_logical'] = (
-            'true' if logical_space_reporting else 'false')
+            body['is_space_reporting_logical'] = (
+                'true' if logical_space_reporting else 'false')
+            body['is_space_enforcement_logical'] = (
+                'true' if logical_space_reporting else 'false')
 
         self.send_request('/svm/svms', 'post', body=body)
 
