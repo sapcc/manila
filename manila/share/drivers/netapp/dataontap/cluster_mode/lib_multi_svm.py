@@ -3345,17 +3345,10 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             LOG.exception(msg)
             raise
 
-        # SVM break (convert dp-destination to default subtype).
-        try:
-            dm_session.convert_svm_to_default_subtype(
-                dest_vserver, dest_client,
-                timeout=na_utils.SMAS_DELETE_POLL_TIMEOUT)
-            LOG.info('Converted destination SVM %(dest)s to default '
-                     'subtype.', {'dest': dest_vserver})
-        except Exception:
-            LOG.exception('Failed to convert dp-destination SVM %s to '
-                          'default subtype.', dest_vserver)
-            raise
+        # NOTE: SM-as does not support SnapMirror "break" (ONTAP error
+        # 23003190), so the SVM-DR-style convert-to-default-subtype step is
+        # intentionally skipped. The dp-destination SVM is deleted directly
+        # below, which is the correct SM-as teardown.
 
         # FlexClone cleanup on destination SVM.
         try:
