@@ -5732,9 +5732,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             fake_replica_list)
         delete_sm = dm_session_mock.delete_svm_snapmirror_relationship
         delete_sm.assert_called_once_with(fake_src_ss, fake_dest_ss)
-        dm_session_mock.convert_svm_to_default_subtype.assert_called_once_with(
-            dest_vserver, mock_cluster_client,
-            timeout=na_utils.SMAS_DELETE_POLL_TIMEOUT)
+        # SM-as does not support break, so no convert-to-default-subtype step.
+        dm_session_mock.convert_svm_to_default_subtype.assert_not_called()
         self.library._cleanup_flexclones_on_svm.assert_called_once_with(
             dest_vserver, mock_cluster_client)
         self.library._cleanup_data_volumes_on_svm.assert_called_once_with(
@@ -5855,13 +5854,13 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
         dm_session_mock.delete_svm_snapmirror_relationship.assert_not_called()
 
-    def test_delete_share_server_replica_step2_failure(self):
+    def test_delete_share_server_replica_snapmirror_delete_failure(self):
         (fake_dest_ss_replica, _fake_dest_ss, fake_src_ss,
          dest_vserver, src_vserver,
          mock_dest_client, mock_src_client,
          dm_session_mock) = self._setup_delete_share_server_replica_mocks()
         dm_session_mock.delete_svm_snapmirror_relationship.side_effect = (
-            exception.NetAppException('step2 boom'))
+            exception.NetAppException('boom'))
         fake_replica_list = [{'share_server': fake_src_ss}]
 
         self.assertRaises(
@@ -5869,7 +5868,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             self.library.delete_share_server_replica,
             None, fake_dest_ss_replica, fake_replica_list)
 
-        dm_session_mock.convert_svm_to_default_subtype.assert_not_called()
+        # A relationship-delete failure aborts before any SVM cleanup.
+        self.library._cleanup_flexclones_on_svm.assert_not_called()
 
     def test_delete_share_server_replica_flexclone_failure_continues(self):
         """A non-critical step failure (FlexClone cleanup) doesn't abort."""
@@ -5895,22 +5895,6 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             src_vserver, dest_vserver, mock_cluster_client,
             mock_cluster_client)
         mock_cluster_client.delete_vserver.assert_called_once()
-
-    def test_delete_share_server_replica_step3_failure(self):
-        (fake_dest_ss_replica, _fake_dest_ss, fake_src_ss,
-         dest_vserver, src_vserver,
-         mock_dest_client, mock_src_client,
-         dm_session_mock) = self._setup_delete_share_server_replica_mocks()
-        dm_session_mock.convert_svm_to_default_subtype.side_effect = (
-            exception.NetAppException('step3 boom'))
-        fake_replica_list = [{'share_server': fake_src_ss}]
-
-        self.assertRaises(
-            exception.NetAppException,
-            self.library.delete_share_server_replica,
-            None, fake_dest_ss_replica, fake_replica_list)
-
-        self.library._cleanup_flexclones_on_svm.assert_not_called()
 
     def test_delete_share_server_replica_step8_failure(self):
         (fake_dest_ss_replica, fake_dest_ss, fake_src_ss,
