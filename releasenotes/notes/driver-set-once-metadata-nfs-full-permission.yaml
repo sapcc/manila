@@ -1,0 +1,9 @@
+---
+features:
+  - |
+    Added a new configuration option ``driver_set_once_metadata``. Metadata
+    keys listed here can be written to a share exactly **once** over its
+    lifetime.  The value is persisted in the DB and forwarded to the share
+    driver so it can apply the corresponding backend change. Any subsequent
+    attempt to update or overwrite a key that is already present in the
+    share's metadata returns HTTP 400 (Bad Request).

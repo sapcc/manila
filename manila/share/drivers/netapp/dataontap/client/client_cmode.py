@@ -2863,6 +2863,29 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         self.send_request('volume-modify-iter', api_args)
 
     @na_utils.trace
+    def set_volume_unix_permissions(self, volume_name, unix_permissions):
+        """Set unix permissions on the specified volume root."""
+        api_args = {
+            'query': {
+                'volume-attributes': {
+                    'volume-id-attributes': {
+                        'name': volume_name,
+                    },
+                },
+            },
+            'attributes': {
+                'volume-attributes': {
+                    'volume-security-attributes': {
+                        'volume-security-unix-attributes': {
+                            'permissions': unix_permissions,
+                        },
+                    },
+                },
+            },
+        }
+        self.send_request('volume-modify-iter', api_args)
+
+    @na_utils.trace
     def set_sis_config(self, volume_name, api_args):
         api_args.update({'path': '/vol/%s' % volume_name})
         self.send_request('sis-set-config', api_args)
