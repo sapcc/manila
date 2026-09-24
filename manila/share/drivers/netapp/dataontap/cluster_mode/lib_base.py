@@ -516,7 +516,6 @@ class NetAppCmodeFileStorageLibrary(object):
 
         data = {
             'share_backend_name': self._backend_name,
-            'share_backend_host': self._backend_host,
             'driver_name': self.driver_name,
             'vendor_name': 'NetApp',
             'driver_version': driver_version,
