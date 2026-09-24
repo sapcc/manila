@@ -500,6 +500,11 @@ class ShareReplicaSizeExceedsAvailableQuota(QuotaError):
         "gigabytes quota.")
 
 
+class ShareServerReplicasLimitExceeded(QuotaError):
+    message = _(
+        "Maximum number of allowed share-server-replicas is exceeded.")
+
+
 class EncryptionKeysLimitExceeded(QuotaError):
     message = _(
         "Maximum number of allowed encryption keys is exceeded.")
@@ -1063,6 +1068,15 @@ class ReplicationException(ManilaException):
 
 class ShareReplicaNotFound(NotFound):
     message = _("Share Replica %(replica_id)s could not be found.")
+
+
+class ShareServerReplicaNotFound(NotFound):
+    message = _("Share Server Replica %(replica_id)s could not be found.")
+
+
+class ShareServerReplicaExists(Invalid):
+    message = _("A replica already exists for share server %(share_server_id)s"
+                " on host %(host)s.")
 
 
 # Tegile Storage drivers

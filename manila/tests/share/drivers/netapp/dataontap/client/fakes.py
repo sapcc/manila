@@ -153,6 +153,82 @@ SM_DEST_VOLUME = 'fake_destination_volume'
 SM_SOURCE_PATH = SM_SOURCE_VSERVER + ':' + SM_SOURCE_VOLUME
 SM_DEST_PATH = SM_DEST_VSERVER + ':' + SM_DEST_VOLUME
 
+CLUSTER_PEER_NAME = 'fake_peer_cluster'
+MEDIATOR_IP = '10.0.0.100'
+FAKE_SVM_UUID = 'fake-svm-uuid-1234'
+FAKE_SVM_NAME = 'fake-svm-name'
+FAKE_AGGREGATE_NAMES = ['aggr1', 'aggr2']
+SVM_SM_RELATIONSHIP_UUID = 'fake-svm-sm-rel-uuid-9999'
+
+CLUSTER_PEERS_GET_RESPONSE = {
+    'records': [{
+        'name': CLUSTER_PEER_NAME,
+        'status': {'state': 'available'},
+    }],
+    'num_records': 1,
+}
+
+CLUSTER_PEERS_GET_RESPONSE_UNAVAILABLE = {
+    'records': [{
+        'name': CLUSTER_PEER_NAME,
+        'status': {'state': 'unavailable'},
+    }],
+    'num_records': 1,
+}
+
+CLUSTER_PEERS_GET_RESPONSE_EMPTY = {
+    'records': [],
+    'num_records': 0,
+}
+
+CLUSTER_PEER_INFO_LIST = [
+    {
+        'availability': 'available',
+        'cluster-name': CLUSTER_PEER_NAME,
+        'remote-cluster-name': CLUSTER_PEER_NAME,
+    },
+]
+
+CLUSTER_PEER_INFO_LIST_UNAVAILABLE = [
+    {
+        'availability': 'unavailable',
+        'cluster-name': CLUSTER_PEER_NAME,
+        'remote-cluster-name': CLUSTER_PEER_NAME,
+    },
+]
+
+CLUSTER_MEDIATORS_GET_RESPONSE = {
+    'records': [{
+        'reachable': True,
+        'peer_mediator_connectivity': 'connected',
+        'ip_address': MEDIATOR_IP,
+    }],
+    'num_records': 1,
+}
+
+CLUSTER_MEDIATORS_GET_RESPONSE_UNREACHABLE = {
+    'records': [{
+        'reachable': False,
+        'peer_mediator_connectivity': 'connected',
+        'ip_address': MEDIATOR_IP,
+    }],
+    'num_records': 1,
+}
+
+CLUSTER_MEDIATORS_GET_RESPONSE_DISCONNECTED = {
+    'records': [{
+        'reachable': True,
+        'peer_mediator_connectivity': 'disconnected',
+        'ip_address': MEDIATOR_IP,
+    }],
+    'num_records': 1,
+}
+
+CLUSTER_MEDIATORS_GET_RESPONSE_EMPTY = {
+    'records': [],
+    'num_records': 0,
+}
+
 
 FPOLICY_POLICY_NAME = 'fake_fpolicy_name'
 FPOLICY_EVENT_NAME = 'fake_fpolicy_event_name'
@@ -3733,6 +3809,37 @@ FAKE_GET_CLUSTER_NODE_VERSION_REST = {
     ],
 }
 
+FAKE_GET_CLUSTER_PEERS_REST = {
+    "num_records": 1,
+    "records": [
+        {
+            "name": CLUSTER_NAME,
+            "uuid": "fake_uuid",
+            "remote": {
+                "name": REMOTE_CLUSTER_NAME,
+                "serial_number": "fake_serial_number",
+                "ip_addresses": [
+                    CLUSTER_ADDRESS_1,
+                    CLUSTER_ADDRESS_2,
+                ],
+            },
+            "status": {
+                "state": "available",
+            },
+        }
+    ],
+}
+
+FAKE_GET_ONTAP_VERSION_CLI_REST = {
+    "records": [
+        {
+            "version": {
+                "full": VERSION,
+            }
+        }
+    ],
+}
+
 FAKE_GET_LICENSES_REST = {
     "records": [
         {
@@ -4612,61 +4719,61 @@ FAKE_PEER_GET_RESPONSE = {
     'num_records': 1
 }
 
-REST_SPEED_SORTED_PORTS = [
-    {'node': NODE_NAME, 'port': 'e0d', 'speed': 10000},
-    {'node': NODE_NAME, 'port': 'e0c', 'speed': 1000},
-    {'node': NODE_NAME, 'port': 'e0b', 'speed': 100},
-]
-
-REST_SPEED_NOT_SORTED_PORTS = [
-    {'node': NODE_NAME, 'port': 'e0b', 'speed': 100},
-    {'node': NODE_NAME, 'port': 'e0c', 'speed': 1000},
-    {'node': NODE_NAME, 'port': 'e0d', 'speed': 10000},
-]
-
 REST_ETHERNET_PORTS = {
     "records": [
         {
-            "uuid": "fake_uuid1",
-            "name": "e0a",
-            "type": "physical",
+            "uuid": "fake_uuid_lag",
+            "name": "a0b",
+            "type": "lag",
             "node": {
                 "name": NODE_NAME
             },
             "broadcast_domain": {
-                "name": "fake_domain_1",
+                "name": "broadcast_a0b",
                 "ipspace": {
                     "name": "Default"
                 }
             },
             "state": "up",
-            "speed": 10,
+            "speed": 0,
+            "lag": {
+                "member_ports": [
+                    {"uuid": "fake_uuid_e6a", "name": "e6a",
+                     "node": {"name": NODE_NAME}},
+                    {"uuid": "fake_uuid_e8a", "name": "e8a",
+                     "node": {"name": NODE_NAME}},
+                ]
+            },
         },
         {
-            "uuid": "fake_uuid2",
-            "name": "e0b",
+            "uuid": "fake_uuid_e6a",
+            "name": "e6a",
             "type": "physical",
             "node": {
                 "name": NODE_NAME
-            },
-            "broadcast_domain": {
-                "name": "fake_domain_2",
-                "ipspace": {
-                    "name": "Default"
-                }
             },
             "state": "up",
-            "speed": 100,
+            "speed": 100000,
         },
         {
-            "uuid": "fake_uuid3",
-            "name": "e0c",
+            "uuid": "fake_uuid_e8a",
+            "name": "e8a",
+            "type": "physical",
+            "node": {
+                "name": NODE_NAME
+            },
+            "state": "up",
+            "speed": 100000,
+        },
+        {
+            "uuid": "fake_uuid_e0m",
+            "name": "e0M",
             "type": "physical",
             "node": {
                 "name": NODE_NAME
             },
             "broadcast_domain": {
-                "name": "fake_domain_3",
+                "name": "broadcast_MGMT",
                 "ipspace": {
                     "name": "Default"
                 }
@@ -4674,24 +4781,48 @@ REST_ETHERNET_PORTS = {
             "state": "up",
             "speed": 1000,
         },
-        {
-            "uuid": "fake_uuid4",
-            "name": "e0d",
-            "type": "physical",
-            "node": {
-                "name": NODE_NAME
-            },
-            "broadcast_domain": {
-                "name": "fake_domain_4",
-                "ipspace": {
-                    "name": "Default"
-                }
-            },
-            "state": "up",
-            "speed": 10000,
-        }
     ],
 }
+
+# Expected result of get_node_data_ports for REST_ETHERNET_PORTS: the LAG (a0b)
+# and the standalone physical (e0M) are kept, in API order; the LAG member
+# physicals (e6a, e8a) are dropped.
+REST_DATA_PORTS = [
+    {'node': NODE_NAME, 'port': 'a0b', 'speed': 0},
+    {'node': NODE_NAME, 'port': 'e0M', 'speed': 1000},
+]
+
+# A record set with no interface group, to prove member filtering does not
+# drop standalone physical ports.
+REST_ETHERNET_PORTS_NO_LAG = {
+    "records": [
+        {
+            "uuid": "fake_uuid1",
+            "name": "e0a",
+            "type": "physical",
+            "node": {"name": NODE_NAME},
+            "broadcast_domain": {"name": "fake_domain_1",
+                                 "ipspace": {"name": "Default"}},
+            "state": "up",
+            "speed": 10,
+        },
+        {
+            "uuid": "fake_uuid2",
+            "name": "e0b",
+            "type": "physical",
+            "node": {"name": NODE_NAME},
+            "broadcast_domain": {"name": "fake_domain_2",
+                                 "ipspace": {"name": "Default"}},
+            "state": "up",
+            "speed": 100,
+        },
+    ],
+}
+
+REST_DATA_PORTS_NO_LAG = [
+    {'node': NODE_NAME, 'port': 'e0a', 'speed': 10},
+    {'node': NODE_NAME, 'port': 'e0b', 'speed': 100},
+]
 
 SVM_ITEM_SIMPLE_RESPONSE_REST = {
     "uuid": "fake_uuid",

@@ -680,6 +680,39 @@ SHARE_SERVER_2 = {
     }]
 }
 
+SMAS_SNAPMIRROR_RELATIONSHIP = {
+    'uuid': 'smas-relationship-uuid',
+    'policy': {
+        'uuid': 'smas-policy-uuid',
+        'name': 'AutomatedFailOver',
+        'type': 'sync',
+    },
+    'state': 'in_sync',
+    'healthy': True,
+}
+
+NON_SMAS_SYNC_SNAPMIRROR_RELATIONSHIP = {
+    'uuid': 'non-smas-sync-relationship-uuid',
+    'policy': {
+        'uuid': 'non-smas-sync-policy-uuid',
+        'name': 'Sync',
+        'type': 'sync',
+    },
+    'state': 'in_sync',
+    'healthy': True,
+}
+
+SMAS_NAMED_ASYNC_SNAPMIRROR_RELATIONSHIP = {
+    'uuid': 'smas-named-async-relationship-uuid',
+    'policy': {
+        'uuid': 'smas-named-async-policy-uuid',
+        'name': 'AutomatedFailOver',
+        'type': 'async',
+    },
+    'state': 'in_sync',
+    'healthy': True,
+}
+
 VSERVER_INFO = {
     'name': 'fake_vserver_name',
     'subtype': 'default',
@@ -2015,6 +2048,52 @@ SERVER_MODEL_UPDATE = {
             USER_NETWORK_ALLOCATIONS[1]['ip_address'])
     },
     'share_updates': {SHARE_INSTANCE['id']: NFS_EXPORTS[0]},
+}
+
+SVM_VOLUMES_WITH_AGGREGATES = {
+    SHARE_NAME: {
+        'name': SHARE_NAME,
+        'uuid': 'fake_volume_uuid',
+        'aggregates': [{'name': AGGREGATE}],
+    },
+}
+
+SVM_VOLUMES_WITHOUT_AGGREGATES = {
+    SHARE_NAME: {
+        'name': SHARE_NAME,
+        'uuid': 'fake_volume_uuid',
+        'aggregates': [],
+    },
+}
+
+VSERVER_INFO_DP_DESTINATION = {
+    'name': VSERVER2,
+    'subtype': 'dp_destination',
+    'operational_state': 'stopped',
+    'state': 'stopped',
+}
+
+VSERVER_INFO_TRANSIENT = {
+    'name': VSERVER2,
+    'subtype': 'default',
+    'operational_state': 'stopped',
+    'state': 'stopped',
+}
+
+SM_REVERSED_RELATIONSHIP = {
+    'state': 'in_sync',
+    'healthy': True,
+    'source': {'path': '%s:' % VSERVER2},
+    'destination': {'path': '%s:' % VSERVER1},
+}
+
+SM_REVERSED_RELATIONSHIP_SYNCHRONIZING = {
+    'state': 'synchronizing',
+    'healthy': False,
+    'unhealthy_reason': [{'code': '6620046',
+                          'message': 'Transfer in progress.'}],
+    'source': {'path': '%s:' % VSERVER2},
+    'destination': {'path': '%s:' % VSERVER1},
 }
 
 

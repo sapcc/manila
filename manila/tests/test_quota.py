@@ -716,7 +716,7 @@ class QuotaEngineTestCase(test.TestCase):
         self.assertEqual(
             sorted(['gigabytes', 'per_share_gigabytes', 'replica_gigabytes',
                     'share_group_snapshots', 'share_groups', 'share_networks',
-                    'share_replicas', 'shares', 'snapshot_gigabytes',
-                    'snapshots', 'backups', 'backup_gigabytes',
-                    'encryption_keys']),
+                    'share_replicas', 'share_server_replicas', 'shares',
+                    'snapshot_gigabytes', 'snapshots', 'backups',
+                    'backup_gigabytes', 'encryption_keys']),
             quota.QUOTAS.resources)
