@@ -4594,13 +4594,6 @@ class NetAppRestClient(object):
         ldap_schema = 'RFC-2307'
 
         if ad_domain:
-            if ldap_servers:
-                msg = _("LDAP client cannot be configured with both 'server' "
-                        "and 'domain' parameters. Use 'server' for Linux/Unix "
-                        "LDAP servers or 'domain' for Active Directory LDAP "
-                        "servers.")
-                LOG.exception(msg)
-                raise exception.NetAppException(msg)
             # RFC2307bis, for MS Active Directory LDAP server
             ldap_schema = 'MS-AD-BIS'
             bind_dn = (security_service.get('user') + '@' + ad_domain)
@@ -4629,6 +4622,10 @@ class NetAppRestClient(object):
         if ad_domain:
             # Active Directory LDAP server
             body['ad_domain'] = ad_domain
+            if ldap_servers:
+                body['preferred_ad_servers'] = []
+                for server in ldap_servers.split(','):
+                    body['preferred_ad_servers'].append(server.strip())
         else:
             body['servers'] = []
             for server in ldap_servers.split(','):
@@ -4647,13 +4644,6 @@ class NetAppRestClient(object):
         svm_uuid = self._get_unique_svm_by_name(self.vserver)
 
         if ad_domain:
-            if ldap_servers:
-                msg = _("LDAP client cannot be configured with both 'server' "
-                        "and 'domain' parameters. Use 'server' for Linux/Unix "
-                        "LDAP servers or 'domain' for Active Directory LDAP "
-                        "servers.")
-                LOG.exception(msg)
-                raise exception.NetAppException(msg)
             # RFC2307bis, for MS Active Directory LDAP server
             ldap_schema = 'MS-AD-BIS'
             bind_dn = (new_security_service.get('user') + '@' + ad_domain)
@@ -4678,6 +4668,10 @@ class NetAppRestClient(object):
         if ad_domain:
             # Active Directory LDAP server
             body['ad_domain'] = ad_domain
+            if ldap_servers:
+                body['preferred_ad_servers'] = []
+                for server in ldap_servers.split(','):
+                    body['preferred_ad_servers'].append(server.strip())
         else:
             body['servers'] = []
             for server in ldap_servers.split(','):
