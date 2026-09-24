@@ -2410,7 +2410,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         if ss_type == 'ldap':
             ad_domain = security_service.get('domain')
             ldap_servers = security_service.get('server')
-            if not bool(ad_domain) ^ bool(ldap_servers):
+            if not (ad_domain or ldap_servers):
                 msg = _("LDAP security service must have either 'server' or "
                         "'domain' parameters. Use 'server' for Linux/Unix "
                         "LDAP servers or 'domain' for Active Directory LDAP "
