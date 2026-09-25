@@ -16,6 +16,7 @@ Unit tests for the NetApp Data ONTAP cDOT multi-SVM storage driver library.
 """
 
 import copy
+import time
 from unittest import mock
 
 import ddt
@@ -30,6 +31,7 @@ from manila.share.drivers.netapp.dataontap.client import api as netapp_api
 from manila.share.drivers.netapp.dataontap.cluster_mode import data_motion
 from manila.share.drivers.netapp.dataontap.cluster_mode import lib_base
 from manila.share.drivers.netapp.dataontap.cluster_mode import lib_multi_svm
+from manila.share.drivers.netapp import options as na_opts
 from manila.share.drivers.netapp import utils as na_utils
 from manila.share import share_types
 from manila.share import utils as share_utils
@@ -3820,6 +3822,202 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.assertIsNone(result)
         mock_get_extra_spec.assert_called_once_with(fake.SHARE_INSTANCE)
         mock_get_provisioning_opts.assert_called_once_with('fake_extra_specs')
+
+    def test_choose_share_server_compatible_with_share_cache_hot_hit(self):
+        self.library.is_nfs_config_supported = False
+        mock_client = mock.Mock()
+        self.mock_object(self.library, '_get_vserver',
+                         mock.Mock(return_value=(fake.VSERVER1, mock_client)))
+        self.mock_object(mock_client, 'get_vserver_info',
+                         mock.Mock(return_value=fake.VSERVER_INFO))
+        self.mock_object(mock_client, 'list_vserver_aggregates',
+                         mock.Mock(return_value=fake.AGGREGATES))
+        mock_get_extra_specs = self.mock_object(
+            share_types, 'get_extra_specs_from_share',
+            mock.Mock(return_value=fake.EMPTY_EXTRA_SPEC))
+        mock_get_provisioning_options = self.mock_object(
+            self.library, '_get_provisioning_options',
+            mock.Mock(return_value={}))
+        self.mock_object(time, 'time', mock.Mock(return_value=100.0))
+
+        first = self.library.choose_share_server_compatible_with_share(
+            None, [fake.SHARE_SERVER], fake.SHARE_2)
+        second = self.library.choose_share_server_compatible_with_share(
+            None, [fake.SHARE_SERVER], fake.SHARE_2)
+
+        self.assertEqual(fake.SHARE_SERVER, first)
+        self.assertEqual(fake.SHARE_SERVER, second)
+        self.assertEqual(1, self.library._get_vserver.call_count)
+        self.assertEqual(2, mock_get_extra_specs.call_count)
+        self.assertEqual(2, mock_get_provisioning_options.call_count)
+
+    def test_choose_share_server_compatible_with_share_cache_warm_hit(self):
+        self.library.is_nfs_config_supported = False
+        mock_client = mock.Mock()
+        self.mock_object(self.library, '_get_vserver',
+                         mock.Mock(return_value=(fake.VSERVER1, mock_client)))
+        self.mock_object(mock_client, 'get_vserver_info',
+                         mock.Mock(return_value=fake.VSERVER_INFO))
+        self.mock_object(mock_client, 'list_vserver_aggregates',
+                         mock.Mock(return_value=fake.AGGREGATES))
+        self.mock_object(share_types, 'get_extra_specs_from_share',
+                         mock.Mock(return_value=fake.EMPTY_EXTRA_SPEC))
+        self.mock_object(self.library, '_get_provisioning_options',
+                         mock.Mock(return_value={}))
+        fake_now = [100.0]
+        self.mock_object(time, 'time',
+                         mock.Mock(side_effect=lambda: fake_now[0]))
+
+        first = self.library.choose_share_server_compatible_with_share(
+            None, [fake.SHARE_SERVER], fake.SHARE_2)
+        # Advance past the 300s hot period, but stay within the 1800s
+        # warm period. This must revalidate the cached candidate.
+        fake_now[0] = 401.0
+        second = self.library.choose_share_server_compatible_with_share(
+            None, [fake.SHARE_SERVER], fake.SHARE_2)
+
+        self.assertEqual(fake.SHARE_SERVER, first)
+        self.assertEqual(fake.SHARE_SERVER, second)
+        self.assertEqual(2, self.library._get_vserver.call_count)
+        cached = list(self.library._share_server_compatibility_cache.values())
+        self.assertEqual([100.0], [entry['timestamp'] for entry in cached])
+
+    def test_choose_share_server_compatible_with_share_cache_warm_expired(
+            self):
+        self.library.is_nfs_config_supported = False
+        mock_client = mock.Mock()
+        self.mock_object(self.library, '_get_vserver',
+                         mock.Mock(return_value=(fake.VSERVER1, mock_client)))
+        self.mock_object(mock_client, 'get_vserver_info',
+                         mock.Mock(return_value=fake.VSERVER_INFO))
+        self.mock_object(mock_client, 'list_vserver_aggregates',
+                         mock.Mock(return_value=fake.AGGREGATES))
+        self.mock_object(share_types, 'get_extra_specs_from_share',
+                         mock.Mock(return_value=fake.EMPTY_EXTRA_SPEC))
+        self.mock_object(self.library, '_get_provisioning_options',
+                         mock.Mock(return_value={}))
+        fake_now = [100.0]
+        self.mock_object(time, 'time',
+                         mock.Mock(side_effect=lambda: fake_now[0]))
+
+        first = self.library.choose_share_server_compatible_with_share(
+            None, [fake.SHARE_SERVER], fake.SHARE_2)
+        fake_now[0] = 1901.0
+        second = self.library.choose_share_server_compatible_with_share(
+            None, [fake.SHARE_SERVER], fake.SHARE_2)
+
+        self.assertEqual(fake.SHARE_SERVER, first)
+        self.assertEqual(fake.SHARE_SERVER, second)
+        self.assertEqual(2, self.library._get_vserver.call_count)
+        cached = list(self.library._share_server_compatibility_cache.values())
+        self.assertEqual([1901.0], [entry['timestamp'] for entry in cached])
+
+    def test_choose_share_server_compatible_with_share_cache_missing_id(
+            self):
+        self.library.is_nfs_config_supported = False
+        mock_client = mock.Mock()
+        self.mock_object(self.library, '_get_vserver',
+                         mock.Mock(return_value=(fake.VSERVER1, mock_client)))
+        self.mock_object(mock_client, 'get_vserver_info',
+                         mock.Mock(return_value=fake.VSERVER_INFO))
+        self.mock_object(mock_client, 'list_vserver_aggregates',
+                         mock.Mock(return_value=fake.AGGREGATES))
+        self.mock_object(share_types, 'get_extra_specs_from_share',
+                         mock.Mock(return_value=fake.EMPTY_EXTRA_SPEC))
+        self.mock_object(self.library, '_get_provisioning_options',
+                         mock.Mock(return_value={}))
+        self.mock_object(time, 'time', mock.Mock(return_value=100.0))
+
+        self.library.choose_share_server_compatible_with_share(
+            None, [fake.SHARE_SERVER], fake.SHARE_2)
+        result = self.library.choose_share_server_compatible_with_share(
+            None, [fake.SHARE_SERVER_2], fake.SHARE_2)
+
+        self.assertEqual(fake.SHARE_SERVER_2, result)
+        self.assertEqual(2, self.library._get_vserver.call_count)
+
+    def test_choose_share_server_compatible_with_share_cache_evicted(self):
+        self.library.is_nfs_config_supported = False
+        self.mock_object(share_types, 'get_extra_specs_from_share',
+                         mock.Mock(return_value=fake.EMPTY_EXTRA_SPEC))
+        self.mock_object(self.library, '_get_provisioning_options',
+                         mock.Mock(return_value={}))
+        self.mock_object(time, 'time', mock.Mock(return_value=401.0))
+        mock_check_reuse = self.mock_object(
+            self.library, '_check_reuse_share_server',
+            mock.Mock(side_effect=[False, False, True]))
+
+        self.library._share_server_compatibility_cache[(
+            self.library._backend_name, fake.SHARE_2['host'], None, None, None,
+            None, None, None, None, (fake.SHARE_SERVER['id'],
+                                     fake.SHARE_SERVER_2['id']))] = {
+            'share_server_id': fake.SHARE_SERVER['id'],
+            'timestamp': 100.0,
+        }
+        result = self.library.choose_share_server_compatible_with_share(
+            None, [fake.SHARE_SERVER, fake.SHARE_SERVER_2], fake.SHARE_2)
+
+        self.assertEqual(fake.SHARE_SERVER_2, result)
+        self.assertEqual(3, mock_check_reuse.call_count)
+
+    def test_share_server_compatibility_cache_ttl_opt_is_registered(self):
+        # The driver reads this option through self.configuration, which
+        # resolves against the backend's config group. Registering it only on
+        # the global CONF would raise NoSuchOptError at runtime, so make sure
+        # it travels with the opts that lib_base appends.
+        opt_names = [opt.name for opt in na_opts.netapp_provisioning_opts]
+
+        self.assertIn('netapp_share_server_compatibility_cache_hot_ttl',
+                      opt_names)
+        self.assertIn('netapp_share_server_compatibility_cache_warm_ttl',
+                      opt_names)
+
+    def test_evict_share_server_compatibility(self):
+        cache_key = 'fake_cache_key'
+        stale_entry = {'share_server_id': fake.SHARE_SERVER['id'],
+                       'timestamp': 100.0}
+        self.library._share_server_compatibility_cache[cache_key] = stale_entry
+
+        self.library._evict_share_server_compatibility(cache_key, stale_entry)
+
+        self.assertNotIn(cache_key,
+                         self.library._share_server_compatibility_cache)
+
+    def test_evict_share_server_compatibility_keeps_newer_entry(self):
+        cache_key = 'fake_cache_key'
+        stale_entry = {'share_server_id': fake.SHARE_SERVER['id'],
+                       'timestamp': 100.0}
+        newer_entry = {'share_server_id': fake.SHARE_SERVER_2['id'],
+                       'timestamp': 200.0}
+        self.library._share_server_compatibility_cache[cache_key] = newer_entry
+
+        self.library._evict_share_server_compatibility(cache_key, stale_entry)
+
+        self.assertEqual(
+            newer_entry,
+            self.library._share_server_compatibility_cache[cache_key])
+
+    def test_choose_share_server_compatible_with_share_none(self):
+        self.library.is_nfs_config_supported = False
+        self.mock_object(share_types, 'get_extra_specs_from_share',
+                         mock.Mock(return_value=fake.EMPTY_EXTRA_SPEC))
+        self.mock_object(self.library, '_get_provisioning_options',
+                         mock.Mock(return_value={}))
+        mock_client = mock.Mock()
+        self.mock_object(
+            self.library, '_get_vserver',
+            mock.Mock(return_value=(fake.VSERVER1, mock_client)))
+        self.mock_object(mock_client, 'get_vserver_info',
+                         mock.Mock(return_value={
+                             'operational_state': 'running',
+                             'state': 'running',
+                             'subtype': 'dp_destination',
+                         }))
+
+        result = self.library.choose_share_server_compatible_with_share(
+            None, [fake.SHARE_SERVER], fake.SHARE_2)
+
+        self.assertIsNone(result)
 
     def test_choose_share_server_compatible_with_flexgroups(self):
         self.library.is_nfs_config_supported = False

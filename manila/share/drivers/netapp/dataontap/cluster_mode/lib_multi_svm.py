@@ -20,6 +20,8 @@ variant creates Data ONTAP storage virtual machines (i.e. 'vservers')
 as needed to provision shares.
 """
 import re
+import threading
+import time
 
 from oslo_config import cfg
 from oslo_log import log
@@ -65,6 +67,12 @@ METADATA_MTU = 'set_mtu'
 
 class NetAppCmodeMultiSVMFileStorageLibrary(
         lib_base.NetAppCmodeFileStorageLibrary):
+
+    def __init__(self, *args, **kwargs):
+        super(NetAppCmodeMultiSVMFileStorageLibrary, self).__init__(
+            *args, **kwargs)
+        self._share_server_compatibility_cache = {}
+        self._share_server_compatibility_cache_lock = threading.RLock()
 
     @na_utils.trace
     def check_for_setup_error(self, ensure=False):
@@ -1089,6 +1097,15 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
 
         provisioning_options = self._get_provisioning_options(extra_specs)
 
+        cache_key = self._get_share_server_compatibility_cache_key(
+            share_servers, share, share_group, encryption_key_ref,
+            nfs_config, provisioning_options)
+        cached_share_server = self._get_cached_share_server_compatibility(
+            cache_key, share_servers, share, share_group, encryption_key_ref,
+            nfs_config, provisioning_options)
+        if cached_share_server is not None:
+            return cached_share_server
+
         # Get FPolicy extra specs to avoid incompatible share servers
         fpolicy_ext_to_include = provisioning_options.get(
             'fpolicy_extensions_to_include')
@@ -1106,10 +1123,99 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                     fpolicy_ext_exclude=fpolicy_ext_to_exclude,
                     fpolicy_file_operations=fpolicy_file_operations,
                     encryption_key_ref=encryption_key_ref):
+                self._cache_share_server_compatibility(
+                    cache_key, share_server['id'])
                 return share_server
 
         #  There is no compatible share server to be reused
         return None
+
+    def _get_share_server_compatibility_cache_key(self, share_servers, share,
+                                                  share_group,
+                                                  encryption_key_ref,
+                                                  nfs_config,
+                                                  provisioning_options):
+        share_server_ids = tuple(server['id'] for server in share_servers)
+        share_host = share.get('host') if share else None
+        share_group_id = share_group.get('id') if share_group else None
+        share_group_server_id = (
+            share_group.get('share_server_id') if share_group else None)
+        if self.is_nfs_config_supported:
+            nfs_config = jsonutils.dumps(nfs_config, sort_keys=True)
+        else:
+            nfs_config = None
+        cache_dimensions = (
+            self._backend_name,
+            share_host,
+            share_group_id,
+            share_group_server_id,
+            encryption_key_ref,
+            nfs_config,
+            provisioning_options.get('fpolicy_extensions_to_include'),
+            provisioning_options.get('fpolicy_extensions_to_exclude'),
+            provisioning_options.get('fpolicy_file_operations'),
+            share_server_ids,
+        )
+        return cache_dimensions
+
+    def _get_cached_share_server_compatibility(self, cache_key, share_servers,
+                                               share, share_group,
+                                               encryption_key_ref, nfs_config,
+                                               provisioning_options):
+        hot_ttl = (
+            self.configuration.
+            netapp_share_server_compatibility_cache_hot_ttl)
+        warm_ttl = (
+            self.configuration.
+            netapp_share_server_compatibility_cache_warm_ttl)
+        # NOTE: the lock only guards the cache dict itself. The compatibility
+        # re-check below issues ONTAP calls and must not run while holding it.
+        with self._share_server_compatibility_cache_lock:
+            cached_entry = self._share_server_compatibility_cache.get(
+                cache_key)
+            cache_age = (time.time() - cached_entry['timestamp']
+                         if cached_entry else None)
+            if cached_entry and cache_age > warm_ttl:
+                self._share_server_compatibility_cache.pop(cache_key, None)
+                cached_entry = None
+        if not cached_entry:
+            return None
+        cached_share_server = next(
+            (share_server for share_server in share_servers
+             if share_server['id'] == cached_entry['share_server_id']),
+            None)
+        if not cached_share_server:
+            self._evict_share_server_compatibility(cache_key, cached_entry)
+            return None
+        if cache_age <= hot_ttl:
+            return cached_share_server
+        if self._check_reuse_share_server(
+                cached_share_server, nfs_config, share=share,
+                share_group=share_group,
+                fpolicy_ext_include=provisioning_options.get(
+                    'fpolicy_extensions_to_include'),
+                fpolicy_ext_exclude=provisioning_options.get(
+                    'fpolicy_extensions_to_exclude'),
+                fpolicy_file_operations=provisioning_options.get(
+                    'fpolicy_file_operations'),
+                encryption_key_ref=encryption_key_ref):
+            return cached_share_server
+        self._evict_share_server_compatibility(cache_key, cached_entry)
+        return None
+
+    def _evict_share_server_compatibility(self, cache_key, cached_entry):
+        """Drop a cache entry, unless another thread already replaced it."""
+        with self._share_server_compatibility_cache_lock:
+            current = self._share_server_compatibility_cache.get(cache_key)
+            if current is cached_entry:
+                self._share_server_compatibility_cache.pop(cache_key, None)
+
+    def _cache_share_server_compatibility(self, cache_key, share_server_id):
+        with self._share_server_compatibility_cache_lock:
+            self._share_server_compatibility_cache[cache_key] = {
+                'share_server_id': share_server_id,
+                'timestamp': time.time(),
+            }
 
     @na_utils.trace
     def _check_reuse_share_server(self, share_server, nfs_config, share=None,
