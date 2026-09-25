@@ -2183,6 +2183,57 @@ def share_instance_sizes_sum_by_host(context, host):
 
 @require_context
 @context_manager.reader
+def share_instance_count_and_size_sum_by_server(context, share_server_id):
+    """Return (count, size_sum) of share instances on the share server."""
+    result = model_query(
+        context, models.ShareInstance,
+        func.count(models.ShareInstance.id),
+        func.sum(models.Share.size),
+    ).join(
+        models.ShareInstance.share,
+    ).filter(
+        models.ShareInstance.share_server_id == share_server_id,
+    ).first()
+    return int(result[0] or 0), int(result[1] or 0)
+
+
+@require_context
+@context_manager.reader
+def share_snapshot_size_sum_by_server(context, share_server_id):
+    """Return total snapshot size for all snapshots on the given share server.
+
+    Uses instance_size when set, otherwise falls back to ShareSnapshot.size,
+    mirroring the ShareSnapshotInstance.size property.
+
+    Share-group snapshot members (snapshot_id=NULL) are excluded: their
+    snapshot relationship is NULL so their size cannot be resolved anyway.
+    """
+    result = model_query(
+        context, models.ShareSnapshotInstance,
+        func.sum(
+            func.coalesce(
+                models.ShareSnapshotInstance.instance_size,
+                models.ShareSnapshot.size,
+            )
+        ),
+    ).join(
+        models.ShareSnapshot,
+        models.ShareSnapshot.id == models.ShareSnapshotInstance.snapshot_id,
+    ).join(
+        models.ShareInstance,
+        models.ShareInstance.id ==
+        models.ShareSnapshotInstance.share_instance_id,
+    ).filter(
+        models.ShareInstance.share_server_id == share_server_id,
+        models.ShareInstance.deleted == 'False',
+        models.ShareSnapshotInstance.deleted == 'False',
+        models.ShareSnapshot.deleted == 'False',
+    ).first()
+    return int(result[0] or 0)
+
+
+@require_context
+@context_manager.reader
 def share_instance_get_all_by_share_network(context, share_network_id):
     """Returns list of share instances that belong to given share network."""
     result = (
