@@ -11810,3 +11810,170 @@ class HookWrapperTestCase(test.TestCase):
         for mock_hook in self.hooks:
             self.assertFalse(mock_hook.execute_pre_hook.called)
             self.assertFalse(mock_hook.execute_post_hook.called)
+
+
+class CreateDnsExportLocationsTestCase(test.TestCase):
+
+    def setUp(self):
+        super(CreateDnsExportLocationsTestCase, self).setUp()
+        self.flags(share_driver='manila.tests.fake_driver.FakeShareDriver')
+        self.share_manager = importutils.import_object(
+            "manila.share.manager.ShareManager")
+        self.context = context.get_admin_context()
+
+    def _make_share_instance(self, share_id='fake-share-id'):
+        return {'share_id': share_id, 'id': share_id}
+
+    def _make_export_loc(self, path, preferred=False, is_admin_only=False):
+        return {
+            'path': path,
+            'is_admin_only': is_admin_only,
+            'metadata': {'preferred': preferred},
+        }
+
+    def test_no_dns_metadata_returns_empty(self):
+        export_locs = [
+            self._make_export_loc('10.0.0.1:/share', preferred=True)]
+
+        result = self.share_manager._create_dns_export_locations(
+            None, None, export_locs)
+
+        self.assertEqual([], result)
+
+    def test_only_dns_name_no_domain_returns_empty(self):
+        export_locs = [
+            self._make_export_loc('10.0.0.1:/share', preferred=True)]
+
+        result = self.share_manager._create_dns_export_locations(
+            'myshare', None, export_locs)
+
+        self.assertEqual([], result)
+
+    def test_dns_location_created_for_preferred_export(self):
+        export_locs = [
+            self._make_export_loc('10.0.0.1:/volumes/share1', preferred=True),
+        ]
+
+        result = self.share_manager._create_dns_export_locations(
+            'myshare', 'manila.example.com.', export_locs)
+
+        self.assertEqual(1, len(result))
+        self.assertEqual(
+            'myshare.manila.example.com:/volumes/share1', result[0]['path'])
+        self.assertFalse(result[0]['is_admin_only'])
+        self.assertEqual('myshare', result[0]['metadata']['dns_name'])
+        self.assertEqual('manila.example.com.',
+                         result[0]['metadata']['dns_domain'])
+
+    def test_non_preferred_export_locations_are_skipped(self):
+        export_locs = [
+            self._make_export_loc('10.0.0.1:/share', preferred=False),
+            self._make_export_loc('10.0.0.2:/share', preferred=False),
+        ]
+
+        result = self.share_manager._create_dns_export_locations(
+            'myshare', 'manila.example.com.', export_locs)
+
+        self.assertEqual([], result)
+
+    def test_only_preferred_location_gets_dns_path(self):
+        export_locs = [
+            self._make_export_loc('10.0.0.1:/share', preferred=False,
+                                  is_admin_only=True),
+            self._make_export_loc('10.0.0.2:/share', preferred=True),
+            self._make_export_loc('10.0.0.3:/share', preferred=False),
+        ]
+
+        result = self.share_manager._create_dns_export_locations(
+            'myshare', 'manila.example.com.', export_locs)
+
+        self.assertEqual(1, len(result))
+        self.assertEqual(
+            'myshare.manila.example.com:/share', result[0]['path'])
+
+    def test_dns_path_is_marked_preferred(self):
+        export_locs = [
+            self._make_export_loc('10.0.0.1:/share', preferred=True),
+        ]
+
+        result = self.share_manager._create_dns_export_locations(
+            'myshare', 'manila.example.com.', export_locs)
+
+        self.assertTrue(result[0]['metadata']['preferred'])
+
+    def test_create_dns_record_not_called_when_disabled(self):
+        self.mock_object(self.share_manager.dns_api, 'create_record')
+        share_instance = self._make_share_instance()
+        export_locs = [
+            self._make_export_loc('10.0.0.1:/share', preferred=True)]
+
+        self.share_manager._create_dns_record(
+            self.context, share_instance, None, None, export_locs)
+
+        self.share_manager.dns_api.create_record.assert_not_called()
+
+    def test_create_dns_record_called_with_preferred_ip(self):
+        self.mock_object(self.share_manager.dns_api, 'create_record')
+        self.share_manager.dns_api._enabled = True
+        self.share_manager.dns_api._zone_id = 'fake-zone-id'
+        share_instance = self._make_share_instance()
+        export_locs = [
+            self._make_export_loc('10.0.0.1:/share', preferred=False,
+                                  is_admin_only=True),
+            self._make_export_loc('10.0.0.2:/share', preferred=True),
+        ]
+
+        self.share_manager._create_dns_record(
+            self.context, share_instance, 'myshare', 'manila.example.com.',
+            export_locs)
+
+        self.share_manager.dns_api.create_record.assert_called_once_with(
+            self.context, 'myshare', 'manila.example.com.', ['10.0.0.2'])
+
+    def test_create_dns_record_skipped_when_no_dns_metadata(self):
+        self.mock_object(self.share_manager.dns_api, 'create_record')
+        self.share_manager.dns_api._enabled = True
+        self.share_manager.dns_api._zone_id = 'fake-zone-id'
+        share_instance = self._make_share_instance()
+        export_locs = [
+            self._make_export_loc('10.0.0.1:/share', preferred=True)]
+
+        self.share_manager._create_dns_record(
+            self.context, share_instance, None, None, export_locs)
+
+        self.share_manager.dns_api.create_record.assert_not_called()
+
+    def test_delete_dns_record_called_when_metadata_set(self):
+        self.share_manager.dns_api._enabled = True
+        self.share_manager.dns_api._zone_id = 'fake-zone-id'
+        self.mock_object(self.share_manager.dns_api, 'delete_record')
+        fake_share = {'id': 'fake-share-id'}
+        self.mock_object(self.share_manager.db, 'share_metadata_get',
+                         mock.Mock(return_value={
+                             'dns_name': 'myshare',
+                             'dns_domain': 'manila.example.com.'}))
+
+        self.share_manager._delete_dns_record(self.context, fake_share)
+
+        self.share_manager.dns_api.delete_record.assert_called_once_with(
+            self.context, 'myshare', 'manila.example.com.')
+
+    def test_delete_dns_record_not_called_when_no_metadata(self):
+        self.share_manager.dns_api._enabled = True
+        self.share_manager.dns_api._zone_id = 'fake-zone-id'
+        self.mock_object(self.share_manager.dns_api, 'delete_record')
+        fake_share = {'id': 'fake-share-id'}
+        self.mock_object(self.share_manager.db, 'share_metadata_get',
+                         mock.Mock(return_value={}))
+
+        self.share_manager._delete_dns_record(self.context, fake_share)
+
+        self.share_manager.dns_api.delete_record.assert_not_called()
+
+    def test_delete_dns_record_not_called_when_disabled(self):
+        self.mock_object(self.share_manager.dns_api, 'delete_record')
+        fake_share = {'id': 'fake-share-id'}
+
+        self.share_manager._delete_dns_record(self.context, fake_share)
+
+        self.share_manager.dns_api.delete_record.assert_not_called()
