@@ -2177,7 +2177,9 @@ def share_instance_sizes_sum_by_host(context, host):
     ).filter(or_(
         models.ShareInstance.host == host,
         models.ShareInstance.host.like("{0}#%".format(host)),
-    )).first()
+    )).filter(
+        models.ShareInstance.deleted == 'False',
+    ).first()
     return int(result[0] or 0)
 
 
