@@ -29,6 +29,8 @@ from oslo_utils import units
 from oslo_utils import uuidutils
 
 from manila.common import constants
+from manila import context as manila_context
+from manila import db
 from manila import exception
 from manila.i18n import _
 from manila.message import message_field
@@ -534,6 +536,25 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                              node_name, lif_name, network_allocation,
                              lif_home_port=lif_home_port)
 
+            # Sync the real LIF MAC (inherited from the node's physical port)
+            self._sync_lif_mac_to_db(node_name, network_allocation)
+
+    @na_utils.trace
+    def _sync_lif_mac_to_db(self, node_name, network_allocation):
+        """Update network_allocations.mac_address with the LIF's real MAC."""
+
+        node_mac = self._get_node_data_port_mac(node_name)
+        if not node_mac:
+            LOG.warning('Could not retrieve MAC for node %s; leaving '
+                        'network_allocation %s untouched.',
+                        node_name, network_allocation['id'])
+            return
+        admin_ctx = manila_context.get_admin_context()
+        db.network_allocation_update(
+            admin_ctx, network_allocation['id'], {'mac_address': node_mac})
+        LOG.info('Synced LIF MAC for node %s: allocation %s updated to %s.',
+                 node_name, network_allocation['id'], node_mac)
+
     @na_utils.trace
     def _create_vserver_admin_lif(self, vserver_name, vserver_client,
                                   network_info, ipspace_name,
@@ -557,6 +578,8 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         self._create_lif(vserver_client, vserver_name, ipspace_name,
                          node_name, lif_name, network_allocation,
                          lif_home_port=home_port)
+
+        self._sync_lif_mac_to_db(node_name, network_allocation)
 
     @na_utils.trace
     def _create_vserver_routes(self, vserver_client, network_info):
@@ -583,6 +606,17 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                 _('Could not find eligible network ports on node %s on which '
                   'to create Vserver LIFs.') % node)
         return matched_port_names[0]
+
+    @na_utils.trace
+    def _get_node_data_port_mac(self, node):
+        """Return MAC address of the data port selected for LIF creation."""
+
+        pattern = self.configuration.netapp_port_name_search_pattern
+        ports = self._client.get_node_data_ports(node)
+        matched = [p for p in ports if re.match(pattern, p.get('port', ''))]
+        if matched:
+            return matched[0].get('mac-address')
+        return None
 
     def _get_lif_name(self, node_name, network_allocation):
         """Get LIF name based on template from manila.conf file."""
@@ -646,6 +680,15 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
     def get_network_allocations_number(self):
         """Get number of network interfaces to be created."""
         return len(self._client.list_cluster_nodes())
+
+    @na_utils.trace
+    def get_node_mac_for_network_allocation(self):
+        """Return the ifgroup MAC of the first cluster node."""
+
+        nodes = self._client.list_cluster_nodes()
+        if nodes:
+            return self._get_node_data_port_mac(nodes[0])
+        return None
 
     @na_utils.trace
     def get_admin_network_allocations_number(self, admin_network_api):
