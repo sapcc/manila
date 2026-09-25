@@ -53,6 +53,12 @@ class ShareMixin(object):
     def _delete(self, *args, **kwargs):
         return self.share_api.delete(*args, **kwargs)
 
+    def _set_share_server_replica_protection(self, context, share):
+        share['protected_via_share_server_replica'] = (
+            utils.is_share_protected_via_share_server_replica(
+                context, db, share)
+        )
+
     @wsgi.Controller.authorize('get')
     def show(self, req, id):
         """Return data about the given share."""
@@ -62,6 +68,8 @@ class ShareMixin(object):
             share = self.share_api.get(context, id)
         except exception.NotFound:
             raise exc.HTTPNotFound()
+
+        self._set_share_server_replica_protection(context, share)
 
         return self._view_builder.detail(req, share)
 

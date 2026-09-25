@@ -1,0 +1,13 @@
+---
+features:
+  - |
+    The NetApp ONTAP driver now supports ``share server`` replication using
+    SnapMirror Active Sync for NAS (SM-as NAS), providing SVM-level
+    disaster-recovery for share servers created with
+    ``driver_handles_share_servers`` set to True. Replicas are managed with
+    the ``openstack share server replica`` commands (create, delete, resync,
+    and promote), and protection is applied automatically at the SVM level.
+    This release supports synchronous (SM-as NAS) replication only and
+    requires ONTAP 9.19.1 or later on both clusters. See the NetApp Clustered
+    Data ONTAP driver documentation for supported replication properties,
+    prerequisites, and known limitations.
