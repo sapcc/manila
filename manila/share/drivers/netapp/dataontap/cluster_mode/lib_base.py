@@ -3368,7 +3368,10 @@ class NetAppCmodeFileStorageLibrary(object):
                     share_name, raise_on_not_found=False)
 
             if not existing_mount:
-                vserver_client.mount_volume(share_name)
+                mount_point_name = share.get('mount_point_name')
+                junction_path = ('/%s' % mount_point_name
+                                 if mount_point_name else None)
+                vserver_client.mount_volume(share_name, junction_path)
 
         return self._create_export(share, share_server, vserver,
                                    vserver_client,
