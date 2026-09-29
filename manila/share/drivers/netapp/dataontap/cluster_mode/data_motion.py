@@ -40,6 +40,15 @@ from manila import utils
 LOG = log.getLogger(__name__)
 CONF = cfg.CONF
 
+CLONE_SPLIT_IN_PROGRESS = 'volume clone split is in progress'
+
+
+def is_volume_clone_split_in_progress(error):
+    if not error:
+        return False
+    msg = '%s %s' % (getattr(error, 'message', ''), error)
+    return CLONE_SPLIT_IN_PROGRESS in msg.lower()
+
 
 def get_backend_configuration(backend_name):
     config_stanzas = CONF.list_all_sections()
@@ -1090,6 +1099,14 @@ class DataMotionSession(object):
             still_initializing, terminal_err = (
                 _snapmirror_state_says_initializing())
             if terminal_err:
+                if is_volume_clone_split_in_progress(terminal_err):
+                    msg = _('Unable to mount share %(name)s: the SnapMirror '
+                            'relationship is waiting for a source volume '
+                            'clone split to complete. Will retry the '
+                            'operation. Detail: %(err)s') % {
+                        'name': share_name, 'err': terminal_err}
+                    LOG.warning(msg)
+                    raise exception.ShareBusyException(reason=msg)
                 msg = _('Unable to mount share %(name)s: SnapMirror '
                         'relationship is in a terminal state and will not '
                         'become ready. Detail: %(err)s') % {
@@ -1126,8 +1143,9 @@ class DataMotionSession(object):
         except exception.ShareBusyException:
             msg_args = {'name': share_name}
             msg = _("Unable to perform mount operation for the share %(name)s "
-                    "because a snapmirror initialize operation is still in "
-                    "progress. Retries exhausted. Not retrying.") % msg_args
+                    "because a snapmirror initialize is in progress or "
+                    "volume clone split is in progress on the source volume. "
+                    "Retries exhausted. Not retrying.") % msg_args
             raise exception.NetAppException(message=msg)
 
     def wait_for_snapmirror_release_vol(self, src_vserver, dest_vserver,
