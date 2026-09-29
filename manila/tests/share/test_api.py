@@ -732,10 +732,11 @@ class ShareAPITestCase(test.TestCase):
             'snapshot_policy': 'monthly',
             'max_share_size': '10'
         }
-        backend_metadata = {
-            k: v for k, v in metadata.items() if k != 'max_share_size'}
+        expected_metadata = {'dedupe': 'True', 'snapshot_policy': 'monthly'}
 
         self.mock_object(self.api, 'get', mock.Mock(return_value='fake_share'))
+        self.mock_object(
+            self.api.db, 'share_metadata_get', mock.Mock(return_value={}))
         mock_call = self.mock_object(
             self.api.share_rpcapi,
             'update_share_from_metadata'
@@ -743,7 +744,7 @@ class ShareAPITestCase(test.TestCase):
 
         self.api.update_share_from_metadata(self.context, 'fake_id', metadata)
         mock_call.assert_called_once_with(
-            self.context, 'fake_share', backend_metadata)
+            self.context, 'fake_share', expected_metadata)
 
     @ddt.data(True, False)
     def test_create_public_and_private_share(self, is_public):

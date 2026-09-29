@@ -28,6 +28,7 @@ class ViewBuilder(common.ViewBuilder):
     _detail_version_modifiers = [
         'add_preferred_path_attribute',
         'add_metadata_attribute',
+        'add_dns_metadata_attributes',
     ]
 
     def _get_export_location_view(self, request, export_location,
@@ -97,4 +98,17 @@ class ViewBuilder(common.ViewBuilder):
         metadata = export_location.get('el_metadata')
         meta_copy = copy.copy(metadata)
         meta_copy.pop('preferred', None)
+        meta_copy.pop('dns_name', None)
+        meta_copy.pop('dns_domain', None)
         view_dict['metadata'] = meta_copy
+
+    @common.ViewBuilder.versioned_method('2.96')
+    def add_dns_metadata_attributes(self, context, view_dict, export_location):
+        el_metadata = export_location.get('el_metadata', {})
+        dns_name = el_metadata.get('dns_name')
+        dns_domain = el_metadata.get('dns_domain')
+
+        if dns_name:
+            view_dict['dns_name'] = dns_name
+        if dns_domain:
+            view_dict['dns_domain'] = dns_domain

@@ -2499,10 +2499,12 @@ class NetAppCmodeFileStorageLibrary(object):
 
             preferred = interface.get('home-node') in home_node_set
 
-            addresses[address] = {
+            metadata = {
                 'is_admin_only': is_admin_only,
                 'preferred': preferred,
             }
+
+            addresses[address] = metadata
 
         return addresses
 
