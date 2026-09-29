@@ -416,6 +416,77 @@ class NeutronNetworkPluginTest(test.TestCase):
         save_subnet_data.stop()
         create_port.stop()
 
+    @mock.patch.object(db_api, 'network_allocation_create',
+                       mock.Mock(return_values=fake_network_allocation))
+    @mock.patch.object(db_api, 'share_network_get',
+                       mock.Mock(return_value=fake_share_network))
+    @mock.patch.object(db_api, 'share_server_get',
+                       mock.Mock(return_value=fake_share_server))
+    def test_allocate_network_with_mac_address(self):
+        fake_mac = 'd2:39:ea:ac:06:9c'
+        has_provider_nw_ext = mock.patch.object(
+            self.plugin, '_has_provider_network_extension').start()
+        has_provider_nw_ext.return_value = True
+        mock.patch.object(self.plugin, '_save_neutron_network_data').start()
+        mock.patch.object(self.plugin, '_save_neutron_subnet_data').start()
+
+        with mock.patch.object(self.plugin.neutron_api, 'create_port',
+                               mock.Mock(return_value=fake_neutron_port)):
+            self.plugin.allocate_network(
+                self.fake_context,
+                fake_share_server,
+                fake_share_network,
+                fake_share_network_subnet,
+                mac_address=fake_mac)
+
+            self.plugin.neutron_api.create_port.assert_called_once_with(
+                fake_share_network['project_id'],
+                network_id=fake_share_network_subnet['neutron_net_id'],
+                subnet_id=fake_share_network_subnet['neutron_subnet_id'],
+                device_owner='manila:share',
+                device_id=fake_share_network['id'],
+                name=fake_share_network['id'] + '_0',
+                admin_state_up=False,
+                mac_address=fake_mac,
+            )
+
+    @mock.patch.object(db_api, 'network_allocation_create',
+                       mock.Mock(return_values=fake_network_allocation))
+    @mock.patch.object(db_api, 'share_network_get',
+                       mock.Mock(return_value=fake_share_network))
+    @mock.patch.object(db_api, 'share_server_get',
+                       mock.Mock(return_value=fake_share_server))
+    @mock.patch.object(plugin.LOG, 'warning', mock.Mock())
+    def test_allocate_network_mac_in_use_retries_without_mac(self):
+        fake_mac = 'd2:39:ea:ac:06:9c'
+        has_provider_nw_ext = mock.patch.object(
+            self.plugin, '_has_provider_network_extension').start()
+        has_provider_nw_ext.return_value = True
+        mock.patch.object(self.plugin, '_save_neutron_network_data').start()
+        mock.patch.object(self.plugin, '_save_neutron_subnet_data').start()
+
+        create_port = mock.patch.object(
+            self.plugin.neutron_api, 'create_port',
+            mock.Mock(side_effect=[
+                exception.MacAddressInUse(mac=fake_mac),
+                fake_neutron_port,
+            ])).start()
+
+        self.plugin.allocate_network(
+            self.fake_context,
+            fake_share_server,
+            fake_share_network,
+            fake_share_network_subnet,
+            mac_address=fake_mac)
+
+        self.assertEqual(2, create_port.call_count)
+        _, second_kwargs = create_port.call_args
+
+        self.assertNotIn('mac_address', second_kwargs)
+        self.assertIn('description', second_kwargs)
+        self.assertIn(fake_mac, second_kwargs['description'])
+        plugin.LOG.warning.assert_called()
+
     def _setup_manage_network_allocations(self):
 
         allocations = ['192.168.0.11', '192.168.0.12', 'fd12::2000']

@@ -123,6 +123,12 @@ class NetAppCmodeSingleSvmShareDriver(driver.ShareDriver):
     def get_network_allocations_number(self):
         return self.library.get_network_allocations_number()
 
+    def allocate_network(self, context, share_server, share_network,
+                         share_network_subnet, **kwargs):
+        return super().allocate_network(
+            context, share_server, share_network, share_network_subnet,
+            **kwargs)
+
     def get_admin_network_allocations_number(self):
         return self.library.get_admin_network_allocations_number()
 

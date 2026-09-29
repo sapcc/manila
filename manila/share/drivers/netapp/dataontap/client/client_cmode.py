@@ -755,6 +755,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                     'node': None,
                     'operational-speed': None,
                     'ifgrp-port': None,
+                    'mac-address': None,
                 },
             },
         }
@@ -773,6 +774,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                 'node': port_info.get_child_content('node'),
                 'port': port_info.get_child_content('port'),
                 'speed': port_info.get_child_content('operational-speed'),
+                'mac-address': port_info.get_child_content('mac-address'),
             }
             ports.append(port)
 
