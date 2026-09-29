@@ -8291,6 +8291,69 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
         self.assertEqual(result, 'fake_export_location')
 
+    def test_update_share_mounts_with_mount_point_name(self):
+        vserver_client = mock.Mock()
+        share = fake_share.fake_share_instance(
+            id='s-1',
+            share_server=fake.VSERVER1,
+            mount_point_name='my-custom-mount')
+        self.mock_object(
+            self.library, '_get_vserver',
+            mock.Mock(return_value=(fake.VSERVER1, vserver_client)))
+        self.mock_object(
+            self.library, '_get_backend_share_name',
+            mock.Mock(return_value=fake.SHARE_NAME))
+        self.mock_object(
+            self.library, '_get_backend_share_comment',
+            mock.Mock(return_value='fake_comment'))
+        self.mock_object(
+            share_utils, 'extract_host',
+            mock.Mock(return_value=fake.POOL_NAME))
+        self.mock_object(
+            share_types, 'get_extra_specs_from_share',
+            mock.Mock(return_value={}))
+        self.mock_object(
+            self.library, '_get_provisioning_options_for_share',
+            mock.Mock(return_value={}))
+        self.mock_object(
+            self.library, '_get_logical_space_options',
+            mock.Mock(return_value={}))
+        self.mock_object(
+            qos_types, 'get_specs_from_share',
+            mock.Mock(return_value=None))
+        self.mock_object(
+            self.library, '_get_normalized_qos_type_specs',
+            mock.Mock(return_value=None))
+        self.mock_object(
+            self.library, '_modify_or_create_qos_for_existing_share',
+            mock.Mock(return_value=None))
+        self.mock_object(
+            self.library, '_get_provisioning_options_for_snap_attributes',
+            mock.Mock(return_value={}))
+        self.mock_object(
+            self.library, '_get_cross_volume_dedupe_options',
+            mock.Mock(return_value={}))
+        self.mock_object(vserver_client, 'modify_volume')
+        self.mock_object(
+            self.library, '_is_readable_replica', mock.Mock(return_value=True))
+        self.mock_object(
+            self.library, '_is_flexgroup_share',
+            mock.Mock(return_value=False))
+        mock_junction_path = self.mock_object(
+            vserver_client, 'get_volume_junction_path',
+            mock.Mock(return_value=None))
+        mock_mount_volume = self.mock_object(vserver_client, 'mount_volume')
+        self.mock_object(
+            self.library, '_create_export',
+            mock.Mock(return_value='fake_export_location'))
+
+        self.library.update_share(share, share_server=fake.VSERVER1)
+
+        mock_junction_path.assert_called_once_with(
+            fake.SHARE_NAME, raise_on_not_found=False)
+        mock_mount_volume.assert_called_once_with(
+            fake.SHARE_NAME, '/my-custom-mount')
+
     def test_update_share_with_fixed_qos_type(self):
         vserver_client = mock.Mock()
         share = fake_share.fake_share_instance(id='s-1',
