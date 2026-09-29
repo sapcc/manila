@@ -595,6 +595,18 @@ class ShareDatabaseAPITestCase(test.TestCase):
         else:
             self.assertNotIn('share_proto', instance)
 
+    def test_share_instance_sizes_sum_by_host_ignores_deleted_instances(self):
+        share = db_utils.create_share(size=5)
+        deleted_instance = db_utils.create_share_instance(
+            share_id=share['id'], host='fake_host')
+
+        db_api.share_instance_delete(self.ctxt, deleted_instance['id'])
+
+        result = db_api.share_instance_sizes_sum_by_host(
+            self.ctxt, 'fake_host')
+
+        self.assertEqual(5, result)
+
     def test_share_instance_get_all_by_host_not_found_exception(self):
         db_utils.create_share()
         instances = db_api.share_instance_get_all_by_host(
