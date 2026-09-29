@@ -152,7 +152,8 @@ class QuotaSetsMixin(object):
                 body.get('per_share_gigabytes') is None and
                 body.get('backups') is None and
                 body.get('backup_gigabytes') is None and
-                body.get('encryption_keys') is None):
+                body.get('encryption_keys') is None and
+                body.get('share_server_replicas') is None):
             msg = _("Must supply at least one quota field to update.")
             raise webob.exc.HTTPBadRequest(explanation=msg)
 
@@ -285,20 +286,20 @@ class QuotaSetsMixin(object):
 class QuotaSetsControllerLegacy(QuotaSetsMixin, wsgi.Controller):
     """Deprecated Quota Sets API controller.
 
-    Used by legacy API v1 and v2 microversions from 2.0 to 2.6.
-    Registered under deprecated API URL 'os-quota-sets'.
+    Used from microversions 2.0 to 2.6. Registered under deprecated API URL
+    'os-quota-sets'.
     """
 
-    @wsgi.Controller.api_version('1.0', '2.6')
+    @wsgi.Controller.api_version('2.0', '2.6')
     def show(self, req, id):
         self._ensure_share_type_arg_is_absent(req)
         return self._show(req, id)
 
-    @wsgi.Controller.api_version('1.0', '2.6')
+    @wsgi.Controller.api_version('2.0', '2.6')
     def defaults(self, req, id):
         return self._defaults(req, id)
 
-    @wsgi.Controller.api_version('1.0', '2.6')
+    @wsgi.Controller.api_version('2.0', '2.6')
     def update(self, req, id, body):
         self._ensure_share_type_arg_is_absent(req)
         self._ensure_specific_microversion_args_are_absent(
@@ -307,7 +308,7 @@ class QuotaSetsControllerLegacy(QuotaSetsMixin, wsgi.Controller):
             body, ['share_replicas', 'replica_gigabytes'], "2.53")
         return self._update(req, id, body)
 
-    @wsgi.Controller.api_version('1.0', '2.6')
+    @wsgi.Controller.api_version('2.0', '2.6')
     def delete(self, req, id):
         self._ensure_share_type_arg_is_absent(req)
         return self._delete(req, id)
@@ -316,8 +317,7 @@ class QuotaSetsControllerLegacy(QuotaSetsMixin, wsgi.Controller):
 class QuotaSetsController(QuotaSetsMixin, wsgi.Controller):
     """Quota Sets API controller.
 
-    Used only by API v2 starting from microversion 2.7.
-    Registered under API URL 'quota-sets'.
+    Used from microversion 2.7. Registered under API URL 'quota-sets'.
     """
 
     @wsgi.Controller.api_version('2.7')
@@ -355,6 +355,9 @@ class QuotaSetsController(QuotaSetsMixin, wsgi.Controller):
         elif req.api_version_request < api_version.APIVersionRequest("2.90"):
             self._ensure_specific_microversion_args_are_absent(
                 body, ['encryption_keys'], "2.90")
+        elif req.api_version_request < api_version.APIVersionRequest("2.100"):
+            self._ensure_specific_microversion_args_are_absent(
+                body, ['share_server_replicas'], "2.100")
         return self._update(req, id, body)
 
     @wsgi.Controller.api_version('2.7')

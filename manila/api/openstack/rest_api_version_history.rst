@@ -498,3 +498,8 @@ user documentation.
 ----
   Added Metadata API methods (GET, PUT, POST, DELETE)
   to Share Replicas.
+
+
+2.100
+-----
+  Added Share Server Replica APIs.

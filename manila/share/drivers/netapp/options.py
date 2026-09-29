@@ -421,6 +421,23 @@ netapp_data_motion_opts = [
                default=3600,  # One Hour
                help='The maximum time in seconds to wait for mounting '
                     'a replica.'),
+    cfg.IntOpt('netapp_smas_wait_for_insync_timeout',
+               min=0,
+               default=600,  # 10 minutes
+               help='The maximum time in seconds to wait for a SnapMirror '
+                    'active sync (SMas) relationship to reach the '
+                    '"in_sync" state. The driver waits before each of '
+                    'these operations: creating a share, unprotecting a '
+                    'share, and deleting its volume.'),
+    cfg.BoolOpt('netapp_smas_require_insync_after_unprotect',
+                default=False,
+                help='If disabled (the default), delete_share only logs '
+                     'a warning and proceeds to attempt the share '
+                     'deletion anyway once '
+                     '"netapp_smas_wait_for_insync_timeout" is reached '
+                     'without the SMas SnapMirror relationship '
+                     'returning to "in_sync" state. If enabled, '
+                     'delete_share aborts the share deletion instead.'),
 ]
 
 netapp_backup_opts = [
