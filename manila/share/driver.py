@@ -3768,7 +3768,9 @@ class ShareDriver(object):
         :param context: The 'context.RequestContext' object for the request.
         :param share: Share instance model with share data.
         :param metadata: Dict contains key-value pair where driver will
-            perform necessary action based on key.
+            perform necessary action based on key. A value of ``None``
+            indicates that the key was deleted and the driver should reset
+            the corresponding setting to its default state
         :param share_server: Reference to the share server.
         """
         raise NotImplementedError()
@@ -3787,6 +3789,8 @@ class ShareDriver(object):
         :param share_network_subnet: share network subnet model
         :param share_server: share-server model.
         :param metadata: Dict contains key-value pair where driver will
-            perform necessary action based on key.
+            perform necessary action based on key. A value of ``None``
+            indicates that the key was deleted and the driver should reset
+            the corresponding setting to its default state
         """
         raise NotImplementedError()
