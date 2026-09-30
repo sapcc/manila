@@ -55,6 +55,30 @@ class NetAppFileStorageDriverInterfaceTestCase(test.TestCase):
         # Ensure NetApp file share driver shims are identical
         self.assertSetEqual(multi_svm_methods, single_svm_methods)
 
+    def test_migration_complete_passes_replica_list_multi_svm(self):
+        self.drv_multi_svm.library = mock.Mock()
+        fake_replica_list = [mock.Mock()]
+        self.drv_multi_svm.migration_complete(
+            mock.Mock(), mock.Mock(), mock.Mock(), [], {},
+            share_server=None, destination_share_server=None,
+            replica_list=fake_replica_list)
+        self.drv_multi_svm.library.migration_complete.assert_called_once_with(
+            mock.ANY, mock.ANY, mock.ANY, [], {},
+            share_server=None, destination_share_server=None,
+            replica_list=fake_replica_list)
+
+    def test_migration_complete_passes_replica_list_single_svm(self):
+        self.drv_single_svm.library = mock.Mock()
+        fake_replica_list = [mock.Mock()]
+        self.drv_single_svm.migration_complete(
+            mock.Mock(), mock.Mock(), mock.Mock(), [], {},
+            share_server=None, destination_share_server=None,
+            replica_list=fake_replica_list)
+        self.drv_single_svm.library.migration_complete.assert_called_once_with(
+            mock.ANY, mock.ANY, mock.ANY, [], {},
+            share_server=None, destination_share_server=None,
+            replica_list=fake_replica_list)
+
     def _get_local_functions(self, obj):
         """Get function names of an object without superclass functions."""
         return set([key for key, value in type(obj).__dict__.items()

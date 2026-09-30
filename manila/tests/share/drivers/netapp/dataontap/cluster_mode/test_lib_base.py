@@ -7268,6 +7268,64 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             [mock.call(share_server=fake.SHARE_SERVER),
              mock.call(share_server='dst_srv')])
 
+    def test_migration_check_compatibility_replicated_share_diff_vservers(
+            self):
+        self.library._have_cluster_creds = True
+        mock_dm = mock.Mock()
+        self.mock_object(data_motion, 'DataMotionSession',
+                         mock.Mock(return_value=mock_dm))
+        self.mock_object(self.library, 'is_flexgroup_destination_host',
+                         mock.Mock(return_value=False))
+        self.mock_object(self.library, '_is_flexgroup_pool',
+                         mock.Mock(return_value=False))
+        self.mock_object(share_types, 'get_extra_specs_from_share')
+        self.mock_object(self.library, '_check_extra_specs_validity')
+        self.mock_object(self.library, '_check_aggregate_extra_specs_validity')
+        self.mock_object(self.library, '_get_backend_share_name',
+                         mock.Mock(return_value=fake.SHARE_NAME))
+        self.mock_object(data_motion, 'get_backend_configuration')
+        self.mock_object(self.library, '_get_provisioning_options',
+                         mock.Mock(return_value={}))
+        self.mock_object(self.library, '_get_normalized_qos_specs')
+        self.mock_object(self.library,
+                         'validate_provisioning_options_for_share')
+        mock_exception_log = self.mock_object(lib_base.LOG, 'exception')
+        # Source and destination vservers differ
+        get_vserver_returns = [
+            (fake.VSERVER1, mock.Mock()),
+            (fake.VSERVER2, mock.Mock()),
+        ]
+        self.mock_object(self.library, '_get_vserver',
+                         mock.Mock(side_effect=get_vserver_returns))
+        self.mock_object(share_utils, 'extract_host', mock.Mock(
+            side_effect=[
+                'destination_backend', 'destination_pool', 'source_pool']))
+        mock_move_check = self.mock_object(self.client, 'check_volume_move')
+
+        src_share = fake_share.fake_share_instance(
+            fake_share.fake_share(replication_type='dr'))
+        dest_share = fake_share.fake_share_instance()
+
+        migration_compatibility = self.library.migration_check_compatibility(
+            self.context, src_share, dest_share,
+            share_server=fake.SHARE_SERVER,
+            destination_share_server='dst_srv')
+
+        expected_compatibility = {
+            'compatible': False,
+            'writable': False,
+            'nondisruptive': False,
+            'preserve_metadata': False,
+            'preserve_snapshots': False,
+        }
+        self.assertDictEqual(expected_compatibility, migration_compatibility)
+        mock_exception_log.assert_called_once()
+        self.assertFalse(mock_move_check.called)
+        self.library._get_vserver.assert_any_call(
+            share_server=fake.SHARE_SERVER)
+        self.library._get_vserver.assert_any_call(
+            share_server='dst_srv')
+
     def test_migration_check_compatibility_client_error(self):
         self.library._have_cluster_creds = True
         mock_dm = mock.Mock()
@@ -7868,6 +7926,52 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                 **provisioning_options)
         else:
             mock_create_new_fpolicy.assert_not_called()
+
+    def test_migration_complete_repoints_snapmirror_for_replicas(self):
+        self.mock_object(time, 'sleep')
+        vserver_client = mock.Mock()
+        self.mock_object(
+            self.library, '_get_vserver',
+            mock.Mock(return_value=(fake.VSERVER1, vserver_client)))
+        self.mock_object(
+            self.library, '_get_backend_share_name',
+            mock.Mock(side_effect=[fake.SHARE_NAME, 'new_share_name']))
+        self.mock_object(
+            self.library, '_get_volume_move_status',
+            mock.Mock(return_value={'phase': 'completed'}))
+        self.mock_object(share_types, 'get_extra_specs_from_share',
+                         mock.Mock(
+                             return_value=copy.deepcopy(fake.EXTRA_SPEC)))
+        self.mock_object(
+            self.library, '_get_provisioning_options',
+            mock.Mock(return_value={}))
+        self.mock_object(
+            self.library, '_modify_or_create_qos_for_existing_share',
+            mock.Mock(return_value=None))
+        self.mock_object(
+            vserver_client, 'get_volume_snapshot_attributes',
+            mock.Mock(return_value={'snapshot-policy': 'fake_policy'}))
+        self.mock_object(vserver_client, 'modify_volume')
+        self.mock_object(self.library, '_delete_fpolicy_for_share')
+        self.mock_object(self.library, '_create_export',
+                         mock.Mock(return_value=fake.NFS_EXPORTS))
+        mock_dm_session = mock.Mock()
+        self.mock_object(data_motion, 'DataMotionSession',
+                         mock.Mock(return_value=mock_dm_session))
+
+        src_share = fake_share.fake_share_instance(id='source-share-instance')
+        dest_share = fake_share.fake_share_instance(id='dest-share-instance')
+        replica = fake_share.fake_share_instance(id='replica-instance')
+        replica_list = [src_share, dest_share, replica]
+
+        self.library.migration_complete(
+            self.context, src_share, dest_share, [], {},
+            share_server=fake.SHARE_SERVER,
+            destination_share_server='dst_srv',
+            replica_list=replica_list)
+
+        mock_dm_session.change_snapmirror_source.assert_called_once_with(
+            replica, src_share, dest_share, replica_list)
 
     def test_modify_or_create_qos_for_existing_share_no_qos_extra_specs(self):
         vserver_client = mock.Mock()

@@ -227,6 +227,7 @@ class NetAppCmodeFileStorageLibrary(object):
         self._flexgroup_pools = {}
         self._is_flexgroup_auto = False
         self._is_snaplock_compliance_configured = False
+        self.share_replicas_migration_support = False
 
         self._volume_size_options = {
             'snapshot_reserve_percent': (
@@ -665,7 +666,8 @@ class NetAppCmodeFileStorageLibrary(object):
             'security_service_update_support': True,
             'share_server_multiple_subnet_support': True,
             'mount_point_name_support': True,
-            'share_replicas_migration_support': True,
+            'share_replicas_migration_support': (
+                self.share_replicas_migration_support),
             'encryption_support': encryption_support,
             'qos_type_support': qos_type_support,
         }
@@ -4721,6 +4723,22 @@ class NetAppCmodeFileStorageLibrary(object):
                     share_server=share_server)
                 share_volume = self._get_backend_share_name(
                     source_share['id'])
+
+                if source_share.get('replication_type'):
+                    dest_vserver, __ = self._get_vserver(
+                        share_server=destination_share_server)
+                    if source_vserver != dest_vserver:
+                        msg = _("Cannot migrate replicated share %(shr)s: "
+                                "source vserver %(src_vs)s and destination "
+                                "vserver %(dst_vs)s differ. SnapMirror "
+                                "relationships cannot be preserved across "
+                                "vserver boundaries.")
+                        raise exception.NetAppException(msg % {
+                            'shr': source_share['id'],
+                            'src_vs': source_vserver,
+                            'dst_vs': dest_vserver,
+                        })
+
                 # NOTE(dviroel): If source and destination vservers are
                 # compatible for volume move, the provisioning option
                 # 'adaptive_qos_policy_group' will also be supported since the
@@ -4973,7 +4991,8 @@ class NetAppCmodeFileStorageLibrary(object):
 
     def migration_complete(self, context, source_share, destination_share,
                            source_snapshots, snapshot_mappings,
-                           share_server=None, destination_share_server=None):
+                           share_server=None, destination_share_server=None,
+                           replica_list=None):
         """Initiate the cutover to destination share after move is complete."""
         vserver, vserver_client = self._get_vserver(share_server=share_server)
         share_volume = self._get_backend_share_name(source_share['id'])
@@ -5005,6 +5024,21 @@ class NetAppCmodeFileStorageLibrary(object):
         new_share_volume_name = self._get_backend_share_name(
             destination_share['id'])
         vserver_client.set_volume_name(share_volume, new_share_volume_name)
+
+        if replica_list:
+            dm_session = data_motion.DataMotionSession()
+            active_ids = {source_share['id'], destination_share['id']}
+            for replica in replica_list:
+                if replica['id'] in active_ids:
+                    continue
+                try:
+                    dm_session.change_snapmirror_source(
+                        replica, source_share, destination_share,
+                        replica_list)
+                except Exception:
+                    LOG.exception(
+                        'Failed to re-point SnapMirror for replica '
+                        '%s after share migration.', replica['id'])
 
         # Modify volume properties per share type extra-specs
         extra_specs = share_types.get_extra_specs_from_share(

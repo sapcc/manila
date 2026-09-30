@@ -4332,7 +4332,7 @@ class ShareAPITestCase(test.TestCase):
             self.context, share['id'], host, False, True, True, True, True,
             None, 'fake_type_id', request_spec)
 
-    def test_migration_start_has_replicas(self):
+    def test_migration_start_has_replicas_no_driver_support(self):
         host = 'fake2@backend#pool'
         share = db_utils.create_share(
             host='fake@backend#pool', status=constants.STATUS_AVAILABLE,
@@ -4345,7 +4345,6 @@ class ShareAPITestCase(test.TestCase):
         mock_log = self.mock_object(share_api, 'LOG')
         mock_snapshot_get_call = self.mock_object(
             db_api, 'share_snapshot_get_all_for_share')
-        # Share was updated after adding replicas, grabbing it again.
         share = db_api.share_get(self.context, share['id'])
 
         self.assertRaises(exception.Conflict, self.api.migration_start,
@@ -4353,6 +4352,99 @@ class ShareAPITestCase(test.TestCase):
                           True)
         self.assertTrue(mock_log.warning.called)
         self.assertFalse(mock_snapshot_get_call.called)
+
+    def test_migration_start_has_replicas_force_host_assisted(self):
+        host = 'fake@backend#pool2'
+        share = db_utils.create_share(
+            host='fake@backend#pool', status=constants.STATUS_AVAILABLE,
+            replication_type='dr',
+            share_replicas_migration_support=True)
+        for _ in range(2):
+            db_utils.create_share_replica(
+                share_id=share['id'], replica_state='in_sync')
+        share = db_api.share_get(self.context, share['id'])
+        mock_log = self.mock_object(share_api, 'LOG')
+
+        # force_host_assisted=True, preserve_metadata=False, writable=False,
+        # nondisruptive=False, preserve_snapshots=False to avoid the
+        # pre-existing guard that blocks force+nondisruptive combination.
+        self.assertRaises(exception.Conflict, self.api.migration_start,
+                          self.context, share, host, True, False, False, False,
+                          False)
+        self.assertTrue(mock_log.warning.called)
+
+    def test_migration_start_has_replicas_not_nondisruptive(self):
+        host = 'fake@backend#pool2'
+        share = db_utils.create_share(
+            host='fake@backend#pool', status=constants.STATUS_AVAILABLE,
+            replication_type='dr',
+            share_replicas_migration_support=True)
+        for _ in range(2):
+            db_utils.create_share_replica(
+                share_id=share['id'], replica_state='in_sync')
+        share = db_api.share_get(self.context, share['id'])
+        mock_log = self.mock_object(share_api, 'LOG')
+
+        self.assertRaises(exception.Conflict, self.api.migration_start,
+                          self.context, share, host, False, True, True, False,
+                          True)
+        self.assertTrue(mock_log.warning.called)
+
+    def test_migration_start_has_replicas_cross_backend(self):
+        host = 'other@backend#pool'
+        share = db_utils.create_share(
+            host='fake@backend#pool', status=constants.STATUS_AVAILABLE,
+            replication_type='dr',
+            share_replicas_migration_support=True)
+        for _ in range(2):
+            db_utils.create_share_replica(
+                share_id=share['id'], replica_state='in_sync')
+        share = db_api.share_get(self.context, share['id'])
+        mock_log = self.mock_object(share_api, 'LOG')
+
+        self.assertRaises(exception.Conflict, self.api.migration_start,
+                          self.context, share, host, False, True, True, True,
+                          True)
+        self.assertTrue(mock_log.warning.called)
+
+    def test_migration_start_has_replicas_type_change(self):
+        host = 'fake@backend#pool2'
+        new_type = db_utils.create_share_type()
+        new_type = db_api.share_type_get(self.context, new_type['id'])
+        share = db_utils.create_share(
+            host='fake@backend#pool', status=constants.STATUS_AVAILABLE,
+            replication_type='dr',
+            share_replicas_migration_support=True)
+        for _ in range(2):
+            db_utils.create_share_replica(
+                share_id=share['id'], replica_state='in_sync')
+        share = db_api.share_get(self.context, share['id'])
+        mock_log = self.mock_object(share_api, 'LOG')
+
+        self.assertRaises(exception.Conflict, self.api.migration_start,
+                          self.context, share, host, False, True, True, True,
+                          True, new_share_type=new_type)
+        self.assertTrue(mock_log.warning.called)
+
+    def test_migration_start_has_replicas_not_ready(self):
+        host = 'fake@backend#pool2'
+        share = db_utils.create_share(
+            host='fake@backend#pool', status=constants.STATUS_AVAILABLE,
+            replication_type='dr',
+            share_replicas_migration_support=True)
+        db_utils.create_share_replica(
+            share_id=share['id'],
+            replica_state=constants.STATUS_ERROR,
+            status=constants.STATUS_AVAILABLE)
+        db_utils.create_share_replica(
+            share_id=share['id'], replica_state='in_sync')
+        share = db_api.share_get(self.context, share['id'])
+        mock_log = self.mock_object(share_api, 'LOG')
+
+        self.assertRaises(exception.Conflict, self.api.migration_start,
+                          self.context, share, host, False, True, True, True,
+                          True)
+        self.assertTrue(mock_log.warning.called)
 
     def test_migration_start_is_member_of_group(self):
         group = db_utils.create_share_group()
