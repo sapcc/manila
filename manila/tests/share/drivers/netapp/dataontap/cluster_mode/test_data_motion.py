@@ -19,6 +19,7 @@ from unittest import mock
 import ddt
 from oslo_config import cfg
 
+from manila.common import constants
 from manila import exception
 from manila.share import configuration
 from manila.share import driver
@@ -29,6 +30,7 @@ from manila.share.drivers.netapp import options as na_opts
 from manila.share.drivers.netapp import utils as na_utils
 from manila.share import utils as share_utils
 from manila import test
+from manila.tests.share.drivers.netapp.dataontap.client import fakes as c_fake
 from manila.tests.share.drivers.netapp.dataontap import fakes as fake
 from manila.tests.share.drivers.netapp import fakes as na_fakes
 
@@ -1554,14 +1556,527 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
     def test_get_policy_from_share_replica_metadata_with_sync_policy(self):
         share = copy.deepcopy(fake.SHARE)
         share['metadata'] = {'replication_policy': 'Sync'}
-        policy, is_async_policy = (
+        policy, is_sync_policy = (
             self.dm_session.get_policy_from_share_replica_metadata(share))
         self.assertEqual('Sync', policy)
-        self.assertTrue(is_async_policy)
+        self.assertTrue(is_sync_policy)
 
     def test_get_policy_from_share_replica_metadata_without_metadata(self):
         share = copy.deepcopy(fake.SHARE)
-        policy, is_async_policy = (
+        policy, is_sync_policy = (
             self.dm_session.get_policy_from_share_replica_metadata(share))
         self.assertEqual('MirrorAllSnapshots', policy)
-        self.assertFalse(is_async_policy)
+        self.assertFalse(is_sync_policy)
+
+    def test_create_share_server_replica(self):
+        source_ss = copy.deepcopy(fake.SHARE_SERVER)
+        source_ss['backend_details']['vserver_name'] = 'src_vs'
+        fake_ports = '{"alloc-1": "10.0.0.1", "alloc-2": "10.0.0.2"}'
+        source_ss['backend_details']['ports'] = fake_ports
+        replica_ss = {
+            'id': 'replica-uuid-1234',
+            'host': fake.SERVER_HOST_2,
+        }
+        mock_src_client = mock.Mock()
+        mock_dest_client = mock.Mock()
+        mock_src_client.get_cluster_name.return_value = (
+            fake.CLUSTER_NAME)
+        mock_dest_client.get_cluster_name.return_value = (
+            fake.CLUSTER_NAME_2)
+        self.mock_object(
+            self.dm_session, 'get_backend_name_and_config_obj',
+            mock.Mock(return_value=(fake.BACKEND_NAME, None)))
+        self.mock_object(
+            self.dm_session, 'get_vserver_from_share_server',
+            mock.Mock(return_value='src_vs'))
+        self.mock_object(
+            data_motion, 'get_client_for_backend',
+            mock.Mock(side_effect=[mock_src_client, mock_dest_client]))
+        mock_config = na_fakes.create_configuration()
+        mock_config.netapp_vserver_name_template = 'os_%s'
+        mock_config.netapp_aggregate_name_search_pattern = 'aggr.*'
+        self.mock_object(
+            data_motion, 'get_backend_configuration',
+            mock.Mock(return_value=mock_config))
+        self.mock_object(
+            self.dm_session, '_validate_smas_prerequisites')
+        mock_dest_client.get_snapmirror_relationships.return_value = [
+            {'uuid': c_fake.SVM_SM_RELATIONSHIP_UUID}]
+        mock_dest_client.get_vserver_peers.return_value = []
+        mock_dest_client.list_non_root_aggregates.return_value = [
+            'aggr1', 'other', 'aggr2']
+        mock_src_client._get_volumes_on_svm.return_value = [
+            {'name': 'share_vol_1'}, {'name': 'share_vol_2'}]
+        mock_dest_client.get_svm_snapmirror_by_id.return_value = {
+            'state': 'in_sync', 'healthy': True,
+        }
+
+        dp_dest_name = 'os_replica-uuid-1234'
+        result = self.dm_session.create_share_server_replica(
+            source_ss, replica_ss, 'sync',
+            replication_policy='AutomatedFailOver')
+
+        expected = {
+            'relationship_uuid': c_fake.SVM_SM_RELATIONSHIP_UUID,
+            'replica_status': constants.REPLICA_STATE_IN_SYNC,
+            'backend_details': {
+                'vserver_name': dp_dest_name,
+                'ports': fake_ports,
+            },
+        }
+        self.assertEqual(expected, result)
+        mock_dest_client.create_vserver_dp_destination.assert_called_once_with(
+            dp_dest_name, ['aggr1', 'aggr2'], None,
+            mock_config.netapp_delete_retention_hours)
+        mock_dest_client.create_vserver_peer.assert_called_once_with(
+            dp_dest_name, 'src_vs', peer_cluster_name=fake.CLUSTER_NAME)
+        mock_src_client.accept_vserver_peer.assert_called_once_with(
+            'src_vs', dp_dest_name)
+        mock_create = mock_dest_client.create_snapmirror_relationship
+        mock_create.assert_called_once_with(
+            'src_vs:', dp_dest_name + ':',
+            source_cluster_name=fake.CLUSTER_NAME,
+            destination_cluster_name=fake.CLUSTER_NAME_2,
+            policy_name='AutomatedFailOver',
+            create_destination=False)
+        # Source data volumes protected before init; root left untouched.
+        mock_src_client._get_volumes_on_svm.assert_called_once_with(
+            'src_vs', is_root=False)
+        mock_src_client.patch_volume.assert_has_calls([
+            mock.call('src_vs', 'share_vol_1',
+                      {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED}),
+            mock.call('src_vs', 'share_vol_2',
+                      {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED}),
+        ])
+        mock_dest_client.update_snapmirror_state.assert_called_once_with(
+            c_fake.SVM_SM_RELATIONSHIP_UUID,
+            state=na_utils.SM_IN_SYNC_STATE)
+
+    def test_create_share_server_replica_failure(self):
+        source_ss = copy.deepcopy(fake.SHARE_SERVER)
+        source_ss['backend_details']['vserver_name'] = 'src_vs'
+        replica_ss = {
+            'id': 'replica-uuid-1234',
+            'host': fake.SERVER_HOST_2,
+        }
+        mock_src_client = mock.Mock()
+        mock_dest_client = mock.Mock()
+        mock_src_client.get_cluster_name.return_value = (
+            fake.CLUSTER_NAME)
+        mock_dest_client.get_cluster_name.return_value = (
+            fake.CLUSTER_NAME_2)
+        self.mock_object(
+            self.dm_session, 'get_backend_name_and_config_obj',
+            mock.Mock(return_value=(fake.BACKEND_NAME, None)))
+        self.mock_object(
+            self.dm_session, 'get_vserver_from_share_server',
+            mock.Mock(return_value='src_vs'))
+        self.mock_object(
+            data_motion, 'get_client_for_backend',
+            mock.Mock(side_effect=[mock_src_client, mock_dest_client]))
+        mock_config = na_fakes.create_configuration()
+        mock_config.netapp_vserver_name_template = 'os_%s'
+        mock_config.netapp_aggregate_name_search_pattern = 'aggr.*'
+        self.mock_object(
+            data_motion, 'get_backend_configuration',
+            mock.Mock(return_value=mock_config))
+        self.mock_object(
+            self.dm_session, '_validate_smas_prerequisites')
+        mock_dest_client.get_vserver_peers.return_value = []
+        mock_dest_client.list_non_root_aggregates.return_value = ['aggr1']
+        # Fail after the SVM and peer have been created.
+        mock_dest_client.create_snapmirror_relationship.side_effect = (
+            Exception('boom'))
+        mock_cleanup = self.mock_object(
+            self.dm_session, '_cleanup_failed_replica_create')
+
+        self.assertRaises(
+            exception.NetAppException,
+            self.dm_session.create_share_server_replica,
+            source_ss, replica_ss, 'sync',
+            replication_policy='AutomatedFailOver')
+
+        # SVM + peer were created before the failing relationship call, so
+        # cleanup is invoked with those flags set and no relationship uuid.
+        mock_cleanup.assert_called_once_with(
+            mock_src_client, mock_dest_client, fake.BACKEND_NAME_2, 'src_vs',
+            'os_replica-uuid-1234', None, True, True)
+
+    def test_protect_source_volumes(self):
+        mock_src_client = mock.Mock()
+        mock_src_client._get_volumes_on_svm.return_value = [
+            {'name': 'vol_a'}, {'name': 'vol_b'}]
+
+        self.dm_session._protect_source_volumes(mock_src_client, 'src_vs')
+
+        # Only non-root data volumes are listed and protected; the root is
+        # left untouched (ONTAP rejects smas_protection changes on it).
+        mock_src_client._get_volumes_on_svm.assert_called_once_with(
+            'src_vs', is_root=False)
+        mock_src_client.patch_volume.assert_has_calls([
+            mock.call('src_vs', 'vol_a',
+                      {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED}),
+            mock.call('src_vs', 'vol_b',
+                      {'smas_protection': na_utils.SMAS_PROTECTION_PROTECTED}),
+        ])
+        self.assertEqual(2, mock_src_client.patch_volume.call_count)
+
+    def test_cleanup_failed_replica_create_deletes_svm(self):
+        mock_src_client = mock.Mock()
+        mock_dest_client = mock.Mock()
+        mock_dp_dest_client = mock.Mock()
+        self.mock_object(
+            data_motion, 'get_client_for_backend',
+            mock.Mock(return_value=mock_dp_dest_client))
+
+        self.dm_session._cleanup_failed_replica_create(
+            mock_src_client, mock_dest_client, fake.BACKEND_NAME_2, 'src_vs',
+            'dp_dest_svm', c_fake.SVM_SM_RELATIONSHIP_UUID,
+            peer_created=True, svm_created=True)
+
+        # Relationship, peer, and the dp-destination SVM are all torn down.
+        mock_rel_delete = mock_dest_client.delete_snapmirror_relationship
+        mock_rel_delete.assert_called_once_with(
+            c_fake.SVM_SM_RELATIONSHIP_UUID)
+        mock_dest_client.delete_vserver_peer.assert_called_once_with(
+            'dp_dest_svm', 'src_vs')
+        data_motion.get_client_for_backend.assert_called_once_with(
+            fake.BACKEND_NAME_2, vserver_name='dp_dest_svm',
+            force_rest_client=True)
+        mock_dest_client.delete_vserver.assert_called_once_with(
+            'dp_dest_svm', mock_dp_dest_client)
+
+    def test_cleanup_failed_replica_create_svm_not_created(self):
+        mock_src_client = mock.Mock()
+        mock_dest_client = mock.Mock()
+        self.mock_object(data_motion, 'get_client_for_backend')
+
+        # Nothing was created past the SVM check: no teardown calls.
+        self.dm_session._cleanup_failed_replica_create(
+            mock_src_client, mock_dest_client, fake.BACKEND_NAME_2, 'src_vs',
+            'dp_dest_svm', None, peer_created=False, svm_created=False)
+
+        mock_dest_client.delete_snapmirror_relationship.assert_not_called()
+        mock_dest_client.delete_vserver_peer.assert_not_called()
+        mock_dest_client.delete_vserver.assert_not_called()
+        data_motion.get_client_for_backend.assert_not_called()
+
+    def test_create_share_server_replica_non_smas_policy(self):
+        source_ss = copy.deepcopy(fake.SHARE_SERVER)
+        source_ss['backend_details']['vserver_name'] = 'src_vs'
+        source_ss['backend_details']['ports'] = '{"a": "1.2.3.4"}'
+        replica_ss = {
+            'id': 'replica-uuid-5678',
+            'host': fake.SERVER_HOST_2,
+        }
+        mock_src_client = mock.Mock()
+        mock_dest_client = mock.Mock()
+        mock_src_client.get_cluster_name.return_value = (
+            fake.CLUSTER_NAME)
+        mock_dest_client.get_cluster_name.return_value = (
+            fake.CLUSTER_NAME_2)
+        self.mock_object(
+            self.dm_session, 'get_backend_name_and_config_obj',
+            mock.Mock(return_value=(fake.BACKEND_NAME, None)))
+        self.mock_object(
+            self.dm_session, 'get_vserver_from_share_server',
+            mock.Mock(return_value='src_vs'))
+        self.mock_object(
+            data_motion, 'get_client_for_backend',
+            mock.Mock(side_effect=[mock_src_client, mock_dest_client]))
+        mock_config = na_fakes.create_configuration()
+        mock_config.netapp_vserver_name_template = 'os_%s'
+        mock_config.netapp_aggregate_name_search_pattern = 'aggr.*'
+        self.mock_object(
+            data_motion, 'get_backend_configuration',
+            mock.Mock(return_value=mock_config))
+        self.mock_object(
+            self.dm_session, '_validate_smas_prerequisites')
+        mock_dest_client.get_snapmirror_relationships.return_value = [
+            {'uuid': c_fake.SVM_SM_RELATIONSHIP_UUID}]
+        mock_dest_client.get_vserver_peers.return_value = []
+        mock_dest_client.list_non_root_aggregates.return_value = [
+            'aggr1', 'other', 'aggr2']
+        mock_src_client._get_volumes_on_svm.return_value = [
+            {'name': 'share_vol_1'}, {'name': 'share_vol_2'}]
+        mock_dest_client.get_svm_snapmirror_by_id.return_value = {
+            'state': 'in_sync', 'healthy': True,
+        }
+
+        dp_dest_name = 'os_replica-uuid-5678'
+        result = self.dm_session.create_share_server_replica(
+            source_ss, replica_ss, 'sync',
+            replication_policy='Sync')
+
+        expected_backend_details = {'vserver_name': dp_dest_name}
+        self.assertEqual(
+            expected_backend_details, result['backend_details'])
+        self.assertNotIn('ports', result['backend_details'])
+
+    def test_create_share_server_replica_with_destination_ipspace(self):
+        source_ss = copy.deepcopy(fake.SHARE_SERVER)
+        source_ss['backend_details']['vserver_name'] = 'src_vs'
+        replica_ss = {
+            'id': 'replica-uuid-9999',
+            'host': fake.SERVER_HOST_2,
+        }
+        mock_src_client = mock.Mock()
+        mock_dest_client = mock.Mock()
+        mock_src_client.get_cluster_name.return_value = (
+            fake.CLUSTER_NAME)
+        mock_dest_client.get_cluster_name.return_value = (
+            fake.CLUSTER_NAME_2)
+        self.mock_object(
+            self.dm_session, 'get_backend_name_and_config_obj',
+            mock.Mock(return_value=(fake.BACKEND_NAME, None)))
+        self.mock_object(
+            self.dm_session, 'get_vserver_from_share_server',
+            mock.Mock(return_value='src_vs'))
+        self.mock_object(
+            data_motion, 'get_client_for_backend',
+            mock.Mock(side_effect=[mock_src_client, mock_dest_client]))
+        mock_config = na_fakes.create_configuration()
+        mock_config.netapp_vserver_name_template = 'os_%s'
+        mock_config.netapp_aggregate_name_search_pattern = 'aggr.*'
+        self.mock_object(
+            data_motion, 'get_backend_configuration',
+            mock.Mock(return_value=mock_config))
+        self.mock_object(
+            self.dm_session, '_validate_smas_prerequisites')
+        mock_dest_client.get_snapmirror_relationships.return_value = [
+            {'uuid': c_fake.SVM_SM_RELATIONSHIP_UUID}]
+        mock_dest_client.get_vserver_peers.return_value = []
+        mock_dest_client.list_non_root_aggregates.return_value = [
+            'aggr1', 'other', 'aggr2']
+        mock_src_client._get_volumes_on_svm.return_value = [
+            {'name': 'share_vol_1'}, {'name': 'share_vol_2'}]
+        mock_dest_client.get_svm_snapmirror_by_id.return_value = {
+            'state': 'in_sync', 'healthy': True,
+        }
+
+        dp_dest_name = 'os_replica-uuid-9999'
+        self.dm_session.create_share_server_replica(
+            source_ss, replica_ss, 'sync',
+            replication_policy='AutomatedFailOver',
+            destination_ipspace=fake.IPSPACE)
+
+        # destination_ipspace flows into the pre-created dp-dest SVM only;
+        # the relationship create uses create_destination=False.
+        mock_dest_client.create_vserver_dp_destination.assert_called_once_with(
+            dp_dest_name, ['aggr1', 'aggr2'], fake.IPSPACE,
+            mock_config.netapp_delete_retention_hours)
+        mock_create = mock_dest_client.create_snapmirror_relationship
+        mock_create.assert_called_once_with(
+            'src_vs:', dp_dest_name + ':',
+            source_cluster_name=fake.CLUSTER_NAME,
+            destination_cluster_name=fake.CLUSTER_NAME_2,
+            policy_name='AutomatedFailOver',
+            create_destination=False)
+
+    @ddt.data(
+        ('sync', na_utils.SM_IN_SYNC_STATE),
+        ('async', na_utils.SM_SNAPMIRRORED_STATE),
+    )
+    @ddt.unpack
+    def test_get_svm_relationship_init_state(self, repl_type,
+                                             expected_state):
+        result = self.dm_session._get_svm_relationship_init_state(
+            repl_type)
+        self.assertEqual(expected_state, result)
+
+    @ddt.data('', None, 'bogus')
+    def test_get_svm_relationship_init_state_invalid(self, repl_type):
+        self.assertRaises(
+            exception.NetAppException,
+            self.dm_session._get_svm_relationship_init_state,
+            repl_type)
+
+    def test_validate_smas_prerequisites(self):
+        mock_src_client = mock.Mock()
+        mock_dest_client = mock.Mock()
+        good_version = {
+            'version-tuple': (9, 19, 1),
+            'version': '9.19.1',
+        }
+        mock_src_client.get_ontap_version.return_value = good_version
+        mock_dest_client.get_ontap_version.return_value = good_version
+        mock_src_client.get_cluster_mediators.return_value = (
+            c_fake.CLUSTER_MEDIATORS_GET_RESPONSE['records'])
+
+        self.dm_session._validate_smas_prerequisites(
+            mock_src_client, mock_dest_client,
+            fake.CLUSTER_NAME, fake.CLUSTER_NAME_2)
+
+        mock_src_client.validate_cluster_peering.assert_called_once_with(
+            fake.CLUSTER_NAME_2)
+        mock_src_client.get_cluster_mediators.assert_called_once_with(
+            peer_cluster_name=fake.CLUSTER_NAME_2)
+
+    def test_validate_mediator_reachable(self):
+        data_motion.validate_mediator_reachable(
+            c_fake.CLUSTER_PEER_NAME,
+            c_fake.CLUSTER_MEDIATORS_GET_RESPONSE['records'])
+
+    @ddt.data(
+        [],
+        c_fake.CLUSTER_MEDIATORS_GET_RESPONSE_UNREACHABLE['records'],
+        c_fake.CLUSTER_MEDIATORS_GET_RESPONSE_DISCONNECTED['records'],
+    )
+    def test_validate_mediator_reachable_error(self, mediator_records):
+        self.assertRaises(
+            exception.NetAppException,
+            data_motion.validate_mediator_reachable,
+            c_fake.CLUSTER_PEER_NAME,
+            mediator_records)
+
+    @ddt.data(
+        ('source', 'destination'),
+        ('destination', 'source'),
+    )
+    @ddt.unpack
+    def test_validate_smas_prerequisites_version_mismatch(
+            self, low_side, high_side):
+        mock_src_client = mock.Mock()
+        mock_dest_client = mock.Mock()
+        low_version = {
+            'version-tuple': (9, 1, 0),
+            'version': '9.1.0',
+        }
+        high_version = {
+            'version-tuple': (9, 19, 1),
+            'version': '9.19.1',
+        }
+        if low_side == 'source':
+            mock_src_client.get_ontap_version.return_value = (
+                low_version)
+            mock_dest_client.get_ontap_version.return_value = (
+                high_version)
+        else:
+            mock_src_client.get_ontap_version.return_value = (
+                high_version)
+            mock_dest_client.get_ontap_version.return_value = (
+                low_version)
+
+        self.assertRaises(
+            exception.NetAppException,
+            self.dm_session._validate_smas_prerequisites,
+            mock_src_client, mock_dest_client,
+            fake.CLUSTER_NAME, fake.CLUSTER_NAME_2)
+
+    def test_get_matching_aggregates(self):
+        mock_client = mock.Mock()
+        mock_client.list_non_root_aggregates.return_value = [
+            'aggr1', 'other', 'aggr2']
+        mock_config = mock.Mock()
+        mock_config.netapp_aggregate_name_search_pattern = 'aggr.*'
+
+        result = self.dm_session._get_matching_aggregates(
+            mock_client, mock_config)
+
+        self.assertEqual(['aggr1', 'aggr2'], result)
+
+    @ddt.data(
+        ({'state': 'in_sync', 'healthy': True},
+         constants.REPLICA_STATE_IN_SYNC),
+        ({'state': 'snapmirrored', 'healthy': True},
+         constants.REPLICA_STATE_IN_SYNC),
+        ({'state': 'in_sync', 'healthy': False},
+         constants.REPLICA_STATE_OUT_OF_SYNC),
+        ({'state': 'transferring', 'healthy': True},
+         constants.REPLICA_STATE_OUT_OF_SYNC),
+        ({},
+         constants.REPLICA_STATE_OUT_OF_SYNC),
+    )
+    @ddt.unpack
+    def test_map_snapmirror_state_to_replica_status(
+            self, relationship, expected):
+        result = (
+            self.dm_session.map_snapmirror_state_to_replica_status(
+                relationship))
+        self.assertEqual(expected, result)
+
+    def test_map_snapmirror_state_to_replica_status_logs_reason(self):
+        self.mock_object(data_motion.LOG, 'warning')
+        relationship = {
+            'state': 'out_of_sync',
+            'healthy': False,
+            'unhealthy_reason': [
+                {'message': 'replication lagging'}],
+        }
+
+        result = (
+            self.dm_session.map_snapmirror_state_to_replica_status(
+                relationship))
+
+        self.assertEqual(constants.REPLICA_STATE_OUT_OF_SYNC, result)
+        data_motion.LOG.warning.assert_called_once()
+
+    def test_delete_svm_snapmirror_relationship_no_snapmirrors(self):
+        self.mock_object(
+            self.dm_session, 'get_backend_name_and_config_obj',
+            mock.Mock(return_value=(fake.BACKEND_NAME, None)))
+        self.mock_object(
+            self.dm_session, 'get_vserver_from_share_server',
+            mock.Mock(return_value=self.dest_vserver))
+        self.mock_object(
+            data_motion, 'get_client_for_backend',
+            mock.Mock(return_value=self.mock_dest_client))
+        self.mock_object(
+            self.dm_session, 'get_client_and_vserver_name',
+            mock.Mock(return_value=(self.mock_src_client,
+                                    self.source_vserver)))
+        dest_get_sm = self.mock_dest_client.get_snapmirror_relationships
+        dest_get_sm.return_value = []
+
+        self.dm_session.delete_svm_snapmirror_relationship(
+            self.fake_src_share_server, self.fake_dest_share_server)
+
+        dest_get_sm.assert_called_once_with(
+            self.source_vserver + ':', self.dest_vserver + ':', fields='uuid')
+        mock_delete = self.mock_dest_client.delete_snapmirror_relationship
+        mock_delete.assert_not_called()
+
+    def test_delete_svm_snapmirror_relationship_no_uuid(self):
+        self.mock_object(
+            self.dm_session, 'get_client_and_vserver_name',
+            mock.Mock(side_effect=[
+                (self.mock_dest_client, self.dest_vserver),
+                (self.mock_src_client, self.source_vserver),
+            ]))
+        self.mock_dest_client.get_snapmirror_relationships.return_value = [
+            {'state': 'snapmirrored'}]
+
+        self.dm_session.delete_svm_snapmirror_relationship(
+            self.fake_src_share_server, self.fake_dest_share_server)
+
+        mock_delete = self.mock_dest_client.delete_snapmirror_relationship
+        mock_delete.assert_not_called()
+
+    def test_delete_svm_snapmirror_relationship(self):
+        from manila.tests.share.drivers.netapp.dataontap.client import (
+            fakes as c_fake)
+        self.mock_object(
+            self.dm_session, 'get_client_and_vserver_name',
+            mock.Mock(side_effect=[
+                (self.mock_dest_client, self.dest_vserver),
+                (self.mock_src_client, self.source_vserver),
+            ]))
+        self.mock_dest_client.get_snapmirror_relationships.return_value = [
+            {'uuid': c_fake.SVM_SM_RELATIONSHIP_UUID}]
+
+        self.dm_session.delete_svm_snapmirror_relationship(
+            self.fake_src_share_server, self.fake_dest_share_server)
+
+        mock_delete = self.mock_dest_client.delete_snapmirror_relationship
+        mock_delete.assert_called_once_with(
+            c_fake.SVM_SM_RELATIONSHIP_UUID)
+
+    def test_convert_svm_to_default_subtype_vserver_info_none(self):
+        mock_client = mock.Mock()
+        mock_client.get_vserver_info.return_value = None
+
+        self.dm_session.convert_svm_to_default_subtype(
+            fake.VSERVER1, mock_client, timeout=10)
+
+        mock_client.get_vserver_info.assert_called_once_with(fake.VSERVER1)
+        mock_client.break_snapmirror_svm.assert_not_called()

@@ -1,0 +1,28 @@
+{
+  "share_server_replica": {
+    "id": "a6f8dbd0-2d44-4fd7-8ce3-6d2b2b5bc9d1",
+    "source_share_server_id": "f3d5f6de-7d7d-4ee2-9508-2f6f41f62b11",
+    "host": "host2@backendB#poolB",
+    "status": "inactive",
+    "replica_state": "in_sync",
+    "availability_zone": "az2",
+    "links": [
+      {
+        "href": "http://172.18.198.54:8786/v2/16e1ab15c35a457e9c2b2aa189f544e1/share-server-replicas/a6f8dbd0-2d44-4fd7-8ce3-6d2b2b5bc9d1",
+        "rel": "self"
+      },
+      {
+        "href": "http://172.18.198.54:8786/16e1ab15c35a457e9c2b2aa189f544e1/share-server-replicas/a6f8dbd0-2d44-4fd7-8ce3-6d2b2b5bc9d1",
+        "rel": "bookmark"
+      }
+    ],
+    "share_network_id": "e8f6a5cb-7ce5-41df-9f80-5f4e977f213a",
+    "share_network_name": "net2",
+    "created_at": "2026-07-24T10:10:10.000000",
+    "updated_at": "2026-07-24T10:20:10.000000",
+    "metadata": {
+      "purpose": "dr",
+      "site": "dc2"
+    }
+  }
+}

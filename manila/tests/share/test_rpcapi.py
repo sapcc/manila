@@ -17,6 +17,7 @@ Unit Tests for manila.share.rpcapi.
 """
 
 import copy
+from unittest import mock
 
 from oslo_config import cfg
 from oslo_serialization import jsonutils
@@ -129,6 +130,9 @@ class ShareRpcAPITestCase(test.TestCase):
         if 'snapshot_instance' in expected_msg:
             snapshot_instance = expected_msg.pop('snapshot_instance', None)
             expected_msg['snapshot_instance_id'] = snapshot_instance['id']
+        if 'share_server_replica' in expected_msg:
+            replica = expected_msg.pop('share_server_replica', None)
+            expected_msg['share_server_replica_id'] = replica['id']
         share_server_id_methods = [
             'manage_share_server', 'unmanage_share_server',
             'share_server_migration_start', 'share_server_migration_check',
@@ -160,6 +164,9 @@ class ShareRpcAPITestCase(test.TestCase):
             host = kwargs['share_instance']['host']
         elif 'share_server' in kwargs:
             host = kwargs['share_server']['host']
+        elif 'share_server_replica' in kwargs:
+            host = share_rpcapi.utils.extract_host(
+                kwargs['share_server_replica']['host'])
         elif 'share_replica' in kwargs:
             host = kwargs['share_replica']['host']
         elif 'replicated_snapshot' in kwargs:
@@ -549,3 +556,100 @@ class ShareRpcAPITestCase(test.TestCase):
             version='1.29',
             host=self.fake_host,
         )
+
+    def test_manage_share(self):
+        self._test_share_api('manage_share',
+                             rpc_method='cast',
+                             version='1.1',
+                             share=self.fake_share,
+                             driver_options={})
+
+    def test_unmanage_share(self):
+        self._test_share_api('unmanage_share',
+                             rpc_method='cast',
+                             version='1.1',
+                             share=self.fake_share)
+
+    def test_publish_service_capabilities(self):
+        self.mock_object(self.rpcapi.client, 'prepare',
+                         mock.Mock(return_value=self.rpcapi.client))
+        self.mock_object(self.rpcapi.client, 'cast')
+        self.rpcapi.publish_service_capabilities(self.ctxt)
+        self.rpcapi.client.cast.assert_called_once_with(
+            self.ctxt, 'publish_service_capabilities')
+
+    def test_create_share_replica(self):
+        self._test_share_api('create_share_replica',
+                             rpc_method='cast',
+                             version='1.8',
+                             share_replica=self.fake_share_replica,
+                             host='fake_host',
+                             request_spec={},
+                             filter_properties={})
+
+    def test_create_backup(self):
+        fake_backup = {'host': 'fake_host', 'id': 'fake_backup_id'}
+        self._test_share_api('create_backup',
+                             rpc_method='cast',
+                             version='1.26',
+                             backup=fake_backup)
+
+    def test_delete_backup(self):
+        fake_backup = {'host': 'fake_host', 'id': 'fake_backup_id'}
+        self._test_share_api('delete_backup',
+                             rpc_method='cast',
+                             version='1.26',
+                             backup=fake_backup)
+
+    def test_restore_backup(self):
+        fake_backup = {'host': 'fake_host', 'id': 'fake_backup_id'}
+        self._test_share_api('restore_backup',
+                             rpc_method='cast',
+                             version='1.26',
+                             backup=fake_backup,
+                             share_id='fake_share_id')
+
+    def test_update_share_server_replica_state(self):
+        share_server_replica = {
+            'id': 'fake_ss_replica_id',
+            'host': 'fake_host@backend#pool',
+        }
+
+        self._test_share_api('update_share_server_replica_state',
+                             rpc_method='cast',
+                             version='1.31',
+                             share_server_replica=share_server_replica)
+
+    def test_create_share_server_replica(self):
+        share_server_replica = {
+            'id': 'fake_ss_replica_id',
+            'host': 'fake_host@backend#pool',
+        }
+
+        self._test_share_api('create_share_server_replica',
+                             rpc_method='cast',
+                             version='1.31',
+                             share_server_replica=share_server_replica)
+
+    def test_delete_share_server_replica(self):
+        share_server_replica = {
+            'id': 'fake_ss_replica_id',
+            'host': 'fake_host@backend#pool',
+        }
+
+        self._test_share_api('delete_share_server_replica',
+                             rpc_method='cast',
+                             version='1.31',
+                             share_server_replica=share_server_replica,
+                             force=True)
+
+    def test_promote_share_server_replica(self):
+        share_server_replica = {
+            'id': 'fake_ss_replica_id',
+            'host': 'fake_host@backend#pool',
+        }
+
+        self._test_share_api('promote_share_server_replica',
+                             rpc_method='cast',
+                             version='1.31',
+                             share_server_replica=share_server_replica)

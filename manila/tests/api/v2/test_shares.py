@@ -36,6 +36,7 @@ from manila import exception
 from manila import policy
 from manila.share import api as share_api
 from manila.share import share_types
+from manila.share import utils as share_utils
 from manila import test
 from manila.tests.api.contrib import stubs
 from manila.tests.api import fakes
@@ -152,6 +153,7 @@ class ShareAPITest(test.TestCase):
                      'source_share_group_snapshot_member_id': None},
             '2.32': {'mount_snapshot_support': False},
             '2.90': {'encryption_key_ref': None},
+            '2.100': {'protected_via_share_server_replica': False},
         }
 
         # Apply all the share transformations
@@ -210,8 +212,8 @@ class ShareAPITest(test.TestCase):
             share.update(values)
         if share.get('share_proto'):
             share['share_proto'] = share['share_proto'].upper()
+        share['share_server_id'] = 'fake_share_server_id'
         if admin:
-            share['share_server_id'] = 'fake_share_server_id'
             share['host'] = 'fakehost'
         return {
             'share': self._process_expected_share_detailed_response(
@@ -1608,6 +1610,60 @@ class ShareAPITest(test.TestCase):
 
         self.assertEqual(expected, res_dict)
 
+    def test_share_show_with_protected_via_share_server_replica(self):
+        share_obj = stubs.stub_share('1')
+        self.mock_object(
+            share_api.API, 'get', mock.Mock(return_value=share_obj))
+        self.mock_object(
+            share_utils,
+            'is_share_protected_via_share_server_replica',
+            mock.Mock(return_value=True),
+        )
+
+        req = fakes.HTTPRequest.blank('/v2/fake/shares/1', version='2.100')
+        res_dict = self.controller.show(req, '1')
+
+        self.assertTrue(
+            res_dict['share']['protected_via_share_server_replica'])
+
+    def test_share_show_with_unprotected_share_server(self):
+        share_obj = stubs.stub_share('1')
+        self.mock_object(
+            share_api.API, 'get', mock.Mock(return_value=share_obj))
+        self.mock_object(
+            share_utils,
+            'is_share_protected_via_share_server_replica',
+            mock.Mock(return_value=False),
+        )
+
+        req = fakes.HTTPRequest.blank('/v2/fake/shares/1', version='2.100')
+        res_dict = self.controller.show(req, '1')
+
+        self.assertFalse(
+            res_dict['share']['protected_via_share_server_replica'])
+
+    def test_share_list_detail_with_protected_via_share_server_replica(self):
+        self.mock_object(share_api.API, 'get_all',
+                         stubs.stub_share_get_all_by_project)
+
+        req = fakes.HTTPRequest.blank('/v2/fake/shares/detail',
+                                      version='2.99')
+        res_dict = self.controller.detail(req)
+
+        self.assertNotIn(
+            'protected_via_share_server_replica', res_dict['shares'][0])
+
+    def test_share_list_detail_with_unprotected_share_server(self):
+        self.mock_object(share_api.API, 'get_all',
+                         stubs.stub_share_get_all_by_project)
+
+        req = fakes.HTTPRequest.blank('/v2/fake/shares/detail',
+                                      version='2.99')
+        res_dict = self.controller.detail(req)
+
+        self.assertNotIn(
+            'protected_via_share_server_replica', res_dict['shares'][0])
+
     def test_share_show_with_share_group(self):
         req = fakes.HTTPRequest.blank(
             '/v2/fake/shares/1', version='2.31', experimental=True)
@@ -2171,6 +2227,7 @@ class ShareAPITest(test.TestCase):
             'share_type': '1',
             'volume_type': '1',
             'is_public': False,
+            'share_server_id': 'fake_share_server_id',
             'links': [
                 {
                     'href': 'http://localhost/share/v2/fake/shares/1',
@@ -2281,6 +2338,7 @@ class ShareAPITest(test.TestCase):
                     'share_type': '1',
                     'volume_type': '1',
                     'is_public': False,
+                    'share_server_id': 'fake_share_server_id',
                     'snapshot_support': True,
                     'has_replicas': False,
                     'replication_type': None,

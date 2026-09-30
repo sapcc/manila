@@ -38,6 +38,7 @@ from manila import quota
 from manila import share
 from manila.share import api as share_api
 from manila.share import share_types
+from manila.share import utils as share_utils
 from manila import test
 from manila.tests import db_utils
 from manila.tests import fake_share as fakes
@@ -2460,24 +2461,24 @@ class ShareAPITestCase(test.TestCase):
                        mock.Mock(return_value=[]))
     @mock.patch.object(db_api, 'share_group_get_all_by_share_server',
                        mock.Mock(return_value=[]))
+    @mock.patch.object(db_api, 'share_server_get_all_with_filters',
+                       mock.Mock(return_value=[]))
     def test_delete_share_server_no_dependent_shares(self):
         server = {'id': 'fake_share_server_id'}
-        server_returned = {
-            'id': 'fake_share_server_id',
-        }
-        self.mock_object(db_api, 'share_server_update',
-                         mock.Mock(return_value=server_returned))
         self.api.delete_share_server(self.context, server)
         db_api.share_instance_get_all_by_share_server.assert_called_once_with(
             self.context, server['id'])
         (db_api.share_group_get_all_by_share_server.
             assert_called_once_with(self.context, server['id']))
+        db_api.share_server_get_all_with_filters.assert_not_called()
         self.share_rpcapi.delete_share_server.assert_called_once_with(
-            self.context, server_returned)
+            self.context, server)
 
     @mock.patch.object(db_api, 'share_instance_get_all_by_share_server',
                        mock.Mock(return_value=['fake_share', ]))
     @mock.patch.object(db_api, 'share_group_get_all_by_share_server',
+                       mock.Mock(return_value=[]))
+    @mock.patch.object(db_api, 'share_server_get_all_with_filters',
                        mock.Mock(return_value=[]))
     def test_delete_share_server_dependent_share_exists(self):
         server = {'id': 'fake_share_server_id'}
@@ -2492,6 +2493,8 @@ class ShareAPITestCase(test.TestCase):
                        mock.Mock(return_value=[]))
     @mock.patch.object(db_api, 'share_group_get_all_by_share_server',
                        mock.Mock(return_value=['fake_group', ]))
+    @mock.patch.object(db_api, 'share_server_get_all_with_filters',
+                       mock.Mock(return_value=[]))
     def test_delete_share_server_dependent_group_exists(self):
         server = {'id': 'fake_share_server_id'}
         self.assertRaises(exception.ShareServerInUse,
@@ -2503,6 +2506,68 @@ class ShareAPITestCase(test.TestCase):
             self.context, server['id'])
         (db_api.share_group_get_all_by_share_server.
             assert_called_once_with(self.context, server['id']))
+
+    @mock.patch.object(db_api, 'share_instance_get_all_by_share_server',
+                       mock.Mock(return_value=[]))
+    @mock.patch.object(db_api, 'share_group_get_all_by_share_server',
+                       mock.Mock(return_value=[]))
+    @mock.patch.object(
+        db_api, 'share_server_get_all_with_filters',
+        mock.Mock(return_value=[{'id': 'replica-id-1'}]))
+    def test_delete_share_server_replica_exists(self):
+        server = {'id': 'fake_share_server_id'}
+
+        self.api.delete_share_server(
+            self.context,
+            server,
+        )
+        db_api.share_server_get_all_with_filters.assert_not_called()
+        self.share_rpcapi.delete_share_server.assert_called_once_with(
+            self.context, server)
+
+    @mock.patch.object(db_api, 'share_instance_get_all_by_share_server',
+                       mock.Mock(return_value=[]))
+    @mock.patch.object(db_api, 'share_group_get_all_by_share_server',
+                       mock.Mock(return_value=[]))
+    @mock.patch.object(db_api, 'share_server_get_all_with_filters',
+                       mock.Mock(return_value=[]))
+    def test_delete_share_server_when_server_is_replica(self):
+        server = {
+            'id': 'fake_replica_share_server_id',
+            'source_share_server_id': 'fake_source_share_server_id',
+            'replica_state': constants.REPLICA_STATE_OUT_OF_SYNC,
+        }
+
+        self.assertRaises(
+            exception.ShareServerInUse,
+            self.api.delete_share_server,
+            self.context,
+            server,
+        )
+        db_api.share_server_get_all_with_filters.assert_not_called()
+
+    @mock.patch.object(db_api, 'share_instance_get_all_by_share_server',
+                       mock.Mock(return_value=[]))
+    @mock.patch.object(db_api, 'share_group_get_all_by_share_server',
+                       mock.Mock(return_value=[]))
+    @mock.patch.object(db_api, 'share_server_get_all_with_filters',
+                       mock.Mock(return_value=[]))
+    def test_delete_share_server_when_server_has_replica_state(self):
+        """A share server left marked active, with no replicas, can go.
+
+        This is how a share server leaves replication once its last replica
+        has been deleted: the stale marker alone does not hold it back.
+        """
+        server = {
+            'id': 'fake_replica_share_server_id',
+            'source_share_server_id': None,
+            'replica_state': 'active',
+        }
+
+        self.api.delete_share_server(self.context, server)
+
+        self.share_rpcapi.delete_share_server.assert_called_once_with(
+            self.context, server)
 
     @mock.patch.object(db_api, 'share_snapshot_instance_update', mock.Mock())
     def test_delete_snapshot(self):
@@ -5033,6 +5098,700 @@ class ShareAPITestCase(test.TestCase):
         self.assertTrue(mock_rpcapi_update_share_replica_call.called)
         self.assertIsNone(retval)
 
+    @ddt.data(None, 'HOSTA@BackendB#PoolC')
+    def test_update_share_server_replica_state(self, host):
+        share_server_replica = self._fake_share_server_replica(
+            id='FAKE_SS_ID',
+            host=host,
+            source_share_server_id='FAKE_SOURCE_SS_ID',
+            replica_state=constants.REPLICA_STATE_OUT_OF_SYNC,
+            status=constants.STATUS_AVAILABLE,
+        )
+        self.mock_object(
+            self.api.db, 'share_server_get',
+            mock.Mock(return_value=share_server_replica))
+        mock_db_update = self.mock_object(
+            self.api.db, 'share_server_update')
+        mock_rpc = self.mock_object(
+            self.share_rpcapi, 'update_share_server_replica_state')
+
+        retval = self.api.update_share_server_replica_state(
+            self.context, share_server_replica['id'])
+
+        self.assertIsNone(retval)
+        self.assertFalse(mock_db_update.called)
+        mock_rpc.assert_called_once_with(
+            self.context, share_server_replica)
+
+    def _fake_source_share_server(self, **kwargs):
+        server = {
+            'id': 'fake_ss_id',
+            'status': constants.STATUS_ACTIVE,
+            'project_id': 'fake_project_id',
+            'source_share_server_id': None,
+            'availability_zone_id': 'fake_az_src',
+            'share_network_id': 'fake_share_network_id',
+            'share_network_subnets': [
+                {'share_network_id': 'fake_share_network_id'}],
+            'host': 'fake_source_host#pool',
+        }
+        server.update(kwargs)
+        return server
+
+    def _fake_share_server_replica(self, **kwargs):
+        replica = {
+            'id': 'replica-id',
+            'host': 'hostA@backend#pool',
+            'source_share_server_id': 'source-id',
+            'replica_state': constants.REPLICA_STATE_IN_SYNC,
+            'status': constants.STATUS_INACTIVE,
+        }
+        replica.update(kwargs)
+        return replica
+
+    def _setup_create_share_server_replica_mocks(self, share_server):
+        def _fake_share_server_update(_context, server_id, values):
+
+            server_row = {'id': server_id}
+            if server_id == share_server['id']:
+                server_row.update(share_server)
+
+            create_mock = getattr(self.api.db, 'share_server_create', None)
+            created_row = getattr(create_mock, 'return_value', None)
+            if (isinstance(created_row, dict) and
+                    created_row.get('id') == server_id):
+                server_row.update(created_row)
+
+            server_row.update(values)
+            return server_row
+
+        self.mock_object(self.api.db, 'share_server_get',
+                         mock.Mock(return_value=share_server))
+        self.mock_object(self.api.db, 'availability_zone_get',
+                         mock.Mock(return_value={
+                             'id': 'fake_default_az_id',
+                             'name': 'NOVA_1',
+                         }))
+        self.mock_object(
+            self.api.db, 'share_server_update',
+            mock.Mock(side_effect=_fake_share_server_update))
+        self.mock_object(self.api.db, 'share_server_replica_metadata_update')
+        self.mock_object(self.api.db, 'share_server_get_all_with_filters',
+                         mock.Mock(return_value=[]))
+        self.mock_object(
+            self.api.db, 'share_get_all_by_share_server',
+            mock.Mock(return_value=[]))
+        self.mock_object(
+            self.api.db,
+            'share_network_subnets_get_all_by_availability_zone_id',
+            mock.Mock(return_value=[{
+                'id': 'fake_subnet',
+                'share_network_id': share_server.get('share_network_id'),
+                'availability_zone_id': 'fake_default_az_id',
+            }]))
+        # By default the share network has no default (zone-less) subnet and
+        # reaches exactly one availability zone, so that zone is inferred.
+        self.mock_object(
+            self.api.db, 'share_network_subnet_get_default_subnets',
+            mock.Mock(return_value=[]))
+        self.mock_object(
+            self.api, '_get_all_availability_zones_with_subnets',
+            mock.Mock(return_value=(
+                ['NOVA_1'], {'fake_default_az_id': False})))
+
+    def _mock_db(self, attr, **kwargs):
+        return self.mock_object(self.api.db, attr, mock.Mock(**kwargs))
+
+    @staticmethod
+    def _set_result(mocked, result):
+        """Let a case hand over either a return value or a raised error."""
+        if isinstance(result, Exception):
+            mocked.side_effect = result
+        else:
+            mocked.return_value = result
+
+    def _mock_create_share_server_replica_success(self, replica_server=None):
+        """Mock what a create needs once it is past validation."""
+        replica_server = replica_server or {'id': 'fake_replica_id',
+                                            'host': ''}
+        self._mock_db('share_server_create', return_value=replica_server)
+        self.mock_object(quota.QUOTAS, 'reserve',
+                         mock.Mock(return_value='fake_reservation'))
+        self.mock_object(quota.QUOTAS, 'commit')
+        self.mock_object(self.api.scheduler_rpcapi,
+                         'create_share_server_replica')
+        return replica_server
+
+    def _replica_request_spec(self):
+        """The spec the API handed off to the scheduler."""
+        return (self.api.scheduler_rpcapi.create_share_server_replica
+                .call_args.kwargs['request_spec'])
+
+    def _created_replica_subnets(self):
+        """The subnets the API recorded on the new replica row."""
+        return self.api.db.share_server_create.call_args[0][1][
+            'share_network_subnets']
+
+    def test_check_if_share_server_replica_quotas_exceeded(self):
+        exc = exception.OverQuota(
+            overs={'share_server_replicas': 'fake'},
+            usages={'share_server_replicas': {'reserved': 5, 'in_use': 5}},
+            quotas={'share_server_replicas': 10},
+        )
+
+        self.assertRaises(
+            exception.ShareServerReplicasLimitExceeded,
+            self.api.check_if_share_server_replica_quotas_exceeded,
+            self.context,
+            exc,
+        )
+
+    def test_create_share_server_replica_over_quota(self):
+        share_server = self._fake_source_share_server()
+        self._setup_create_share_server_replica_mocks(share_server)
+        usages = {'share_server_replicas': {'reserved': 5, 'in_use': 5}}
+        quotas = {'share_server_replicas': 10}
+        exc = exception.OverQuota(
+            overs={'share_server_replicas': 'fake'},
+            usages=usages, quotas=quotas)
+        self.mock_object(
+            self.api.scheduler_rpcapi, 'create_share_server_replica')
+        self.mock_object(quota.QUOTAS, 'reserve', mock.Mock(side_effect=exc))
+        mock_create = self.mock_object(self.api.db, 'share_server_create')
+
+        self.assertRaises(
+            exception.ShareServerReplicasLimitExceeded,
+            self.api.create_share_server_replica,
+            self.context, share_server['id'])
+
+        quota.QUOTAS.reserve.assert_called_once_with(
+            self.context, share_server_replicas=1,
+            project_id=share_server['project_id'])
+        self.assertFalse(mock_create.called)
+
+    @ddt.data(
+        {
+            'availability_zone': None,
+            'expected_az_id': 'fake_default_az_id',
+            'network': {
+                'id': 'fake_share_network_id',
+                'name': 'fake_share_network_name',
+                'share_network_subnets': [{
+                    'id': 'fake_subnet',
+                    'share_network_id': 'fake_share_network_id',
+                    'availability_zone_id': 'fake_default_az_id',
+                }],
+            },
+        },
+        {
+            'availability_zone': 'fake_az',
+            'expected_az_id': 'fake_az',
+            'network': {
+                'id': 'fake_share_network_id',
+                'name': 'fake_share_network_name',
+                'share_network_subnets': [{
+                    'id': 'fake_subnet',
+                    'share_network_id': 'fake_share_network_id',
+                    'availability_zone_id': 'fake_az',
+                }],
+            },
+        },
+    )
+    @ddt.unpack
+    def test_create_share_server_replica(self, availability_zone,
+                                         expected_az_id, network):
+        share_server = self._fake_source_share_server()
+        replica_server = {
+            'id': 'fake_replica_id',
+            'host': '',
+            'share_network_id': network['id'],
+            'share_network_name': network['name'],
+            'share_network_subnets': network['share_network_subnets'],
+        }
+        self._setup_create_share_server_replica_mocks(share_server)
+        self._mock_db(
+            'share_network_subnets_get_all_by_availability_zone_id',
+            return_value=network['share_network_subnets'])
+        mock_network_get = self._mock_db('share_network_get')
+        self._mock_create_share_server_replica_success(replica_server)
+        if availability_zone:
+            self.api.db.availability_zone_get.return_value = {
+                'id': 'fake_az',
+                'name': 'NOVA_1',
+            }
+
+        kwargs = {}
+        if availability_zone is not None:
+            kwargs['availability_zone'] = availability_zone
+
+        retval = self.api.create_share_server_replica(
+            self.context, share_server['id'], **kwargs)
+
+        self.assertEqual(replica_server['id'], retval['id'])
+        quota.QUOTAS.reserve.assert_called_once_with(
+            self.context, share_server_replicas=1,
+            project_id=share_server['project_id'])
+        quota.QUOTAS.commit.assert_called_once_with(
+            self.context, 'fake_reservation',
+            project_id=share_server['project_id'])
+        (self.api.scheduler_rpcapi.create_share_server_replica
+         .assert_called_once_with(
+             self.context,
+             request_spec=mock.ANY,
+             filter_properties={}))
+
+        request_spec = self._replica_request_spec()
+        self.assertEqual('fake_source_host', request_spec['source_host'])
+        self.assertEqual(expected_az_id, request_spec['availability_zone_id'])
+        self.assertIsNone(request_spec['availability_zones'])
+        self.assertEqual(replica_server['id'],
+                         request_spec['share_server_replica_id'])
+        # Without an explicit request, the replica inherits the share network
+        # of its source share server rather than one being looked up.
+        self.assertFalse(mock_network_get.called)
+        (self.api.db.share_network_subnets_get_all_by_availability_zone_id
+         .assert_called_once_with(
+             self.context,
+             share_network_id=share_server['share_network_id'],
+             availability_zone_id=expected_az_id))
+        # The scheduler, not the API, hands off to the share manager.
+        self.assertFalse(self.share_rpcapi.create_share_server_replica.called)
+        self.assertEqual('', retval['host'])
+        self.assertEqual(network['id'], retval['share_network_id'])
+        self.assertEqual(network['name'], retval['share_network_name'])
+
+    @ddt.data(
+        # The source has to be active before anything can replicate from it.
+        dict(server={'status': constants.STATUS_ERROR},
+             expected=exception.ReplicationException),
+        # Without a project there is nobody to charge the replica quota to.
+        dict(server={'project_id': None}, expected=exception.InvalidInput),
+        # The source needs a share network for the replica to sit on.
+        dict(server={'share_network_id': None, 'share_network_subnets': []},
+             expected=exception.InvalidInput),
+        # A requested zone has to have a subnet on that network.
+        dict(subnets=[], az_get={'id': 'fake_az_id', 'name': 'NOVA_2'},
+             kwargs={'availability_zone': 'NOVA_2'},
+             expected=exception.InvalidInput),
+        # An unknown zone is the caller's mistake, so it reads as bad input.
+        dict(az_get=exception.AvailabilityZoneNotFound(id='NOVA_X'),
+             kwargs={'availability_zone': 'NOVA_X'},
+             expected=exception.InvalidInput),
+        # No zone was asked for and the network reaches none to infer.
+        dict(subnets=[], azs=([], {}), expected=exception.InvalidInput),
+        # The network reaches several zones, so none of them is guessed.
+        dict(subnets=[], azs=(['NOVA_2', 'NOVA_3'],
+                              {'fake_az_2_id': False, 'fake_az_3_id': False}),
+             expected=exception.InvalidInput),
+        # An explicitly requested network has to exist.
+        dict(network=exception.ShareNetworkNotFound(
+             share_network_id='explicit_network_id'),
+             kwargs={'share_network_id': 'explicit_network_id'},
+             expected=exception.ShareNetworkNotFound),
+        # ...and belong to the project asking for the replica.
+        dict(network={'id': 'explicit_network_id', 'name': 'explicit',
+                      'project_id': 'another_project_id'},
+             kwargs={'share_network_id': 'explicit_network_id'},
+             expected=exception.InvalidInput),
+        # ...and reach the requested zone.
+        dict(network={'id': 'explicit_network_id', 'name': 'explicit',
+                      'project_id': 'fake_project_id'},
+             subnets=[], az_get={'id': 'fake_az_id', 'name': 'NOVA_2'},
+             kwargs={'availability_zone': 'NOVA_2',
+                     'share_network_id': 'explicit_network_id'},
+             expected=exception.InvalidInput),
+    )
+    @ddt.unpack
+    def test_create_share_server_replica_rejected(
+            self, expected, server=None, subnets=None, az_get=None,
+            azs=None, network=None, kwargs=None):
+        """Every rejected create leaves no replica row behind."""
+        share_server = self._fake_source_share_server(**(server or {}))
+        self._setup_create_share_server_replica_mocks(share_server)
+        if subnets is not None:
+            self._mock_db(
+                'share_network_subnets_get_all_by_availability_zone_id',
+                return_value=subnets)
+        if az_get is not None:
+            self._set_result(self.api.db.availability_zone_get, az_get)
+        if azs is not None:
+            self.mock_object(
+                self.api, '_get_all_availability_zones_with_subnets',
+                mock.Mock(return_value=azs))
+        if network is not None:
+            self._set_result(self._mock_db('share_network_get'), network)
+        create = self._mock_db('share_server_create')
+
+        self.assertRaises(
+            expected, self.api.create_share_server_replica,
+            self.context, share_server['id'], **(kwargs or {}))
+
+        self.assertFalse(create.called)
+
+    def test_create_share_server_replica_az_from_single_az_network(self):
+        """A network reaching one AZ resolves it without being asked."""
+        share_server = self._fake_source_share_server()
+        self._setup_create_share_server_replica_mocks(share_server)
+        subnets = [{
+            'id': 'fake_subnet',
+            'share_network_id': share_server['share_network_id'],
+            'availability_zone_id': 'fake_az_2_id',
+        }]
+        self._mock_db(
+            'share_network_subnets_get_all_by_availability_zone_id',
+            return_value=subnets)
+        self.mock_object(
+            self.api, '_get_all_availability_zones_with_subnets',
+            mock.Mock(return_value=(['NOVA_2'], {'fake_az_2_id': False})))
+        self._mock_create_share_server_replica_success()
+
+        self.api.create_share_server_replica(
+            self.context, share_server['id'])
+
+        self.assertEqual('fake_az_2_id',
+                         self._replica_request_spec()['availability_zone_id'])
+        self.assertEqual(subnets, self._created_replica_subnets())
+
+    def test_create_share_server_replica_default_subnet_leaves_az_unset(self):
+        """A zone-less subnet works anywhere, so the scheduler decides."""
+        share_server = self._fake_source_share_server()
+        self._setup_create_share_server_replica_mocks(share_server)
+        default_subnets = [{
+            'id': 'fake_default_subnet',
+            'share_network_id': share_server['share_network_id'],
+            'availability_zone_id': None,
+        }]
+        self.api.db.share_network_subnet_get_default_subnets.return_value = (
+            default_subnets)
+        mock_azs = self.api._get_all_availability_zones_with_subnets
+        self._mock_create_share_server_replica_success()
+
+        self.api.create_share_server_replica(
+            self.context, share_server['id'])
+
+        request_spec = self._replica_request_spec()
+        self.assertIsNone(request_spec['availability_zone_id'])
+        # A null zone must not leak into the map, or it would be compared
+        # against real zone ids in the scheduler.
+        self.assertEqual(
+            {}, request_spec['az_request_multiple_subnet_support_map'])
+        self.assertEqual(default_subnets, self._created_replica_subnets())
+        self.assertFalse(mock_azs.called)
+
+    def test_create_share_server_replica_with_explicit_share_network(self):
+        share_server = self._fake_source_share_server()
+        self._setup_create_share_server_replica_mocks(share_server)
+        self._mock_db('share_network_get', return_value={
+            'id': 'explicit_network_id',
+            'name': 'explicit_network_name',
+            'project_id': 'fake_project_id',
+        })
+        self.mock_object(
+            self.api, '_get_all_availability_zones_with_subnets',
+            mock.Mock(return_value=(['NOVA_1'], {'fake_az_1_id': False})))
+        self._mock_db(
+            'share_network_subnets_get_all_by_availability_zone_id',
+            return_value=[{
+                'id': 'fake_subnet',
+                'share_network_id': 'explicit_network_id',
+                'availability_zone_id': 'fake_az_1_id',
+            }])
+        replica_server = {
+            'id': 'fake_replica_id',
+            'host': '',
+            'share_network_id': 'explicit_network_id',
+            'share_network_name': 'explicit_network_name',
+            'share_network_subnets': [{
+                'id': 'fake_subnet',
+                'share_network_id': 'explicit_network_id',
+                'availability_zone_id': 'fake_az_1_id',
+            }],
+        }
+        self._mock_create_share_server_replica_success(replica_server)
+
+        retval = self.api.create_share_server_replica(
+            self.context, share_server['id'],
+            share_network_id='explicit_network_id')
+
+        self.api.db.share_network_get.assert_called_once_with(
+            self.context, 'explicit_network_id')
+        (self.api.db.share_network_subnets_get_all_by_availability_zone_id
+         .assert_called_once_with(
+             self.context,
+             share_network_id='explicit_network_id',
+             availability_zone_id='fake_az_1_id'))
+        self.assertEqual(replica_server['id'], retval['id'])
+        self.assertEqual('', retval['host'])
+        self.assertEqual('explicit_network_id', retval['share_network_id'])
+        self.assertEqual('explicit_network_name', retval['share_network_name'])
+        self.assertEqual('fake_az_1_id',
+                         self._replica_request_spec()['availability_zone_id'])
+
+    def test_create_share_server_replica_error_on_quota_commit(self):
+        share_server = self._fake_source_share_server()
+        replica_server = {'id': 'fake_replica_id', 'host': ''}
+        self._setup_create_share_server_replica_mocks(share_server)
+        self.mock_object(
+            self.api.scheduler_rpcapi, 'create_share_server_replica')
+        self.mock_object(self.api.db, 'share_server_create',
+                         mock.Mock(return_value=replica_server))
+        self.mock_object(self.api.db, 'share_server_delete')
+        self.mock_object(quota.QUOTAS, 'reserve',
+                         mock.Mock(return_value='fake_reservation'))
+        self.mock_object(quota.QUOTAS, 'commit',
+                         mock.Mock(side_effect=exception.QuotaError('fake')))
+        self.mock_object(quota.QUOTAS, 'rollback')
+
+        self.assertRaises(
+            exception.QuotaError,
+            self.api.create_share_server_replica,
+            self.context, share_server['id'])
+
+        self.api.db.share_server_delete.assert_called_once_with(
+            self.context, replica_server['id'])
+        quota.QUOTAS.rollback.assert_called_once_with(
+            self.context, 'fake_reservation',
+            project_id=share_server['project_id'])
+
+    @ddt.data(
+        {
+            # Migration destination rows are not replica resources.
+            'replica_state': None,
+            'expected_exception': None,
+        },
+        {
+            'replica_state': constants.REPLICA_STATE_OUT_OF_SYNC,
+            'expected_exception': exception.ShareServerReplicaExists,
+        },
+    )
+    @ddt.unpack
+    def test_create_share_server_replica_existing_rows_precheck(
+            self, replica_state, expected_exception):
+        share_server = self._fake_source_share_server()
+        replica_server = {'id': 'fake_replica_id', 'host': ''}
+        self._setup_create_share_server_replica_mocks(share_server)
+        self.api.db.share_server_get_all_with_filters.return_value = [
+            {
+                'id': 'fake_replica_server_id',
+                'host': 'dest@backend#pool',
+                'source_share_server_id': share_server['id'],
+                'replica_state': replica_state,
+            }
+        ]
+        create_call = self.mock_object(
+            self.api.db, 'share_server_create',
+            mock.Mock(return_value=replica_server))
+        reserve = self.mock_object(
+            quota.QUOTAS, 'reserve',
+            mock.Mock(return_value='fake_reservation'))
+        self.mock_object(quota.QUOTAS, 'commit')
+        self.mock_object(
+            self.api.scheduler_rpcapi, 'create_share_server_replica')
+
+        if expected_exception:
+            self.assertRaises(
+                expected_exception,
+                self.api.create_share_server_replica,
+                self.context,
+                share_server['id'])
+            self.assertFalse(create_call.called)
+            self.assertFalse(reserve.called)
+        else:
+            retval = self.api.create_share_server_replica(
+                self.context, share_server['id'])
+            self.assertEqual(replica_server['id'], retval['id'])
+            create_call.assert_called_once()
+
+    def test_delete_share_server_replica_no_host(self):
+        replica = self._fake_share_server_replica(
+            id='fake_replica_id',
+            host='',
+            source_share_server_id='fake_source_ss_id',
+            replica_state=constants.REPLICA_STATE_OUT_OF_SYNC,
+        )
+        self.mock_object(self.api.db, 'share_server_get',
+                         mock.Mock(return_value=replica))
+        self.mock_object(
+            share_utils, 'is_share_server_replica',
+            mock.Mock(return_value=True))
+        update = self.mock_object(self.api.db, 'share_server_update')
+        rpc_delete = self.mock_object(self.api.share_rpcapi,
+                                      'delete_share_server_replica')
+
+        self.api.delete_share_server_replica(
+            self.context, replica['id'], force=True)
+
+        update.assert_called_once_with(
+            self.context, replica['id'],
+            {'status': constants.STATUS_DELETING})
+        rpc_delete.assert_called_once_with(
+            self.context, replica, force=True)
+
+    @ddt.data(
+        # The active replica is off limits however it is asked for, because
+        # the secondaries have nothing to replicate from without it.
+        dict(replica_state=constants.REPLICA_STATE_ACTIVE, force=False),
+        dict(replica_state=constants.REPLICA_STATE_ACTIVE, force=True),
+        # A share server that is not replicating at all is not this API's
+        # to delete either.
+        dict(replica_state=None, force=False),
+    )
+    @ddt.unpack
+    def test_delete_share_server_replica_rejected(self, replica_state, force):
+        """Neither the active replica nor a plain share server can go."""
+        source_server = self._fake_source_share_server(
+            id='fake_source_ss_id', host='hostA@backend#pool',
+            replica_state=replica_state)
+        self._mock_db('share_server_get', return_value=source_server)
+        update = self._mock_db('share_server_update')
+        rpc_delete = self.mock_object(
+            self.api.share_rpcapi, 'delete_share_server_replica')
+
+        self.assertRaises(
+            exception.ReplicationException,
+            self.api.delete_share_server_replica,
+            self.context, source_server['id'], force=force)
+
+        self.assertFalse(update.called)
+        self.assertFalse(rpc_delete.called)
+
+    @ddt.data(*[
+        {
+            'action': action,
+            'status': status,
+            'rpc_method': rpc_method,
+        }
+        for action, rpc_method in (
+            ('delete', 'delete_share_server_replica'),
+            ('promote', 'promote_share_server_replica'),
+            ('update_state', 'update_share_server_replica_state'),
+        )
+        for status in (
+            constants.STATUS_DELETING,
+            constants.STATUS_ERROR_DELETING,
+            constants.STATUS_REPLICATION_CHANGE,
+            constants.STATUS_CREATING,
+        )
+    ])
+    @ddt.unpack
+    def test_share_server_replica_operations_invalid_transient_status(
+            self, action, status, rpc_method):
+        replica = self._fake_share_server_replica(status=status)
+        self.mock_object(
+            self.api.db, 'share_server_get',
+            mock.Mock(return_value=replica))
+        update = self.mock_object(self.api.db, 'share_server_update')
+        rpcapi = self.api.share_rpcapi if action == 'delete' else \
+            self.share_rpcapi
+        rpc_mock = self.mock_object(rpcapi, rpc_method)
+
+        if action == 'delete':
+            call = self.api.delete_share_server_replica
+        elif action == 'promote':
+            call = self.api.promote_share_server_replica
+        else:
+            call = self.api.update_share_server_replica_state
+
+        self.assertRaises(
+            exception.ReplicationException,
+            call,
+            self.context,
+            replica['id'])
+
+        self.assertFalse(update.called)
+        self.assertFalse(rpc_mock.called)
+
+    @ddt.data(constants.REPLICA_STATE_OUT_OF_SYNC, constants.STATUS_ERROR,
+              None)
+    def test_promote_share_server_replica_not_in_sync(self, replica_state):
+        """Only a replica that caught up with the active one is promotable."""
+        replica = self._fake_share_server_replica(
+            replica_state=replica_state)
+        self.mock_object(
+            self.api.db, 'share_server_get',
+            mock.Mock(return_value=replica))
+        update = self.mock_object(self.api.db, 'share_server_update')
+        rpc_promote = self.mock_object(
+            self.share_rpcapi, 'promote_share_server_replica')
+
+        self.assertRaises(
+            exception.ReplicationException,
+            self.api.promote_share_server_replica,
+            self.context,
+            replica['id'])
+
+        self.assertFalse(update.called)
+        self.assertFalse(rpc_promote.called)
+
+    def test_create_share_server_replica_with_metadata_casts_values_to_str(
+            self):
+        share_server = self._fake_source_share_server()
+        replica_server = {'id': 'fake_replica_id', 'host': ''}
+        self._setup_create_share_server_replica_mocks(share_server)
+        self.mock_object(
+            self.api.db, 'share_server_create',
+            mock.Mock(return_value=replica_server))
+        self.mock_object(
+            quota.QUOTAS, 'reserve',
+            mock.Mock(return_value='fake_reservation'))
+        self.mock_object(quota.QUOTAS, 'commit')
+        self.mock_object(
+            self.api.scheduler_rpcapi, 'create_share_server_replica')
+
+        self.api.create_share_server_replica(
+            self.context, share_server['id'], metadata={'k': 123})
+
+        (self.api.db.share_server_replica_metadata_update
+         .assert_called_once_with(
+             self.context,
+             'fake_replica_id',
+             {'k': '123'},
+             delete=False))
+
+    def test_promote_share_server_replica(self):
+        server = self._fake_share_server_replica(
+            replica_state=constants.REPLICA_STATE_IN_SYNC)
+        self.mock_object(
+            self.api.db, 'share_server_get',
+            mock.Mock(return_value=server))
+        update = self.mock_object(self.api.db, 'share_server_update')
+        rpc_promote = self.mock_object(
+            self.share_rpcapi, 'promote_share_server_replica')
+
+        retval = self.api.promote_share_server_replica(
+            self.context,
+            server['id'])
+
+        self.assertIsNone(retval)
+        update.assert_called_once_with(
+            self.context,
+            server['id'],
+            {'status': constants.STATUS_REPLICATION_CHANGE})
+        rpc_promote.assert_called_once_with(self.context, server)
+
+    def test_update_share_server_replica_state_invalid_non_replica(self):
+        non_replica = self._fake_share_server_replica(
+            id='server-id',
+            source_share_server_id=None,
+            replica_state=constants.REPLICA_STATE_ACTIVE,
+            status=constants.STATUS_AVAILABLE,
+        )
+        self.mock_object(
+            self.api.db, 'share_server_get',
+            mock.Mock(return_value=non_replica))
+        self.mock_object(
+            share_utils, 'is_share_server_replica',
+            mock.Mock(return_value=False))
+        mock_rpc = self.mock_object(
+            self.share_rpcapi, 'update_share_server_replica_state')
+
+        retval = self.api.update_share_server_replica_state(
+            self.context,
+            non_replica['id'])
+
+        self.assertIsNone(retval)
+        mock_rpc.assert_called_once_with(self.context, non_replica)
+
     @ddt.data({'overs': {'replica_gigabytes': 'fake'},
                'expected_exception':
                    exception.ShareReplicaSizeExceedsAvailableQuota},
@@ -5647,6 +6406,35 @@ class ShareAPITestCase(test.TestCase):
             status=constants.STATUS_SERVER_MIGRATING_TO
         )
         mock_get_all.assert_called_once_with(self.context, filters=filters)
+
+    def test_share_server_migration_get_destination_filters_replicas(self):
+        """Verify replicas are excluded from migration destination query."""
+        fake_source_server_id = 'fake_source_id'
+        # Migration destination (no replica_state)
+        migration_dest_data = {
+            'id': 'migration_dest_id',
+            'source_share_server_id': fake_source_server_id,
+            'status': constants.STATUS_SERVER_MIGRATING_TO,
+            'replica_state': None,
+        }
+        migration_dest = db_utils.create_share_server(**migration_dest_data)
+        # Replica (has replica_state)
+        replica_data = {
+            'id': 'replica_id',
+            'source_share_server_id': fake_source_server_id,
+            'status': constants.STATUS_ACTIVE,
+            'replica_state': constants.REPLICA_STATE_ACTIVE,
+        }
+        replica = db_utils.create_share_server(**replica_data)
+        self.mock_object(
+            db_api, 'share_server_get_all_with_filters',
+            mock.Mock(return_value=[migration_dest, replica]))
+
+        # Should return only the migration destination, not the replica
+        result = self.api.share_server_migration_get_destination(
+            self.context, fake_source_server_id
+        )
+        self.assertEqual(result['id'], migration_dest['id'])
 
     def test__migration_initial_checks_no_shares(self):
         fake_share_server = fakes.fake_share_server_get()

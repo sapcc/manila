@@ -1,0 +1,8 @@
+---
+features:
+  - |
+    The ``share_server_id`` field of a share is now returned to the share's
+    owner (project user), not only to host administrators. This is required
+    for share-server replication, where a user needs to know which share
+    server backs their share. The ``host`` field remains restricted to host
+    administrators.

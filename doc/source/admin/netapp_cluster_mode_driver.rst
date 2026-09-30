@@ -56,13 +56,18 @@ The following operations are supported on Clustered Data ONTAP:
 - Create consistency group from CG snapshot
 - Create CG snapshot
 - Delete CG snapshot
-- Create a replica (DHSS=False)
-- Promote a replica (DHSS=False)
-- Delete a replica (DHSS=False)
-- Update a replica (DHSS=False)
-- Create a replicated snapshot (DHSS=False)
-- Delete a replicated snapshot (DHSS=False)
-- Update a replicated snapshot (DHSS=False)
+- Create a replica
+- Promote a replica
+- Delete a replica
+- Update a replica
+- Create a replicated snapshot
+- Delete a replicated snapshot
+- Update a replicated snapshot
+- Create a share server replica (DHSS=True)
+- Promote a share server replica (DHSS=True)
+- Update a share server replica (DHSS=True)
+- Delete a share server replica (DHSS=True)
+- Detect an unplanned share server replica failover (DHSS=True)
 - Migrate share
 - Migrate share server
 - Create share backup
@@ -99,6 +104,43 @@ extra spec set to True when creating shares.
 If 'driver_handles_share_servers' is False, the manila admin must configure a
 single SVM, along with associated LIFs and protocol services, that will be
 used for provisioning shares.  The SVM is specified in the manila config file.
+
+DNS Configuration for DHSS=True SVMs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In DHSS=True mode, newly created SVMs have no DNS name-service unless a
+security service is attached. SVMs that need to resolve infrastructure
+hostnames (for example, a Barbican KMS endpoint for share encryption) will
+fail without a working resolver.
+
+Set ``netapp_dns_domains`` and ``netapp_dns_nameservers`` in the backend
+stanza of ``manila.conf`` to provide infrastructure DNS to every SVM
+managed by the backend. Optionally, set ``netapp_dns_hosts`` to add
+static hostname:ip fallback entries to the SVM local-hosts table.
+
+When a security service is later attached, its DNS values are merged on
+top of the infrastructure DNS (security-service entries first). The
+driver reconciles DNS on service restart via ``ensure_shares``.
+
+Share Server Replicas (DHSS=True)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The NetApp driver supports share server replica operations when
+``driver_handles_share_servers`` is set to ``True``.
+
+In this mode, Manila can create an additional share server replica in a
+target availability zone and maintain replica lineage for failover and
+recovery workflows.
+
+Recommended workflow:
+
+1. Create a destination share server replica in the target availability
+   zone.
+2. Wait until the replica reaches a synchronized/in_sync replication state.
+3. Promote the destination replica during failover/switchover workflows
+   when needed.
+4. Resync replicas after topology changes, and delete replicas when they are
+   no longer required.
 
 Network approach
 ----------------
