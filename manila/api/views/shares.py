@@ -98,13 +98,12 @@ class ViewBuilder(common.ViewBuilder):
             'links': self._get_links(request, share['id']),
             'is_public': share.get('is_public'),
             'export_locations': export_locations,
+            'share_server_id': share_instance.get('share_server_id'),
         }
 
         self.update_versioned_resource_dict(request, share_dict, share)
 
         if policy.check_is_host_admin(context):
-            share_dict['share_server_id'] = share_instance.get(
-                'share_server_id')
             share_dict['host'] = share_instance.get('host')
         return {'share': share_dict}
 
