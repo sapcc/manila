@@ -212,8 +212,8 @@ class ShareAPITest(test.TestCase):
             share.update(values)
         if share.get('share_proto'):
             share['share_proto'] = share['share_proto'].upper()
+        share['share_server_id'] = 'fake_share_server_id'
         if admin:
-            share['share_server_id'] = 'fake_share_server_id'
             share['host'] = 'fakehost'
         return {
             'share': self._process_expected_share_detailed_response(
@@ -2227,6 +2227,7 @@ class ShareAPITest(test.TestCase):
             'share_type': '1',
             'volume_type': '1',
             'is_public': False,
+            'share_server_id': 'fake_share_server_id',
             'links': [
                 {
                     'href': 'http://localhost/share/v2/fake/shares/1',
@@ -2337,6 +2338,7 @@ class ShareAPITest(test.TestCase):
                     'share_type': '1',
                     'volume_type': '1',
                     'is_public': False,
+                    'share_server_id': 'fake_share_server_id',
                     'snapshot_support': True,
                     'has_replicas': False,
                     'replication_type': None,
