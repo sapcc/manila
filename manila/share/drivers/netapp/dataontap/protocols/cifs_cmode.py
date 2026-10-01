@@ -106,6 +106,7 @@ class NetAppCmodeCIFSHelper(base.NetAppBaseHelper):
         cifs_share_name = share_name
         existing_rules = self._get_access_rules(share, cifs_share_name)
 
+
         # Update rules in an order that will prevent transient disruptions
         self._handle_added_rules(cifs_share_name, existing_rules, new_rules)
         self._handle_ro_to_rw_rules(cifs_share_name, existing_rules, new_rules)
