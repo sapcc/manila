@@ -166,6 +166,12 @@ share_replica_id_path:
   in: path
   required: true
   type: string
+share_server_replica_id_path:
+  description: |
+    The UUID of the share server replica.
+  in: path
+  required: true
+  type: string
 share_type_for_quota:
   description: |
     The name or UUID of the share type. If you specify this
@@ -176,12 +182,6 @@ share_type_for_quota:
   required: false
   type: string
   min_version: 2.39
-share_server_replica_id_path:
-  description: |
-    The UUID of the share server replica.
-  in: path
-  required: true
-  type: string
 share_type_id:
   description: |
     The UUID of the share type.
@@ -4206,6 +4206,13 @@ source_share_group_snapshot_member_id:
   required: true
   type: string
   min_version: 2.31
+source_share_server_id:
+  description: |
+    The UUID of the source (active) share server that this share server
+    replica is replicating from. ``null`` for the active share server.
+  in: body
+  required: false
+  type: string
 state:
   description: |
     Prior to versions 2.28, the state of all access rules of a given share

@@ -495,11 +495,8 @@ Request example
    :language: javascript
 
 
-Share server replica metadata
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 Show all share server replica metadata
----------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. rest_method::  GET /v2/share-server-replicas/{share_server_replica_id}/metadata
 
@@ -544,7 +541,7 @@ Response example
 
 
 Show share server replica metadata item
-----------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. rest_method::  GET /v2/share-server-replicas/{share_server_replica_id}/metadata/{key}
 
@@ -590,7 +587,7 @@ Response example
 
 
 Set share server replica metadata
----------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. rest_method::  POST /v2/share-server-replicas/{share_server_replica_id}/metadata
 
@@ -642,7 +639,7 @@ Response example
 
 
 Update share server replica metadata
-------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. rest_method::  PUT /v2/share-server-replicas/{share_server_replica_id}/metadata
 
@@ -709,7 +706,7 @@ Response example
 
 
 Delete share server replica metadata item
-------------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. rest_method::  DELETE /v2/share-server-replicas/{share_server_replica_id}/metadata/{key}
 
