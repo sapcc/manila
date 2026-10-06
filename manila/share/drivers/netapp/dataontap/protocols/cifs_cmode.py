@@ -29,6 +29,18 @@ from manila import utils
 class NetAppCmodeCIFSHelper(base.NetAppBaseHelper):
     """NetApp cDOT CIFS protocol helper class."""
 
+    @staticmethod
+    def _get_cifs_share_name(share, share_name):
+        """Returns the name the CIFS share object must have.
+
+        Clients mount CIFS shares by share name, so the user-specified
+        mount_point_name must win over the internal backend volume name.
+        The volume junction path is also '/<mount_point_name>' in that case
+        (see create_volume), so the CIFS share name still matches the
+        junction path basename.
+        """
+        return share.get('mount_point_name') or share_name
+
     @na_utils.trace
     def create_share(self, share, share_name,
                      clear_current_export_policy=True,
@@ -51,20 +63,24 @@ class NetAppCmodeCIFSHelper(base.NetAppBaseHelper):
         def _get_volume_junction_path(share_name):
             return self._client.get_volume_junction_path(share_name)
 
+        cifs_share_name = self._get_cifs_share_name(share, share_name)
+
+        # NOTE: the volume lookups below must use the backend volume name,
+        # which may differ from the CIFS share name.
         if is_flexgroup:
             volume_info = self._client.get_volume(share_name)
             export_path = volume_info['junction-path']
         else:
             export_path = _get_volume_junction_path(share_name)
 
-        cifs_exist = self._client.cifs_share_exists(share_name)
+        cifs_exist = self._client.cifs_share_exists(cifs_share_name)
         if ensure_share_already_exists and not cifs_exist:
             msg = _("The expected CIFS share %(share_name)s was not found.")
-            msg_args = {'share_name': share_name}
+            msg_args = {'share_name': cifs_share_name}
             raise exception.NetAppException(msg % msg_args)
         elif not cifs_exist:
-            self._client.create_cifs_share(share_name, export_path)
-            self._client.remove_cifs_share_access(share_name, 'Everyone')
+            self._client.create_cifs_share(cifs_share_name, export_path)
+            self._client.remove_cifs_share_access(cifs_share_name, 'Everyone')
 
         # Ensure 'ntfs' security style if not a MULTI share protocol.
         # DP volumes cannot set it.
@@ -75,13 +91,14 @@ class NetAppCmodeCIFSHelper(base.NetAppBaseHelper):
         # Return a callback that may be used for generating export paths
         # for this share. CIFS clients connect by share name, so the
         # junction path is not a valid UNC.
-        return (lambda export_address, share_name=share_name:
+        return (lambda export_address, share_name=cifs_share_name:
                 r'\\%s\%s' % (export_address, share_name))
 
     @na_utils.trace
     def delete_share(self, share, share_name):
         """Deletes CIFS share on Data ONTAP Vserver."""
-        self._client.remove_cifs_share(share_name)
+        self._client.remove_cifs_share(
+            self._get_cifs_share_name(share, share_name))
 
     @na_utils.trace
     @base.access_rules_synchronized
@@ -101,9 +118,10 @@ class NetAppCmodeCIFSHelper(base.NetAppBaseHelper):
 
         new_rules = {r['access_to']: r['access_level'] for r in valid_rules}
 
-        # The CIFS share name is the volume name, which can differ from
-        # the junction path basename in the export location.
-        cifs_share_name = share_name
+        # The CIFS share name is the user-specified mount_point_name when
+        # set, otherwise the backend volume name. Either way it can differ
+        # from the volume name passed in here.
+        cifs_share_name = self._get_cifs_share_name(share, share_name)
         existing_rules = self._get_access_rules(share, cifs_share_name)
 
         # Update rules in an order that will prevent transient disruptions
