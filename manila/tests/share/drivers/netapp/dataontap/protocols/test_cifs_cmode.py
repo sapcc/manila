@@ -89,17 +89,61 @@ class NetAppClusteredCIFSHelperTestCase(test.TestCase):
                           ensure_share_already_exists=True)
 
     def test_create_share_with_mount_point_name(self):
-        """Export location must use the CIFS share name, not the junction."""
+        """CIFS share must be created with mount_point_name when set."""
+        share = copy.copy(fake.CIFS_SHARE)
+        share['mount_point_name'] = 'sapmnt25'
         self.mock_client.cifs_share_exists.return_value = False
         self.mock_client.get_volume_junction_path.return_value = '/sapmnt25'
+
+        result = self.helper.create_share(share, fake.SHARE_NAME)
+
+        self.assertEqual(
+            r'\\%s\%s' % (fake.SHARE_ADDRESS_1, 'sapmnt25'),
+            result(fake.SHARE_ADDRESS_1))
+        self.mock_client.cifs_share_exists.assert_called_once_with('sapmnt25')
+        self.mock_client.create_cifs_share.assert_called_once_with(
+            'sapmnt25', '/sapmnt25')
+        self.mock_client.remove_cifs_share_access.assert_called_once_with(
+            'sapmnt25', 'Everyone')
+        # the volume lookup still uses the backend volume name
+        self.mock_client.get_volume_junction_path.assert_called_once_with(
+            fake.SHARE_NAME)
+
+    def test_create_share_flexgroup_with_mount_point_name(self):
+        """FlexGroup volume lookup must use the backend volume name."""
+        share = copy.copy(fake.CIFS_SHARE)
+        share['mount_point_name'] = 'sapmnt25'
+        self.mock_client.cifs_share_exists.return_value = False
+        self.mock_client.get_volume.return_value = {
+            'junction-path': '/sapmnt25'}
+
+        result = self.helper.create_share(share, fake.SHARE_NAME,
+                                          is_flexgroup=True)
+
+        self.mock_client.get_volume.assert_called_once_with(fake.SHARE_NAME)
+        self.mock_client.create_cifs_share.assert_called_once_with(
+            'sapmnt25', '/sapmnt25')
+        self.assertEqual(
+            r'\\%s\%s' % (fake.SHARE_ADDRESS_1, 'sapmnt25'),
+            result(fake.SHARE_ADDRESS_1))
+
+    def test_create_share_without_mount_point_name(self):
+        """Without mount_point_name the volume name is used throughout."""
+        self.mock_client.cifs_share_exists.return_value = False
+        self.mock_client.get_volume_junction_path.return_value = (
+            fake.CIFS_SHARE_PATH)
 
         result = self.helper.create_share(fake.CIFS_SHARE, fake.SHARE_NAME)
 
         self.assertEqual(
             r'\\%s\%s' % (fake.SHARE_ADDRESS_1, fake.SHARE_NAME),
             result(fake.SHARE_ADDRESS_1))
+        self.mock_client.cifs_share_exists.assert_called_once_with(
+            fake.SHARE_NAME)
         self.mock_client.create_cifs_share.assert_called_once_with(
-            fake.SHARE_NAME, '/sapmnt25')
+            fake.SHARE_NAME, fake.CIFS_SHARE_PATH)
+        self.mock_client.remove_cifs_share_access.assert_called_once_with(
+            fake.SHARE_NAME, 'Everyone')
 
     def test_create_share_junction_path_retry(self):
         """CIFS create_share retries on transient NaApiError 13001."""
@@ -127,15 +171,13 @@ class NetAppClusteredCIFSHelperTestCase(test.TestCase):
             fake.SHARE_NAME)
 
     def test_delete_share_with_mount_point_name(self):
-        """CIFS share name must come from share_name, not the junction path."""
+        """CIFS share name must come from mount_point_name when set."""
         share = copy.copy(fake.CIFS_SHARE)
-        share['export_location'] = (
-            r'\\%s%s' % (fake.SHARE_ADDRESS_1, '\\sapmnt25'))
+        share['mount_point_name'] = 'sapmnt25'
 
         self.helper.delete_share(share, fake.SHARE_NAME)
 
-        self.mock_client.remove_cifs_share.assert_called_once_with(
-            fake.SHARE_NAME)
+        self.mock_client.remove_cifs_share.assert_called_once_with('sapmnt25')
 
     def test_update_access(self):
 
@@ -171,21 +213,24 @@ class NetAppClusteredCIFSHelperTestCase(test.TestCase):
             fake.SHARE_NAME, fake.EXISTING_CIFS_RULES, new_rules)
 
     def test_update_access_with_mount_point_name(self):
-        """update_access must use share_name, not the junction path."""
+        """update_access must use mount_point_name when set."""
         share = copy.copy(fake.CIFS_SHARE)
-        share['export_location'] = (
-            r'\\%s%s' % (fake.SHARE_ADDRESS_1, '\\sapmnt25'))
+        share['mount_point_name'] = 'sapmnt25'
         mock_get_access_rules = self.mock_object(
             self.helper, '_get_access_rules',
             mock.Mock(return_value=fake.EXISTING_CIFS_RULES))
-        self.mock_object(self.helper, '_handle_added_rules')
+        mock_handle_added_rules = self.mock_object(self.helper,
+                                                   '_handle_added_rules')
         self.mock_object(self.helper, '_handle_ro_to_rw_rules')
         self.mock_object(self.helper, '_handle_rw_to_ro_rules')
         self.mock_object(self.helper, '_handle_deleted_rules')
 
         self.helper.update_access(share, fake.SHARE_NAME, [fake.USER_ACCESS])
 
-        mock_get_access_rules.assert_called_once_with(share, fake.SHARE_NAME)
+        mock_get_access_rules.assert_called_once_with(share, 'sapmnt25')
+        mock_handle_added_rules.assert_called_once_with(
+            'sapmnt25', fake.EXISTING_CIFS_RULES,
+            {'fake_user': constants.ACCESS_LEVEL_RW})
 
     def test_validate_access_rule(self):
 

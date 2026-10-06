@@ -1,0 +1,9 @@
+---
+fixes:
+  - |
+    Fixed the NetApp CIFS driver to create and reference the CIFS share using
+    the user-specified ``mount_point_name`` (when set) instead of the internal
+    backend volume name, so Windows clients can mount shares at the path they
+    requested. ``update_access`` and ``delete_share`` now also operate against
+    the correct CIFS share name for shares created with a custom
+    ``mount_point_name``.
