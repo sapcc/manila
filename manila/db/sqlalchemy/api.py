@@ -2131,6 +2131,10 @@ def _share_instance_delete(context, instance_id,
     is_replica = instance_ref['replica_state'] is not None
     instance_ref.soft_delete(session=context.session, update_status=True)
 
+    context.session.query(models.ShareInstanceMetadata).filter_by(
+        share_instance_id=instance_id,
+    ).soft_delete()
+
     share = _share_get(context, instance_ref['share_id'])
     if len(share.instances) == 0:
 
@@ -2143,9 +2147,6 @@ def _share_instance_delete(context, instance_id,
 
         context.session.query(models.ShareMetadata).filter_by(
             share_id=share['id'],
-        ).soft_delete()
-        context.session.query(models.ShareInstanceMetadata).filter_by(
-            share_instance_id=instance_id,
         ).soft_delete()
 
         share.soft_delete(session=context.session)

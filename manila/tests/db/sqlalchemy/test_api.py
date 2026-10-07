@@ -534,6 +534,40 @@ class ShareDatabaseAPITestCase(test.TestCase):
         self.assertRaises(exception.NotFound, db_api.share_metadata_get,
                           self.ctxt, share['id'])
 
+    def test_share_instance_delete_replica_soft_deletes_its_metadata(self):
+        """Deleting a replica must soft-delete its own metadata.
+
+        Even when sibling instances keep the share alive, otherwise the
+        live child rows break 'manila-manage db purge' via the
+        share_instance_metadata foreign key.
+        """
+        share = db_utils.create_share()
+        replica = db_utils.create_share_replica(
+            share_id=share['id'],
+            replica_state=constants.REPLICA_STATE_IN_SYNC)
+        db_api.share_replica_metadata_update(
+            self.ctxt, share_instance_id=replica['id'],
+            metadata={'foo': 'bar'}, delete=False)
+
+        db_api.share_instance_delete(self.ctxt, replica['id'])
+
+        admin_ctxt = context.get_admin_context(read_deleted='yes')
+        with db_api.context_manager.reader.using(admin_ctxt):
+            metadata_rows = db_api.model_query(
+                admin_ctxt, models.ShareInstanceMetadata, read_deleted='yes',
+            ).filter_by(share_instance_id=replica['id']).all()
+
+        self.assertEqual(1, len(metadata_rows))
+        for row in metadata_rows:
+            # oslo.db sets 'deleted' to the row's own primary key, which is
+            # what purge_deleted_records() matches on.
+            self.assertEqual(str(row['id']), str(row['deleted']))
+
+        # The share and its remaining instance must survive.
+        self.assertIsNotNone(db_api.share_get(self.ctxt, share['id']))
+        self.assertIsNotNone(
+            db_api.share_instance_get(self.ctxt, share.instance['id']))
+
     def test_share_instance_delete_with_share_need_to_update_usages(self):
         share = db_utils.create_share()
 
@@ -5112,6 +5146,52 @@ class PurgeDeletedTest(test.TestCase):
             # Parent purged, child cleaned up.
             self.assertEqual(0, access_rows)
             self.assertEqual(0, instance_access_rows)
+
+    def test_purge_deleted_replica_with_metadata(self):
+        """Purging a deleted replica must not hit the metadata FK."""
+        self._turn_on_foreign_key()
+        fake_now = timeutils.utcnow()
+        with mock.patch.object(timeutils, 'utcnow',
+                               mock.Mock(return_value=fake_now)):
+            # The share keeps a live instance, so the replica delete must
+            # still soft-delete the replica's own metadata.
+            share = db_utils.create_share()
+            replica = db_utils.create_share_replica(
+                share_id=share['id'],
+                replica_state=constants.REPLICA_STATE_IN_SYNC)
+            db_api.share_replica_metadata_update(
+                self.context, share_instance_id=replica['id'],
+                metadata={'foo': 'bar'}, delete=False)
+
+            # Delete the replica through the regular code path, which must
+            # soft-delete its metadata too, then age both rows out.
+            db_api.share_instance_delete(self.context, replica['id'])
+            deleted_at = fake_now - datetime.timedelta(days=1)
+            with db_api.context_manager.writer.using(self.context):
+                db_api.model_query(
+                    self.context, models.ShareInstance, read_deleted='yes',
+                ).filter_by(id=replica['id']).update(
+                    {'deleted_at': deleted_at})
+                db_api.model_query(
+                    self.context, models.ShareInstanceMetadata,
+                    read_deleted='yes',
+                ).filter_by(share_instance_id=replica['id']).update(
+                    {'deleted_at': deleted_at})
+
+            # Must not raise a DBReferenceError.
+            db_api.purge_deleted_records(self.context, age_in_days=0)
+
+            with db_api.context_manager.reader.using(self.context):
+                instance_rows = db_api.model_query(
+                    self.context, models.ShareInstance, read_deleted='yes',
+                ).filter_by(id=replica['id']).count()
+                metadata_rows = db_api.model_query(
+                    self.context, models.ShareInstanceMetadata,
+                    read_deleted='yes',
+                ).filter_by(share_instance_id=replica['id']).count()
+            # Both the parent and its metadata must be gone.
+            self.assertEqual(0, instance_rows)
+            self.assertEqual(0, metadata_rows)
 
 
 @ddt.ddt
