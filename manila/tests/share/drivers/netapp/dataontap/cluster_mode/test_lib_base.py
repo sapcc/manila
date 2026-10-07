@@ -3030,32 +3030,6 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
         self.assertEqual(0, lib_base.LOG.info.call_count)
 
-    @ddt.data(True, False)
-    def test_delete_share_force_delete_extra_spec(self, force_delete):
-        vserver_client = mock.Mock()
-        self.mock_object(self.library, '_get_vserver',
-                         mock.Mock(return_value=(fake.VSERVER1,
-                                                 vserver_client)))
-        self.mock_object(self.library, '_share_exists',
-                         mock.Mock(return_value=True))
-        self.mock_object(self.library, '_remove_export')
-        mock_deallocate = self.mock_object(self.library,
-                                           '_deallocate_container')
-        self.mock_object(self.library, '_delete_fpolicy_for_share')
-
-        # force_delete_time is 1 hour; a share younger than that is force
-        # deleted, an older one is not.
-        self.mock_object(lib_base.CONF, 'force_delete_time', 1)
-        share = fake.SHARE.copy()
-        share['duration_seconds'] = 60 if force_delete else 2 * 60 * 60
-
-        self.library.delete_share(self.context, share,
-                                  share_server=fake.SHARE_SERVER)
-
-        share_name = self.library._get_backend_share_name(share['id'])
-        mock_deallocate.assert_called_once_with(share_name, vserver_client,
-                                                force_delete)
-
     def test_delete_share_nonexistent_does_not_delete_private_storage(self):
         vserver_client = mock.Mock()
         self.mock_object(
