@@ -4798,14 +4798,6 @@ class ShareManager(manager.SchedulerDependentManager):
             share_server.get('backend_details')
         return (share, share_instance, share_server)
 
-    def _get_duration_seconds_for_instances(self, share_instance):
-        scheduled_at = share_instance.get('scheduled_at')
-        terminated_at = share_instance.get('terminated_at')
-        if scheduled_at and terminated_at:
-            duration = terminated_at - scheduled_at
-            return duration.total_seconds()
-        return constants.ONE_WEEK_IN_SECONDS
-
     @run_concurrently
     @add_hooks
     @utils.require_driver_initialized
