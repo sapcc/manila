@@ -1,0 +1,27 @@
+{% if page_source_suffix %}
+<!-- SOURCE_FILE: {% if giturl %}{{ giturl }}/{% endif %}{{ pagename }}{{ page_source_suffix }} -->
+{% else %}
+<!-- TEMPLATE_NAME: {{ pagename }} -->
+{% endif %}
+<nav class="navbar navbar-default sapcc-navbar" role="navigation">
+  <div class="container-fluid">
+    <a class="navbar-brand sapcc-brand" href="{{ pathto(master_doc) }}">
+      <img src="{{ pathto('_static/sap-logo.svg', 1) }}" alt="SAP" width="65" height="32">
+      <span class="sapcc-brand-title">Shared File Systems API</span>
+    </a>
+    <div class="sapcc-navbar-links">
+      <ul class="navbar-nav">
+        <li class="nav-item">
+          <a class="nav-link" href="{{ pathto('search') }}">
+            <i class="fa fa-search" aria-hidden="true"></i> Search
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="https://github.com/sapcc/manila">
+            <i class="fa fa-github" aria-hidden="true"></i> GitHub
+          </a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>

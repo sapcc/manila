@@ -1,0 +1,557 @@
+/* SAP Cloud Infrastructure branding for the Shared File Systems API reference.
+ *
+ * Mirrors the Juno dark palette used by sapcc/hugo-documentation-templater,
+ * which renders with data-bs-theme="dark" by default.
+ */
+
+:root {
+  /* Shell / surfaces */
+  --sapcc-navbar: #000810;          /* juno-grey-blue-11 */
+  --sapcc-global-bg: #0d141c;       /* juno-grey-blue-10 */
+  --sapcc-surface: #121920;         /* juno-grey-blue-9  */
+  --sapcc-surface-1: #1c232a;       /* juno-grey-blue-7  */
+  --sapcc-surface-2: #242a31;       /* juno-grey-blue-5  */
+  --sapcc-surface-3: #292f36;       /* juno-grey-blue-3  */
+  --sapcc-border: #30363c;          /* juno-grey-blue-2  */
+
+  /* Text */
+  --sapcc-text: #bbb;               /* juno-text-default */
+  --sapcc-text-high: #dedfe0;       /* juno-text-high    */
+  --sapcc-text-highest: #fffefd;    /* juno-text-highest */
+  --sapcc-text-light: #7a7a7a;      /* juno-text-light   */
+
+  /* Semantic */
+  --sapcc-accent: #15d0e0;          /* dark-theme accent */
+  --sapcc-accent-hover: #84f1ff;
+  --sapcc-info: #15d0e0;
+  --sapcc-success: #3bff5b;
+  --sapcc-warning: #ffc600;
+  --sapcc-danger: #ff4110;
+
+  /* Search-term highlight */
+  --sapcc-highlight: #ffc600;       /* juno-warning */
+  --sapcc-highlight-text: #121920;
+}
+
+html,
+body {
+  background: var(--sapcc-global-bg);
+}
+
+body {
+  color: var(--sapcc-text);
+  font-family: "IBM Plex Sans", "72", Arial, Helvetica, sans-serif;
+}
+
+/* ---------------------------------------------------------------- navbar */
+
+.sapcc-navbar {
+  background: var(--sapcc-navbar);
+  border: 0;
+  border-radius: 0;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 40%);
+  margin: 0;
+  min-height: 64px;
+  padding: 0 1.5rem;
+}
+
+.sapcc-navbar .container-fluid {
+  align-items: center;
+  display: flex;
+  flex-wrap: nowrap;
+  min-height: 64px;
+}
+
+/* openstackdocstheme paints the OpenStack logo as a background image on
+ * a.navbar-brand and pins it to 135x35px (59x54px between 768-1025px).
+ * Both must be neutralised or the SAP logo collides with the OpenStack
+ * artwork and the brand title wraps one word per line. */
+.sapcc-navbar a.navbar-brand.sapcc-brand {
+  align-items: center;
+  background: none !important;
+  color: var(--sapcc-text-highest);
+  display: flex;
+  flex: 0 1 auto;
+  gap: 0.875rem;
+  height: auto !important;
+  margin: 0 !important;
+  min-width: 0;
+  padding: 0;
+  white-space: nowrap;
+  width: auto !important;
+}
+
+.sapcc-navbar a.navbar-brand.sapcc-brand:hover,
+.sapcc-navbar a.navbar-brand.sapcc-brand:focus {
+  color: var(--sapcc-text-highest);
+  text-decoration: none;
+}
+
+.sapcc-brand img {
+  display: block;
+  flex: 0 0 auto;
+  height: 32px;
+  width: 65px;
+}
+
+.sapcc-brand-title {
+  border-left: 1px solid rgb(255 255 255 / 30%);
+  font-size: 1.0625rem;
+  font-weight: 400;
+  line-height: 1.75rem;
+  min-width: 0;
+  overflow: hidden;
+  padding-left: 0.875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sapcc-navbar .sapcc-navbar-links {
+  margin-left: auto;
+}
+
+.sapcc-navbar .navbar-nav {
+  align-items: center;
+  flex-direction: row;
+  display: flex;
+  float: none;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sapcc-navbar .navbar-nav > .nav-item {
+  float: none;
+  list-style: none;
+}
+
+.sapcc-navbar .navbar-nav > .nav-item > .nav-link {
+  color: rgb(255 255 255 / 90%);
+  font-size: 0.9375rem;
+  font-weight: 400;
+  padding: 0.5rem 0.875rem;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.sapcc-navbar .navbar-nav > .nav-item > .nav-link:hover,
+.sapcc-navbar .navbar-nav > .nav-item > .nav-link:focus {
+  color: #fff;
+  text-decoration: underline;
+}
+
+.sapcc-navbar .nav-link .fa {
+  margin-right: 0.35rem;
+}
+
+/* --------------------------------------------------------------- content */
+
+.docs-book-wrapper {
+  max-width: 1440px !important;
+  padding-top: 2rem;
+}
+
+.docs-body {
+  background: var(--sapcc-surface);
+  border: 1px solid var(--sapcc-border);
+  color: var(--sapcc-text);
+  padding: 2rem;
+}
+
+.docs-body h1,
+.docs-body h2,
+.docs-body h3,
+.docs-body h4,
+.docs-body h5,
+.docs-body h6,
+.docs-title,
+.docs-title h1 {
+  color: var(--sapcc-text-highest);
+}
+
+.docs-body a,
+.docs-body a code,
+.docs-sidebar a {
+  color: var(--sapcc-accent);
+}
+
+.docs-body a:hover,
+.docs-body a:focus,
+.docs-sidebar a:hover,
+.docs-sidebar a:focus {
+  color: var(--sapcc-accent-hover);
+}
+
+.docs-body hr,
+.docs-body blockquote {
+  border-color: var(--sapcc-border);
+}
+
+.headerlink {
+  color: var(--sapcc-text-light);
+}
+
+p.url-subtitle {
+  color: var(--sapcc-text-high);
+}
+
+/* --------------------------------------------------------------- sidebar */
+
+.docs-sidebar-toc {
+  background: var(--sapcc-surface);
+  border: 1px solid var(--sapcc-border);
+  color: var(--sapcc-text);
+}
+
+.docs-sidebar-section,
+.docs-sidebar-section ol,
+.docs-sidebar-section ul {
+  color: var(--sapcc-text);
+}
+
+.docs-sidebar-section.active {
+  background: var(--sapcc-surface-1);
+  border-left-color: var(--sapcc-accent);
+}
+
+.docs-sidebar-section-title,
+.docs-sidebar-section-title h4,
+.docs-sidebar-section.active .docs-sidebar-section-title {
+  color: var(--sapcc-text-highest);
+}
+
+.docs-sidebar-section:hover {
+  background: var(--sapcc-surface-1);
+}
+
+/* ---------------------------------------------------------------- tables */
+
+table.docutils {
+  border-color: var(--sapcc-border);
+}
+
+table.docutils th {
+  background: var(--sapcc-surface-2);
+  border-color: var(--sapcc-border);
+  color: var(--sapcc-text-highest);
+}
+
+table.docutils td {
+  border-color: var(--sapcc-border);
+  color: var(--sapcc-text);
+}
+
+tbody > tr:nth-child(odd) > td,
+tbody > tr:nth-child(odd) > th,
+table.docutils tr.row-odd,
+table.docutils tr.row-odd > td,
+table.docutils tr.row-odd > th {
+  background: var(--sapcc-surface-1);
+}
+
+tbody > tr:nth-child(even) > td,
+table.docutils tr.row-even,
+table.docutils tr.row-even > td {
+  background: var(--sapcc-surface);
+}
+
+/* ------------------------------------------------------------------ code */
+
+code,
+tt.literal,
+span.path_parameter,
+.docs-body code,
+.docs-body code.literal,
+.docs-body code.docutils.literal,
+.docs-body code span.pre,
+.docs-body table code.literal {
+  background: var(--sapcc-surface-2);
+  border-radius: 2px;
+  color: #ff9ab5;
+}
+
+pre {
+  background: var(--sapcc-surface-1);
+  border: 1px solid var(--sapcc-border);
+  border-radius: 2px;
+  color: var(--sapcc-text-high);
+}
+
+/* --------------------------------------------------- os-api-ref controls */
+
+.btn-detail,
+.btn-expand-all {
+  background: var(--sapcc-surface-2);
+  border: 1px solid var(--sapcc-border);
+  border-radius: 3px;
+  color: var(--sapcc-text-high);
+}
+
+.btn-detail:hover,
+.btn-detail:focus,
+.btn-expand-all:hover,
+.btn-expand-all:focus {
+  background: var(--sapcc-accent);
+  border-color: var(--sapcc-accent);
+  color: #00222a;
+}
+
+a.operation-anchor {
+  color: var(--sapcc-text-light);
+}
+
+.mv_selector.active {
+  background: var(--sapcc-accent);
+  border-color: var(--sapcc-accent);
+  color: #00222a;
+}
+
+.label-GET,
+.label-HEAD {
+  background: #0a6799;
+}
+
+.label-POST {
+  background: #2f7d1f;
+}
+
+.label-PUT,
+.label-PATCH {
+  background: #9a6b00;
+}
+
+.label-DELETE {
+  background: #a51f0a;
+}
+
+/* ----------------------------------------------------------- admonitions */
+
+.admonition {
+  background: var(--sapcc-surface-1);
+  border: 1px solid var(--sapcc-border);
+  border-left: 4px solid var(--sapcc-info);
+  border-radius: 0;
+  color: var(--sapcc-text);
+}
+
+.admonition .admonition-title,
+.admonition h3 {
+  color: var(--sapcc-text-highest);
+}
+
+.admonition.note {
+  background: var(--sapcc-surface-1);
+  border-left-color: var(--sapcc-info);
+  color: var(--sapcc-text);
+}
+
+.admonition.important {
+  background: var(--sapcc-surface-1);
+  border-left-color: var(--sapcc-warning);
+  color: var(--sapcc-text);
+}
+
+.admonition.warning {
+  background: var(--sapcc-surface-1);
+  border-left-color: var(--sapcc-danger);
+  color: var(--sapcc-text);
+}
+
+.admonition.note h3,
+.admonition.important h3,
+.admonition.warning h3,
+.admonition.note .admonition-title,
+.admonition.important .admonition-title,
+.admonition.warning .admonition-title {
+  color: var(--sapcc-text-highest);
+}
+
+.admonition a,
+.admonition.note a,
+.admonition.important a,
+.admonition.warning a {
+  color: var(--sapcc-accent);
+}
+
+/* ---------------------------------------------------------------- byline */
+
+.docs-byline,
+.docs-updated,
+.docs-license,
+.docs-license a {
+  color: var(--sapcc-text-light);
+}
+
+.docs-actions a,
+a.docs-footer-actions {
+  color: var(--sapcc-accent);
+}
+
+/* "Added in version x.y" / "Deprecated since" markers */
+.versionmodified,
+.versionadded,
+.versionchanged,
+.versionadded > p,
+.versionchanged > p,
+span.versionmodified.added {
+  color: #6fe08a;
+}
+
+.deprecated,
+.deprecated > p,
+span.versionmodified.deprecated {
+  color: var(--sapcc-warning);
+}
+
+/* ----------------------------------------------------------------- forms */
+
+input.form-control,
+input[type="text"],
+input[type="search"] {
+  background: var(--sapcc-surface-2);
+  border: 1px solid var(--sapcc-border);
+  color: var(--sapcc-text-high);
+}
+
+input.form-control:focus {
+  background: var(--sapcc-surface-2);
+  border-color: var(--sapcc-accent);
+  box-shadow: none;
+  color: var(--sapcc-text-highest);
+}
+
+/* ---------------------------------------------------------------- search */
+
+/* Sphinx wraps matched terms in a yellow-backgrounded span. Inside a search
+   result that span sits in an <a>, so it inherits the accent link colour and
+   ends up turquoise-on-yellow (1.5:1). Pin a dark foreground instead. */
+span.highlighted,
+dt:target {
+  background-color: var(--sapcc-highlight);
+  color: var(--sapcc-highlight-text);
+}
+
+#search-results ul.search > li {
+  border-bottom: 1px solid var(--sapcc-border);
+  padding: 0.75rem 0;
+}
+
+#search-results .context {
+  color: var(--sapcc-text);
+}
+
+/* ---------------------------------------------------------------- footer */
+
+.sapcc-footer {
+  background: var(--sapcc-navbar);
+  border-top: 1px solid var(--sapcc-border);
+  color: var(--sapcc-text);
+  margin-top: 3rem;
+  min-height: auto;
+  padding: 1.5rem;
+}
+
+.sapcc-footer-content {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.sapcc-footer p {
+  margin: 0;
+}
+
+.sapcc-footer strong {
+  color: var(--sapcc-text-highest);
+}
+
+.sapcc-footer-links {
+  display: flex;
+  gap: 1.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sapcc-footer a {
+  color: var(--sapcc-text-high);
+}
+
+.sapcc-footer a:hover,
+.sapcc-footer a:focus {
+  color: var(--sapcc-accent);
+  text-decoration: underline;
+}
+
+.sapcc-footer-notice {
+  border-top: 1px solid var(--sapcc-border);
+  color: var(--sapcc-text);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  margin-top: 1.25rem !important;
+  max-width: 80ch;
+  padding-top: 1.25rem;
+}
+
+.sapcc-footer-notice a {
+  color: var(--sapcc-text-high);
+  text-decoration: underline;
+}
+
+/* -------------------------------------------------------------- responsive */
+
+@media (max-width: 991px) {
+  .sapcc-brand-title {
+    font-size: 0.9375rem;
+  }
+}
+
+@media (max-width: 767px) {
+  .sapcc-navbar {
+    padding: 0.5rem 1rem;
+  }
+
+  .sapcc-navbar .container-fluid {
+    flex-wrap: wrap;
+  }
+
+  .sapcc-navbar .sapcc-navbar-links {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+
+  .sapcc-navbar .navbar-nav {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .sapcc-navbar .navbar-nav > .nav-item > .nav-link {
+    padding: 0.5rem 0;
+  }
+
+  .sapcc-brand img {
+    height: 28px;
+    width: 57px;
+  }
+
+  .docs-book-wrapper {
+    max-width: 100% !important;
+    padding-top: 1rem;
+  }
+
+  .docs-body {
+    border: 0;
+    padding: 1rem;
+  }
+
+  .sapcc-footer-content {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .sapcc-footer-links {
+    flex-wrap: wrap;
+    gap: 0.75rem 1.25rem;
+  }
+}

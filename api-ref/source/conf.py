@@ -26,10 +26,12 @@ import os
 import sys
 
 
-html_theme = 'openstackdocs'
+html_theme = 'sapcc'
+html_theme_path = ['_themes']
 html_theme_options = {
     "sidebar_mode": "toc",
 }
+html_title = 'SAP Cloud Infrastructure Shared File Systems API'
 
 extensions = [
     'os_api_ref',
@@ -68,6 +70,12 @@ master_doc = 'index'
 
 # General information about the project.
 copyright = u'2010-present, OpenStack Foundation'
+
+# openstackdocstheme only applies these defaults when html_theme is literally
+# 'openstackdocs' or 'starlingxdocs', so our child theme has to set them
+# itself. Without this, Sphinx falls back to 'Project name not set'.
+project = 'manila'
+html_last_updated_fmt = '%Y-%m-%d %H:%M'
 
 # openstackdocstheme options
 openstackdocs_repo_name = 'openstack/manila'
@@ -296,3 +304,46 @@ texinfo_documents = [
 
 # If true, do not generate a @detailmenu in the "Top" node's menu.
 # texinfo_no_detailmenu = False
+
+
+# -- Prune unused third-party branding from the published output -----------
+
+# The inherited openstackdocs theme ships OpenStack logos and social-network
+# icons for chrome that the SAP theme replaces, so they are copied into the
+# build but never requested by any page. Publishing another project's logos
+# and third-party trademarks we do not display serves no purpose, so drop
+# them. The Creative Commons badge is deliberately kept: it is still rendered
+# and is required for the documentation's CC-BY attribution.
+_UNUSED_THEME_IMAGES = [
+    'logo-full.png',
+    'logo-full.svg',
+    'logo-vert.png',
+    'logo-vert.svg',
+    'openstack-logo-full.png',
+    'openstack-logo-full.svg',
+    'openstack-logo-vert.png',
+    'openstack-logo-vert.svg',
+    'footer-facebook.png',
+    'footer-facebook-hover.png',
+    'footer-linkedin.png',
+    'footer-linkedin-hover.png',
+    'footer-twitter.png',
+    'footer-twitter-hover.png',
+    'footer-youtube.png',
+    'footer-youtube-hover.png',
+]
+
+
+def _prune_unused_theme_images(app, exception):
+    if exception is not None or app.builder.name != 'html':
+        return
+
+    image_dir = os.path.join(app.outdir, '_static', 'images')
+    for name in _UNUSED_THEME_IMAGES:
+        path = os.path.join(image_dir, name)
+        if os.path.exists(path):
+            os.remove(path)
+
+
+def setup(app):
+    app.connect('build-finished', _prune_unused_theme_images)

@@ -1,0 +1,9 @@
+{# openstackdocstheme replaces Sphinx's search page with one that only calls
+   Search.loadIndex(), the pre-Sphinx-5 API, and drops the "scripts" block that
+   loads _static/searchtools.js. Search therefore fails with "Search is not
+   defined" in both the stock openstackdocs theme and anything inheriting it.
+
+   Deferring to Sphinx's own search page restores the correct script loading.
+   It extends "layout.html", which still resolves through the theme chain to
+   the openstackdocs layout, so the SAP chrome is kept. #}
+{% extends "basic/search.html" %}
