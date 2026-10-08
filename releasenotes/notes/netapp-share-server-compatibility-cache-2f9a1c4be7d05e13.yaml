@@ -1,0 +1,14 @@
+---
+features:
+  - |
+    NetApp Driver: when the driver is managing share servers, the result of
+    the share server compatibility selection is now cached for a short time,
+    reducing the number of repeated ONTAP queries performed while the share
+    manager holds the provisioning lock. The
+    `netapp_share_server_compatibility_cache_hot_ttl` option controls the
+    period during which cached decisions are returned without revalidation and
+    defaults to 300 seconds. The
+    `netapp_share_server_compatibility_cache_warm_ttl` option controls the
+    maximum cache lifetime and defaults to 1800 seconds. Decisions in the warm
+    period are re-validated against current compatibility criteria before being
+    reused; setting the warm TTL to 0 disables the cache.
