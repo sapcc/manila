@@ -2024,13 +2024,53 @@ class API(base.Base):
 
         share_instance = share.instance
 
-        # NOTE(gouthamr): Ensure share does not have replicas.
-        # Currently share migrations are disallowed for replicated shares.
         if share.has_replicas:
-            msg = _('Share %s has replicas. Remove the replicas before '
-                    'attempting to migrate the share.') % share['id']
-            LOG.warning(msg)
-            raise exception.Conflict(err=msg)
+            if not share.get('share_replicas_migration_support'):
+                msg = _('Share %s has replicas. Remove the replicas before '
+                        'attempting to migrate the share.') % share['id']
+                LOG.warning(msg)
+                raise exception.Conflict(err=msg)
+
+            if force_host_assisted_migration or not nondisruptive:
+                msg = _('Share %s has replicas. Only a nondisruptive, '
+                        'driver-assisted migration is supported for '
+                        'replicated shares.') % share['id']
+                LOG.warning(msg)
+                raise exception.Conflict(err=msg)
+
+            src_backend = share_utils.extract_host(
+                share_instance['host'], level='backend_name')
+            dest_backend = share_utils.extract_host(
+                dest_host, level='backend_name')
+            if src_backend != dest_backend:
+                msg = _('Share %s has replicas. Migrating a replicated '
+                        'share is only supported within the same '
+                        'backend.') % share['id']
+                LOG.warning(msg)
+                raise exception.Conflict(err=msg)
+
+            if new_share_type or new_share_network:
+                msg = _('Share %s has replicas. Changing the share type or '
+                        'share network is not supported while migrating a '
+                        'replicated share.') % share['id']
+                LOG.warning(msg)
+                raise exception.Conflict(err=msg)
+
+            replicas = self.db.share_replicas_get_all_by_share(
+                context, share['id'])
+            not_ready = [
+                r['id'] for r in replicas
+                if r['status'] != constants.STATUS_AVAILABLE
+                or r['replica_state'] == constants.STATUS_ERROR]
+            if not_ready:
+                msg = _("All replicas of share %(share)s must be "
+                        "'available' and not in 'error' replica_state "
+                        "before migration. Offending replicas: "
+                        "%(replicas)s.") % {
+                            'share': share['id'],
+                            'replicas': ', '.join(not_ready)}
+                LOG.warning(msg)
+                raise exception.Conflict(err=msg)
 
         # TODO(ganso): We do not support migrating shares in or out of groups
         # for now.

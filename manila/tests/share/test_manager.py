@@ -3464,6 +3464,7 @@ class ShareManagerTestCase(test.TestCase):
         driver_mock = mock.Mock()
         driver_mock.max_shares_per_share_server = -1
         driver_mock.max_share_server_size = -1
+        driver_mock.share_replicas_migration_support = False
         driver_mock.create_share.return_value = "fake_location"
         driver_mock.choose_share_server_compatible_with_share.return_value = (
             share_srv
@@ -7743,6 +7744,9 @@ class ShareManagerTestCase(test.TestCase):
         self.mock_object(self.share_manager.db, 'share_server_get', mock.Mock(
             side_effect=[src_server, dest_server]))
         self.mock_object(
+            self.share_manager, '_get_share_instance_dict',
+            mock.Mock(side_effect=[src_instance, dest_instance]))
+        self.mock_object(
             self.share_manager.db, 'share_access_get_all_for_instance',
             mock.Mock(return_value=fake_rules))
         self.mock_object(
@@ -7785,7 +7789,7 @@ class ShareManagerTestCase(test.TestCase):
                                  'fake_export_locations'))
         self.share_manager.driver.migration_complete.assert_called_once_with(
             self.context, src_instance, dest_instance, [snapshot.instance],
-            snapshot_mappings, src_server, dest_server)
+            snapshot_mappings, src_server, dest_server, replica_list=None)
         (migration_api.ShareMigrationHelper.apply_new_access_rules.
          assert_called_once_with(dest_instance, share['id']))
         (self.share_manager._migration_complete_instance.
@@ -7824,6 +7828,72 @@ class ShareManagerTestCase(test.TestCase):
             assert_called_once_with(
                 self.context, dest_instance, src_instance['share_type_id'],
                 allow_deallocate_from_current_type=True))
+
+    def test__migration_complete_driver_with_replicas(self):
+        fake_src_host = 'src_host'
+        fake_dest_host = 'dest_host'
+
+        src_server = db_utils.create_share_server()
+        dest_server = db_utils.create_share_server()
+        share_type = db_utils.create_share_type(
+            extra_specs={'mount_snapshot_support': False})
+        share = db_utils.create_share(
+            share_server_id='fake_src_server_id',
+            host=fake_src_host,
+            replication_type='dr')
+        dest_instance = db_utils.create_share_instance(
+            share_id=share['id'],
+            share_server_id='fake_dest_server_id',
+            host=fake_dest_host,
+            share_type_id=share_type['id'])
+        src_instance = share.instance
+        replica = db_utils.create_share_replica(
+            share_id=share['id'],
+            replica_state=constants.REPLICA_STATE_IN_SYNC,
+            status=constants.STATUS_AVAILABLE)
+        share = db.share_get(self.context, share['id'])
+
+        fake_replicas = [src_instance, replica]
+
+        self.mock_object(self.share_manager.db, 'share_server_get', mock.Mock(
+            side_effect=[src_server, dest_server]))
+        self.mock_object(
+            self.share_manager.db, 'export_locations_update')
+        self.mock_object(self.share_manager.driver, 'migration_complete',
+                         mock.Mock(return_value={}))
+        self.mock_object(self.share_manager.db, 'share_instance_update')
+        self.mock_object(self.share_manager.db, 'share_update')
+        self.mock_object(self.share_manager, '_migration_complete_instance')
+        self.mock_object(self.share_manager, '_migration_delete_instance')
+        self.mock_object(migration_api.ShareMigrationHelper,
+                         'apply_new_access_rules')
+        self.mock_object(
+            share_types,
+            'revert_allocated_share_type_quotas_during_migration')
+        self.mock_object(
+            self.share_manager.db,
+            'share_snapshot_instance_get_all_with_filters',
+            mock.Mock(return_value=[]))
+        self.mock_object(
+            self.share_manager.db, 'share_replicas_get_all_by_share',
+            mock.Mock(return_value=fake_replicas))
+        self.mock_object(
+            self.share_manager, '_get_share_instance_dict',
+            mock.Mock(side_effect=lambda ctx, inst: inst))
+        self.mock_object(
+            self.share_manager.access_helper, '_check_needs_refresh',
+            mock.Mock(return_value=False))
+
+        self.share_manager._migration_complete_driver(
+            self.context, share, src_instance, dest_instance)
+
+        self.share_manager.db.share_replicas_get_all_by_share.\
+            assert_called_once_with(
+                self.context, share['id'],
+                with_share_data=True, with_share_server=True)
+        self.share_manager.driver.migration_complete.assert_called_once_with(
+            self.context, src_instance, dest_instance, [],
+            {}, src_server, dest_server, replica_list=fake_replicas)
 
     def test__migration_complete_host_assisted(self):
 
