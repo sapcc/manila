@@ -4588,6 +4588,67 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.mock_dest_client.get_volume.assert_called_once_with(
             fake_share_name)
 
+    def test_share_server_migration_complete_efficiency_failure(self):
+        fake_share_name = self.library._get_backend_share_name(
+            fake.SHARE_INSTANCE['id'])
+        fake_volume = copy.deepcopy(fake.CLIENT_GET_VOLUME_RESPONSE)
+        self.fake_dest_share_server['backend_details'][
+            'migration_operation_id'] = 'fake_migration_id'
+        self.fake_dest_share_server['network_allocations'] = []
+        self.mock_object(self.library, '_get_vserver', mock.Mock(
+            side_effect=[
+                (self.fake_src_vserver, self.mock_src_client),
+                (self.fake_dest_vserver, self.mock_dest_client)]))
+        self.mock_object(
+            self.library, '_share_server_migration_complete_svm_migrate')
+        self.mock_object(
+            self.mock_dest_client, 'get_volume',
+            mock.Mock(return_value=fake_volume))
+        self.mock_object(data_motion, 'get_client_for_host',
+                         mock.Mock(return_value=self.mock_dest_client))
+        self.mock_object(
+            self.mock_dest_client, 'get_volume_efficiency_status',
+            mock.Mock(side_effect=exception.NetAppException))
+        self.mock_object(self.library, '_create_export',
+                         mock.Mock(return_value=fake.NFS_EXPORTS))
+
+        result = self.library.share_server_migration_complete(
+            None, self.fake_src_share_server, self.fake_dest_share_server,
+            [fake.SHARE_INSTANCE], [], fake.NETWORK_INFO_LIST)
+
+        self.assertIn(fake.SHARE_INSTANCE['id'], result['share_updates'])
+        get_efficiency_status = (
+            self.mock_dest_client.get_volume_efficiency_status)
+        get_efficiency_status.assert_called_once_with(fake_share_name)
+
+    def test_share_server_migration_complete_skips_dp_efficiency(self):
+        fake_volume = copy.deepcopy(fake.CLIENT_GET_VOLUME_RESPONSE)
+        fake_volume['type'] = 'dp'
+        self.fake_dest_share_server['backend_details'][
+            'migration_operation_id'] = 'fake_migration_id'
+        self.fake_dest_share_server['network_allocations'] = []
+        self.mock_object(self.library, '_get_vserver', mock.Mock(
+            side_effect=[
+                (self.fake_src_vserver, self.mock_src_client),
+                (self.fake_dest_vserver, self.mock_dest_client)]))
+        self.mock_object(
+            self.library, '_share_server_migration_complete_svm_migrate')
+        self.mock_object(
+            self.mock_dest_client, 'get_volume',
+            mock.Mock(return_value=fake_volume))
+        self.mock_object(data_motion, 'get_client_for_host',
+                         mock.Mock(return_value=self.mock_dest_client))
+        efficiency_status = self.mock_object(
+            self.mock_dest_client, 'get_volume_efficiency_status')
+        self.mock_object(self.library, '_create_export',
+                         mock.Mock(return_value=fake.NFS_EXPORTS))
+
+        self.library.share_server_migration_complete(
+            None, self.fake_src_share_server, self.fake_dest_share_server,
+            [fake.SHARE_INSTANCE], [], fake.NETWORK_INFO_LIST)
+
+        efficiency_status.assert_not_called()
+
     def test__share_server_migration_complete_svm_migrate(self):
         completion_status = na_utils.MIGRATION_STATE_MIGRATE_COMPLETE
         migration_id = 'fake_migration_id'
