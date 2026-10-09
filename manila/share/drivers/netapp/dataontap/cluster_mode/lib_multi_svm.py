@@ -2645,24 +2645,6 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                     # Update share attributes according with share extra specs.
                     self._update_share_attributes_after_server_migration(
                         instance, src_client, dest_aggregate, dest_client)
-                else:
-                    # SCI: SVM Migrate copies the volume as-is (including
-                    # dedup and compression state); only reconcile
-                    # cross_volume_dedupe so the policy follows the share
-                    # metadata instead of the source SVM's historical state.
-                    # Go through the efficiency-only helper (not
-                    # modify_volume) to avoid touching unrelated attributes
-                    # like space-guarantee, which ONTAP rejects on volumes
-                    # with compacted data. Pass the current dedup/
-                    # compression status so those aren't touched either.
-                    current = dest_client.get_volume_efficiency_status(
-                        share_name)
-                    dest_client.update_volume_efficiency_attributes(
-                        share_name,
-                        current.get('dedupe', False),
-                        current.get('compression', False),
-                        **self._get_cross_volume_dedupe_options(instance))
-
             except Exception:
                 msg_args = {
                     'src': source_share_server['id'],
@@ -2672,6 +2654,25 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                         '%(dest)s vservers. One of the shares was not found '
                         'in the destination vserver.') % msg_args
                 raise exception.NetAppException(message=msg)
+
+            if migration_id and volume.get('type') != 'dp':
+                # SCI: SVM Migrate copies the volume as-is (including dedup
+                # and compression state); only reconcile cross_volume_dedupe
+                # so the policy follows the share metadata instead of the
+                # source SVM's historical state. DP volumes are SnapMirror
+                # destinations and cannot change efficiency during transfer.
+                try:
+                    current = dest_client.get_volume_efficiency_status(
+                        share_name)
+                    dest_client.update_volume_efficiency_attributes(
+                        share_name,
+                        current.get('dedupe', False),
+                        current.get('compression', False),
+                        **self._get_cross_volume_dedupe_options(instance))
+                except Exception as e:
+                    LOG.warning(
+                        'Could not reconcile efficiency for volume %s '
+                        'after server migration: %s', share_name, e)
 
             new_share_data = {
                 'pool_name': volume.get('aggregate')
