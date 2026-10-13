@@ -20,7 +20,6 @@ Contains classes required to issue API calls to Data ONTAP and OnCommand DFM.
 
 import copy
 import re
-import threading
 
 from lxml import etree
 from oslo_log import log
@@ -104,7 +103,6 @@ class BaseClient(object):
         self._trace = trace
         self._api_trace_pattern = api_trace_pattern
         self._refresh_conn = True
-        self._session_lock = threading.Lock()
         if ssl_cert_path is not None:
             self._ssl_verify = ssl_cert_path
         else:
@@ -348,7 +346,7 @@ class ZapiClient(BaseClient):
         """Set the vfiler to use if tunneling gets enabled."""
         self._vfiler = vfiler
 
-    def invoke_elem(self, na_element, enable_tunneling=False):
+    def invoke_elem(self, na_element, enable_tunneling=False, _retried=False):
         """Invoke the API on the server."""
         if na_element and not isinstance(na_element, NaElement):
             ValueError('NaElement must be supplied to invoke API')
@@ -366,6 +364,7 @@ class ZapiClient(BaseClient):
         if (not hasattr(self, '_session') or not self._session
                 or self._refresh_conn):
             self._build_session()
+            self._refresh_conn = False
         try:
             if hasattr(self, '_timeout'):
                 if self._timeout is None:
@@ -375,22 +374,21 @@ class ZapiClient(BaseClient):
             else:
                 response = self._session.post(
                     self._get_url(), data=request_d)
-            # Reset refresh flag after successful request
-            self._refresh_conn = False
         except requests.HTTPError as e:
             raise NaApiError(e.errno, e.strerror)
         except requests.URLRequired as e:
             raise exception.StorageCommunicationException(str(e))
+        except requests.exceptions.ConnectionError as e:
+            if not _retried:
+                # Filer closed a stale pooled connection; rebuild and
+                # retry once on a fresh connection.
+                LOG.warning("NetApp ZAPI connection failed (%s); rebuilding "
+                            "session and retrying once.", e)
+                self._build_session()
+                return self.invoke_elem(na_element, enable_tunneling,
+                                        _retried=True)
+            raise NaApiError(message=e)
         except Exception as e:
-            with self._session_lock:
-                should_retry = not self._refresh_conn
-                if should_retry:
-                    # Connection may have timed out; rebuild and retry once.
-                    self._refresh_conn = True
-                    self._build_session()
-            if should_retry:
-                return self.invoke_elem(na_element,
-                                        enable_tunneling=enable_tunneling)
             raise NaApiError(message=e)
 
         response_xml = response.text
@@ -534,7 +532,7 @@ class RestClient(BaseClient):
         url += "?" + filters
         return url
 
-    def invoke_elem(self, na_element, api_args=None):
+    def invoke_elem(self, na_element, api_args=None, _retried=False):
         """Invoke the API on the server."""
         if na_element and not isinstance(na_element, NaElement):
             raise ValueError('NaElement must be supplied to invoke API')
@@ -547,6 +545,7 @@ class RestClient(BaseClient):
         if (not hasattr(self, '_session') or not self._session
                 or self._refresh_conn):
             self._build_session()
+            self._refresh_conn = False
         request_method, action_url = self._get_request_info(
             api_name, self._session)
 
@@ -577,21 +576,21 @@ class RestClient(BaseClient):
                     url, data=data, timeout=self._timeout)
             else:
                 response = request_method(url, data=data)
-            # Reset refresh flag after successful request
-            self._refresh_conn = False
         except requests.HTTPError as e:
             raise NaApiError(e.errno, e.strerror)
         except requests.URLRequired as e:
             raise exception.StorageCommunicationException(str(e))
+        except requests.exceptions.ConnectionError as e:
+            if not _retried:
+                # Filer closed a stale pooled connection; rebuild and
+                # retry once on a fresh connection.
+                LOG.warning("NetApp REST connection failed (%s); rebuilding "
+                            "session and retrying once.", e)
+                self._build_session()
+                return self.invoke_elem(na_element, api_args=api_args,
+                                        _retried=True)
+            raise NaApiError(message=e)
         except Exception as e:
-            with self._session_lock:
-                should_retry = not self._refresh_conn
-                if should_retry:
-                    # Connection may have timed out; rebuild and retry once.
-                    self._refresh_conn = True
-                    self._build_session()
-            if should_retry:
-                return self.invoke_elem(na_element, api_args=api_args)
             raise NaApiError(message=e)
 
         response = (
