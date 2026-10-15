@@ -322,10 +322,10 @@ class DataMotionSession(object):
                           release=True, relationship_info_only=False):
         """Ensures all information about a SnapMirror relationship is removed.
 
-        1. Abort snapmirror
-        2. Quiesce snapmirror
+        1. Abort snapmirror (only if relationship exists in this direction)
+        2. Quiesce snapmirror (only if relationship exists in this direction)
         3. Delete the snapmirror
-        3. Release snapmirror to clean up snapmirror metadata and snapshots
+        4. Release snapmirror to clean up snapmirror metadata and snapshots
         """
         dest_volume_name, dest_vserver, dest_backend = (
             self.get_backend_info_for_share(dest_share_obj))
@@ -335,26 +335,35 @@ class DataMotionSession(object):
         src_volume_name, src_vserver, src_backend = (
             self.get_backend_info_for_share(source_share_obj))
 
-        # 1. Abort any ongoing transfers
-        try:
-            dest_client.abort_snapmirror_vol(src_vserver,
-                                             src_volume_name,
-                                             dest_vserver,
-                                             dest_volume_name,
-                                             clear_checkpoint=False)
-        except netapp_api.NaApiError:
-            # Snapmirror is already deleted
-            pass
+        # 1. Abort any ongoing transfers and quiesce — must be issued from the
+        # destination filer. Confirm the relationship exists in this direction
+        # first; callers invoke delete_snapmirror for both orderings of a pair,
+        # and for SM-BC (extended_data_protection) ONTAP maintains two
+        # relationships per pair (one per direction), so the inverted call
+        # must not send abort/quiesce to the wrong filer.
+        snapmirrors = dest_client.get_snapmirrors(
+            source_vserver=src_vserver,
+            source_volume=src_volume_name,
+            dest_vserver=dest_vserver,
+            dest_volume=dest_volume_name,
+            desired_attributes=['relationship-status'])
+        if snapmirrors:
+            try:
+                dest_client.abort_snapmirror_vol(src_vserver,
+                                                 src_volume_name,
+                                                 dest_vserver,
+                                                 dest_volume_name,
+                                                 clear_checkpoint=False)
+            except netapp_api.NaApiError:
+                pass
 
-        # 2. Quiesce the snapmirror relationship
-        try:
-            dest_client.quiesce_snapmirror_vol(src_vserver,
-                                               src_volume_name,
-                                               dest_vserver,
-                                               dest_volume_name)
-        except netapp_api.NaApiError:
-            # Snapmirror is already deleted
-            pass
+            try:
+                dest_client.quiesce_snapmirror_vol(src_vserver,
+                                                   src_volume_name,
+                                                   dest_vserver,
+                                                   dest_volume_name)
+            except netapp_api.NaApiError:
+                pass
 
         # 3. Delete SnapMirror Relationship and cleanup destination snapshots
         try:
