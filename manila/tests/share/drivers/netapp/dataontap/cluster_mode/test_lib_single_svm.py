@@ -62,6 +62,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
     def test_init(self):
         self.assertEqual(fake.VSERVER1, self.library._vserver)
+        self.assertFalse(self.library.share_replicas_migration_support)
 
     def test_check_for_setup_error(self):
 

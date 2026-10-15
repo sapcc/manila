@@ -42,6 +42,7 @@ class NetAppCmodeSingleSVMFileStorageLibrary(
             driver_name, **kwargs)
 
         self._vserver = self.configuration.netapp_vserver
+        self.share_replicas_migration_support = False
 
     @na_utils.trace
     def check_for_setup_error(self, ensure=False):

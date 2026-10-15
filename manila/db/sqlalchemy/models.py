@@ -327,6 +327,7 @@ class Share(BASE, ManilaBase):
     task_state = Column(String(255))
     is_soft_deleted = Column(Boolean, default=False)
     scheduled_to_be_deleted_at = Column(DateTime)
+    share_replicas_migration_support = Column(Boolean, default=False)
     instances = orm.relationship(
         "ShareInstance",
         lazy='selectin',

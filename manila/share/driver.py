@@ -491,7 +491,7 @@ class ShareDriver(object):
     def migration_complete(
             self, context, source_share, destination_share, source_snapshots,
             snapshot_mappings, share_server=None,
-            destination_share_server=None):
+            destination_share_server=None, replica_list=None):
         """Completes migration of a given share to another host.
 
         .. note::

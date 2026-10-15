@@ -1,0 +1,13 @@
+---
+fixes:
+  - |
+    Share migration is now permitted for replicated shares when the backend
+    driver advertises ``share_replicas_migration_support`` (e.g. NetApp
+    cDOT). Only nondisruptive, driver-assisted migrations within the same
+    backend are allowed; host-assisted migration, cross-backend moves, and
+    share-type or share-network changes remain blocked. After the volume is
+    renamed on migration completion, SnapMirror relationships are
+    automatically re-pointed to the new source volume so replica state is
+    preserved. The ``share_replicas_migration_support`` flag is set on the
+    share at create time and refreshed on service restart.
+    Closes: https://github.wdf.sap.corp/sap-cloud-infrastructure/manila-issues/issues/157
