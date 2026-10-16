@@ -3844,6 +3844,8 @@ class NetAppCmodeFileStorageLibrary(object):
         # involving the replica are destroyed.
         for other_replica in replica_list:
             if other_replica['id'] != replica['id']:
+                if not other_replica.get('host'):
+                    continue
                 dm_session.delete_snapmirror(other_replica, replica)
                 dm_session.delete_snapmirror(replica, other_replica)
 
