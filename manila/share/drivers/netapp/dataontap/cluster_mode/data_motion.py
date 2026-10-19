@@ -369,6 +369,15 @@ class DataMotionSession(object):
                         "(entry doesn't exist)" in e.message):
                     LOG.info('No snapmirror relationship to delete')
                     exc_context.reraise = False
+        else:
+            # delete_snapmirror_vol is async on ONTAP; wait until the
+            # relationship is confirmed gone on the destination before
+            # returning so that the caller can safely delete the volume.
+            dest_config = get_backend_configuration(dest_backend)
+            self.wait_for_snapmirror_delete(
+                dest_client, src_vserver, src_volume_name,
+                dest_vserver, dest_volume_name,
+                timeout=dest_config.netapp_snapmirror_release_timeout)
 
         if release:
             # If the source is unreachable, do not perform the release
@@ -1477,6 +1486,42 @@ class DataMotionSession(object):
             msg = _("Unable to release the snapmirror from source volume %s. "
                     "Retries exhausted. Aborting") % src_volume_name
             raise exception.NetAppException(message=msg)
+
+    def wait_for_snapmirror_delete(self, dest_client, src_vserver,
+                                   src_volume_name, dest_vserver,
+                                   dest_volume_name, timeout=300):
+        """Wait until the SnapMirror relationship is gone on the destination.
+
+        delete_snapmirror_vol is asynchronous on ONTAP; polling here prevents
+        a subsequent volume-destroy from being rejected with 'volume is in one
+        or more SnapMirror relationships'.
+        """
+        interval = 10
+        retries = int(timeout / interval or 1)
+
+        @utils.retry(exception.NetAppException, interval=interval,
+                     retries=retries, backoff_rate=1)
+        def check_deleted():
+            snapmirrors = dest_client.get_snapmirrors(
+                source_vserver=src_vserver,
+                source_volume=src_volume_name,
+                dest_vserver=dest_vserver,
+                dest_volume=dest_volume_name)
+            if snapmirrors:
+                msg = _('SnapMirror relationship for destination volume '
+                        '%(vol)s not yet removed. Waiting.') % {
+                    'vol': dest_volume_name}
+                raise exception.NetAppException(message=msg)
+            LOG.debug('SnapMirror relationship for destination volume %s '
+                      'confirmed removed.', dest_volume_name)
+
+        try:
+            check_deleted()
+        except exception.NetAppException:
+            msg = _("SnapMirror relationship for destination volume %s was "
+                    "not removed within the timeout. The volume may still "
+                    "be in a SnapMirror relationship.") % dest_volume_name
+            LOG.warning(msg)
 
     def cleanup_previous_snapmirror_relationships(self, replica, replica_list):
         """Cleanup previous snapmirrors relationships for replica."""
