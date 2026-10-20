@@ -545,6 +545,7 @@ class ShareManager(manager.SchedulerDependentManager):
         new_backend_info_hash = None
         backend_info_implemented = True
         update_share_instances = []
+        shares_with_migration_support_updated = set()
         if not skip_backend_info_check:
             try:
                 new_backend_info = self.driver.get_backend_info(ctxt)
@@ -645,6 +646,13 @@ class ShareManager(manager.SchedulerDependentManager):
                      'task': share_ref['task_state']},
                 )
                 continue
+
+            if share_ref['id'] not in shares_with_migration_support_updated:
+                self.db.share_update(
+                    ctxt, share_ref['id'],
+                    {'share_replicas_migration_support': (
+                        self.driver.share_replicas_migration_support)})
+                shares_with_migration_support_updated.add(share_ref['id'])
 
             metadata = share_ref.get('share_metadata')
             if metadata:
@@ -2080,13 +2088,25 @@ class ShareManager(manager.SchedulerDependentManager):
         share_metadata = {
             m['key']: m['value'] for m in share_metadata_list
         } if share_metadata_list else {}
+        src_share_instance = self._get_share_instance_dict(
+            context, src_share_instance)
         src_share_instance['metadata'] = share_metadata
+        dest_share_instance = self._get_share_instance_dict(
+            context, dest_share_instance)
         dest_share_instance['metadata'] = share_metadata
+
+        replica_list = None
+        if share_ref.get('replication_type'):
+            replica_list = self.db.share_replicas_get_all_by_share(
+                context, share_ref['id'], with_share_data=True,
+                with_share_server=True)
+            replica_list = [self._get_share_instance_dict(context, r)
+                            for r in replica_list]
 
         data_updates = self.driver.migration_complete(
             context, src_share_instance, dest_share_instance,
             src_snap_instances, snapshot_mappings, share_server,
-            dest_share_server) or {}
+            dest_share_server, replica_list=replica_list) or {}
 
         if data_updates.get('export_locations'):
             self.db.export_locations_update(
@@ -2768,6 +2788,11 @@ class ShareManager(manager.SchedulerDependentManager):
                 updates['replica_state'] = constants.REPLICA_STATE_ACTIVE
 
             self.db.share_instance_update(context, share_instance_id, updates)
+
+            self.db.share_update(
+                context, share_id,
+                {'share_replicas_migration_support': (
+                    self.driver.share_replicas_migration_support)})
 
             self._notify_about_share_usage(context, share,
                                            share_instance, "create.end")
