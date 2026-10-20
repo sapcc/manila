@@ -37,7 +37,7 @@ class BarbicanSecretACLTestCase(test.TestCase):
         mock_href = uuidutils.generate_uuid()
         mock_client = mock.Mock()
         self.mock_object(self.barbican_acl, '_get_barbican_client',
-                         mock.Mock(return_value=(mock_client, mock.Mock())))
+                         mock.Mock(return_value=mock_client))
         self.mock_object(self.barbican_acl, '_create_secret_ref',
                          mock.Mock(return_value=mock_href))
 
