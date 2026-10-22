@@ -263,7 +263,8 @@ class ShareInstanceAccess(ShareInstanceAccessDatabaseMixin):
         self.driver = driver
 
     def update_access_rules(self, context, share_instance_id,
-                            delete_all_rules=False, share_server=None):
+                            delete_all_rules=False, share_server=None,
+                            force=False):
         """Update access rules for a given share instance.
 
         :param context: request context
@@ -271,6 +272,8 @@ class ShareInstanceAccess(ShareInstanceAccessDatabaseMixin):
         :param delete_all_rules: set this parameter to True if all
         existing access rules must be denied for a given share instance
         :param share_server: Share server model or None
+        :param force: set this parameter to True to force re-applying
+        all access rules even if there are no pending rule changes
         """
         share_instance = self.db.share_instance_get(
             context, share_instance_id, with_share_data=True)
@@ -305,7 +308,7 @@ class ShareInstanceAccess(ShareInstanceAccessDatabaseMixin):
                 self._update_and_get_unsynced_access_rules_from_db(
                     context, share_instance_id)
             )
-            if rules_to_apply_or_update_or_deny:
+            if rules_to_apply_or_update_or_deny or force:
                 msg = ("Updating access rules for share instance %(si)s "
                        "belonging to share %(shr)s.")
                 LOG.debug(msg, msg_payload)
