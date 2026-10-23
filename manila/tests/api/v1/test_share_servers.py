@@ -299,6 +299,18 @@ class ShareServerAPITest(test.TestCase):
         self.assertEqual([fake_share_server_list['share_servers'][0]],
                          result['share_servers'])
 
+    def test_index_scoped_to_project_for_non_admin(self):
+        request, ctxt = self._prepare_request(url='/v2/share-servers/',
+                                              use_admin_context=False)
+        self.mock_object(db_api, 'share_network_get_all', mock.Mock(
+            return_value=fake_share_network_get_list['share_networks']))
+        self.controller.index(request)
+
+        self.assertFalse(ctxt.is_admin)
+        # Non-admins are forced into their own project's servers.
+        db_api.share_server_get_all_with_filters.assert_called_once_with(
+            ctxt, {'project_id': ctxt.project_id})
+
     def test_index_share_network_filter_by_name(self):
         request, ctxt = self._prepare_request(
             url='/index?share_network=%s'

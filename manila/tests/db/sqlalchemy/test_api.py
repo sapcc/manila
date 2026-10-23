@@ -3391,6 +3391,13 @@ class ShareNetworkSubnetDatabaseAPITestCase(BaseDatabaseAPITestCase):
                {'id': 'fake_id_3', 'identifier': 'fake_identifier',
                 'host': 'fake_host'}])
     def test_get_with_share_servers(self, share_servers):
+        # The share server project scoping derives the owning project from
+        # the share network, so it must exist for the non-admin context
+        # to see the created servers.
+        db_api.share_network_create(
+            self.fake_context,
+            {'id': 'fake_id', 'project_id': 'fake project',
+             'user_id': 'fake'})
         share_net_subnets = [
             db_api.share_network_subnet_create(
                 self.fake_context, self.subnet_dict)]
@@ -3409,8 +3416,11 @@ class ShareNetworkSubnetDatabaseAPITestCase(BaseDatabaseAPITestCase):
             result = db_api.share_network_subnet_get_all_by_share_server_id(
                 self.fake_context, share_server['id'])
             for key, value in share_server['share_network_subnets'][0].items():
-                if key != 'share_servers':
-                    self.assertEqual(value, result[0][key])
+                # 'share_network' is a related model instance from a
+                # different session; its != is identity-based.
+                if key in ('share_servers', 'share_network'):
+                    continue
+                self.assertEqual(value, result[0][key])
 
     def test_get_not_found(self):
         db_api.share_network_subnet_create(self.fake_context, self.subnet_dict)
@@ -4247,6 +4257,33 @@ class ShareServerDatabaseAPITestCase(test.TestCase):
                 else:
                     self.assertEqual(result[key], filters[key])
 
+    def test_share_server_get_all_with_filters_project_id(self):
+        net_a = db_utils.create_share_network(project_id='proj_a')
+        subnet_a = db_utils.create_share_network_subnet(
+            id=uuidutils.generate_uuid(), share_network_id=net_a['id'])
+        server_a = db_utils.create_share_server(
+            host='fakepool@fakehost', share_network_subnets=[subnet_a])
+
+        net_b = db_utils.create_share_network(project_id='proj_b')
+        subnet_b = db_utils.create_share_network_subnet(
+            id=uuidutils.generate_uuid(), share_network_id=net_b['id'])
+        db_utils.create_share_server(
+            host='fakepool@fakehost', share_network_subnets=[subnet_b])
+
+        results = db_api.share_server_get_all_with_filters(
+            self.ctxt, {'project_id': 'proj_a'})
+        self.assertCountEqual(
+            [server_a['id']], [row['id'] for row in results])
+
+        results_b = db_api.share_server_get_all_with_filters(
+            self.ctxt, {'project_id': 'proj_b'})
+        self.assertNotIn(server_a['id'], [row['id'] for row in results_b])
+
+        # A project with no servers yields nothing.
+        self.assertEqual(
+            0, len(db_api.share_server_get_all_with_filters(
+                self.ctxt, {'project_id': 'proj_none'})))
+
     @ddt.data('fake@fake', 'host1@backend1')
     def test_share_server_get_all_by_host(self, host):
         db_utils.create_share_server(host='fake@fake')
@@ -4351,6 +4388,83 @@ class ShareServerDatabaseAPITestCase(test.TestCase):
             self.ctxt,
             sort_key='fake_sort_key',
         )
+
+    def test_share_server_replicas_get_all_project_scoping(self):
+        net_a = db_utils.create_share_network(project_id='proj_a')
+        subnet_a = db_utils.create_share_network_subnet(
+            id=uuidutils.generate_uuid(), share_network_id=net_a['id'])
+        src_a = db_utils.create_share_server(
+            id='ssr-src-a', source_share_server_id=None,
+            replica_state=constants.REPLICA_STATE_ACTIVE,
+            status=constants.STATUS_ACTIVE,
+            share_network_subnets=[subnet_a])
+        rep_a = db_utils.create_share_server(
+            id='ssr-rep-a', source_share_server_id=src_a['id'],
+            replica_state=constants.REPLICA_STATE_IN_SYNC,
+            share_network_subnets=[subnet_a])
+
+        net_b = db_utils.create_share_network(project_id='proj_b')
+        subnet_b = db_utils.create_share_network_subnet(
+            id=uuidutils.generate_uuid(), share_network_id=net_b['id'])
+        db_utils.create_share_server(
+            id='ssr-src-b', source_share_server_id=None,
+            replica_state=constants.REPLICA_STATE_ACTIVE,
+            share_network_subnets=[subnet_b])
+
+        non_admin_a = context.RequestContext(
+            user_id='user_a', project_id='proj_a', is_admin=False)
+        result_a = db_api.share_server_replicas_get_all(non_admin_a)
+        self.assertCountEqual(
+            [src_a['id'], rep_a['id']],
+            [row['id'] for row in result_a])
+
+        # Admin sees both projects.
+        admin_result = db_api.share_server_replicas_get_all(self.ctxt)
+        self.assertCountEqual(
+            [src_a['id'], rep_a['id'], 'ssr-src-b'],
+            [row['id'] for row in admin_result])
+
+    def test_share_server_get_project_scoping(self):
+        net_a = db_utils.create_share_network(project_id='proj_a')
+        subnet_a = db_utils.create_share_network_subnet(
+            id=uuidutils.generate_uuid(), share_network_id=net_a['id'])
+        server_a = db_utils.create_share_server(
+            share_network_subnets=[subnet_a])
+
+        non_admin_a = context.RequestContext(
+            user_id='user_a', project_id='proj_a', is_admin=False)
+        non_admin_b = context.RequestContext(
+            user_id='user_b', project_id='proj_b', is_admin=False)
+
+        self.assertEqual(
+            server_a['id'],
+            db_api.share_server_get(non_admin_a, server_a['id'])['id'])
+        # Cross-project access is hidden as NotFound.
+        self.assertRaises(
+            exception.ShareServerNotFound,
+            db_api.share_server_get, non_admin_b, server_a['id'])
+        # Admin is unaffected.
+        self.assertEqual(
+            server_a['id'],
+            db_api.share_server_get(self.ctxt, server_a['id'])['id'])
+
+    def test_share_server_replica_get_project_scoping(self):
+        net_a = db_utils.create_share_network(project_id='proj_a')
+        subnet_a = db_utils.create_share_network_subnet(
+            id=uuidutils.generate_uuid(), share_network_id=net_a['id'])
+        replica = db_utils.create_share_server(
+            id='ssr-rep-x', source_share_server_id=None,
+            replica_state=constants.REPLICA_STATE_IN_SYNC,
+            share_network_subnets=[subnet_a])
+
+        non_admin_b = context.RequestContext(
+            user_id='user_b', project_id='proj_b', is_admin=False)
+        self.assertRaises(
+            exception.ShareServerReplicaNotFound,
+            db_api.share_server_replica_get, non_admin_b, replica['id'])
+        self.assertEqual(
+            replica['id'],
+            db_api.share_server_replica_get(self.ctxt, replica['id'])['id'])
 
     def test_share_servers_update(self):
         servers = [db_utils.create_share_server()
