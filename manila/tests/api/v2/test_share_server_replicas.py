@@ -120,6 +120,21 @@ class ShareServerReplicasApiTest(test.TestCase):
         metadata_get.assert_called_once_with(self.ctxt, REPLICA_ID)
         self.assertEqual([{}, {'k': 'v'}], [r['metadata'] for r in replicas])
 
+    def test_list_uses_request_context_for_scoping(self):
+        get_all = self._mock_db(
+            'share_server_replicas_get_all', return_value=[])
+        req = self._request(is_admin=False)
+        non_admin = req.environ['manila.context']
+
+        self.controller.index(req)
+
+        # The scoped (non-admin) request context is what the DB query runs
+        # under, so the database layer can restrict to the caller's project.
+        self.assertFalse(non_admin.is_admin)
+        get_all.assert_called_once_with(
+            non_admin, source_share_server_id=None, sort_key='created_at',
+            sort_dir='desc', limit=None, offset=None)
+
     @ddt.data(
         ({}, dict(source_share_server_id=None, sort_key='created_at',
                   sort_dir='desc', limit=None, offset=None)),

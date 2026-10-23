@@ -1,0 +1,8 @@
+---
+fixes:
+  - |
+    The share server and share server replica list and show operations now
+    restrict results to the caller's project for non-admin users. Previously
+    a non-admin able to reach the ``share-servers`` or
+    ``share-server-replicas`` endpoints could see servers belonging to other
+    projects. Admin users are unaffected.
