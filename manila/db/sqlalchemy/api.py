@@ -5732,6 +5732,32 @@ def _share_server_get_query(context):
     )
 
 
+def _filter_share_servers_by_project(query, context, project_id=None):
+    """Restrict a ShareServer query to servers in a single project.
+
+    ShareServer has no project_id column of its own; the owning project is
+    derived from the associated share network. This is applied for non-admin
+    callers so a scoped user only sees their own project's servers. Admins
+    (context.is_admin) are returned unfiltered.
+
+    Uses an ``any()`` subquery on the ``share_network_subnets`` relationship
+    rather than an explicit join, so it does not clash with the base query's
+    ``joinedload`` of that same relationship.
+    """
+    if project_id is None and context.is_admin:
+        return query
+    if project_id is None:
+        project_id = context.project_id
+    network_ids = model_query(
+        context, models.ShareNetwork, read_deleted='no',
+    ).filter(
+        models.ShareNetwork.project_id == project_id,
+    ).with_entities(models.ShareNetwork.id)
+    in_project = models.ShareServer.share_network_subnets.any(
+        models.ShareNetworkSubnet.share_network_id.in_(network_ids))
+    return query.filter(in_project)
+
+
 @require_context
 @context_manager.writer
 def share_server_create(context, values):
@@ -5856,7 +5882,10 @@ def share_server_get(context, server_id):
 
 @require_context
 def _share_server_get(context, server_id):
-    result = _share_server_get_query(context).filter_by(id=server_id).first()
+    query = _filter_share_servers_by_project(
+        _share_server_get_query(context), context,
+    ).filter_by(id=server_id)
+    result = query.first()
     if result is None:
         raise exception.ShareServerNotFound(share_server_id=server_id)
     return result
@@ -6006,6 +6035,9 @@ def _share_server_get_all_with_filters(context, filters):
         ).filter(
             models.ShareNetworkSubnet.share_network_id ==
             filters.get('share_network_id'))
+    if filters.get('project_id'):
+        query = _filter_share_servers_by_project(
+            query, context, project_id=filters.get('project_id'))
     return query.all()
 
 
@@ -8556,6 +8588,7 @@ def share_server_replicas_get_all(context, source_share_server_id=None,
         models.ShareServer.replica_state.isnot(None),
         models.ShareServer.replica_state != '',
     )
+    query = _filter_share_servers_by_project(query, context)
 
     if source_share_server_id:
         query = query.filter(
@@ -8576,15 +8609,18 @@ def share_server_replicas_get_all(context, source_share_server_id=None,
     if limit is not None:
         query = query.limit(limit)
 
-    return query.all()
+    return query.distinct().all()
 
 
 @require_context
 @context_manager.reader
 def share_server_replica_get(context, server_id):
-    result = _share_server_get_query(context).filter_by(id=server_id).first()
+    query = _filter_share_servers_by_project(
+        _share_server_get_query(context), context,
+    ).filter_by(id=server_id)
+    result = query.first()
     if result is None:
-        raise exception.ShareServerReplicaNotFound(share_server_id=server_id)
+        raise exception.ShareServerReplicaNotFound(replica_id=server_id)
     return result
 
 

@@ -59,6 +59,8 @@ class ShareServerController(wsgi.Controller):
                 'source_share_server_id')
         if 'identifier' in search_opts:
             ss_filters['identifier'] = search_opts.pop('identifier')
+        if not context.is_admin:
+            ss_filters['project_id'] = context.project_id
         share_servers = db_api.share_server_get_all_with_filters(
             context, ss_filters)
 
