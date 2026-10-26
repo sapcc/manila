@@ -348,6 +348,8 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
         mock_backend_config.netapp_snapmirror_release_timeout = 30
         self.mock_object(data_motion, 'get_backend_configuration',
                          mock.Mock(return_value=mock_backend_config))
+        mock_wait_for_snapmirror_delete = self.mock_object(
+            self.dm_session, 'wait_for_snapmirror_delete')
         mock_wait_for_snapmirror_release_vol = self.mock_object(
             self.dm_session, 'wait_for_snapmirror_release_vol')
 
@@ -361,6 +363,10 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
         mock_dest_client.delete_snapmirror_vol.assert_called_once_with(
             mock.ANY, self.fake_src_vol_name, mock.ANY,
             self.fake_dest_vol_name
+        )
+        mock_wait_for_snapmirror_delete.assert_called_once_with(
+            mock_dest_client, self.source_vserver, self.fake_src_vol_name,
+            self.dest_vserver, self.fake_dest_vol_name, timeout=30
         )
         mock_wait_for_snapmirror_release_vol.assert_called_once_with(
             self.source_vserver, self.dest_vserver, self.fake_src_vol_name,
@@ -406,6 +412,8 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
         mock_backend_config.netapp_snapmirror_release_timeout = 30
         self.mock_object(data_motion, 'get_backend_configuration',
                          mock.Mock(return_value=mock_backend_config))
+        mock_wait_for_snapmirror_delete = self.mock_object(
+            self.dm_session, 'wait_for_snapmirror_delete')
         mock_wait_for_snapmirror_release_vol = self.mock_object(
             self.dm_session, 'wait_for_snapmirror_release_vol')
 
@@ -419,6 +427,10 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
         mock_dest_client.delete_snapmirror_vol.assert_called_once_with(
             mock.ANY, self.fake_src_vol_name, mock.ANY,
             self.fake_dest_vol_name
+        )
+        mock_wait_for_snapmirror_delete.assert_called_once_with(
+            mock_dest_client, self.source_vserver, self.fake_src_vol_name,
+            self.dest_vserver, self.fake_dest_vol_name, timeout=30
         )
         mock_wait_for_snapmirror_release_vol.assert_called_once_with(
             self.source_vserver, self.dest_vserver, self.fake_src_vol_name,
@@ -515,6 +527,8 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
         self.mock_object(data_motion, 'get_client_for_backend',
                          mock.Mock(side_effect=[mock_dest_client,
                                                 mock_src_client]))
+        mock_wait_for_snapmirror_delete = self.mock_object(
+            self.dm_session, 'wait_for_snapmirror_delete')
         mock_wait_for_snapmirror_release_vol = self.mock_object(
             self.dm_session, 'wait_for_snapmirror_release_vol')
 
@@ -530,6 +544,11 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
             mock.ANY, self.fake_src_vol_name, mock.ANY,
             self.fake_dest_vol_name
         )
+        mock_wait_for_snapmirror_delete.assert_called_once_with(
+            mock_dest_client, self.source_vserver, self.fake_src_vol_name,
+            self.dest_vserver, self.fake_dest_vol_name,
+            timeout=CONF[self.source_backend].netapp_snapmirror_release_timeout
+        )
         self.assertFalse(mock_wait_for_snapmirror_release_vol.called)
 
     def test_delete_snapmirror_source_unreachable(self):
@@ -537,6 +556,8 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
         self.mock_object(data_motion, 'get_client_for_backend',
                          mock.Mock(side_effect=[mock_dest_client,
                                                 Exception]))
+        mock_wait_for_snapmirror_delete = self.mock_object(
+            self.dm_session, 'wait_for_snapmirror_delete')
         mock_wait_for_snapmirror_release_vol = self.mock_object(
             self.dm_session, 'wait_for_snapmirror_release_vol')
 
@@ -550,6 +571,11 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
         mock_dest_client.delete_snapmirror_vol.assert_called_once_with(
             mock.ANY, self.fake_src_vol_name, mock.ANY,
             self.fake_dest_vol_name
+        )
+        mock_wait_for_snapmirror_delete.assert_called_once_with(
+            mock_dest_client, self.source_vserver, self.fake_src_vol_name,
+            self.dest_vserver, self.fake_dest_vol_name,
+            timeout=CONF[self.source_backend].netapp_snapmirror_release_timeout
         )
         self.assertFalse(mock_wait_for_snapmirror_release_vol.called)
 
