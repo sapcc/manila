@@ -438,22 +438,11 @@ class ShareServerAPITest(test.TestCase):
         self.assertEqual(share_server,
                          result['share_server'])
 
-    @ddt.data(
-        {'share_server_side_effect': exception.ShareServerNotFound(
-            share_server_id="foo"),
-            'share_net_side_effect': mock.Mock()},
-        {'share_server_side_effect': mock.Mock(
-            return_value=fake_share_server_get()),
-            'share_net_side_effect': exception.ShareNetworkNotFound(
-                share_network_id="foo")})
-    @ddt.unpack
-    def test_show_server_not_found(self, share_server_side_effect,
-                                   share_net_side_effect):
-        self.mock_object(db_api, 'share_server_get',
-                         mock.Mock(side_effect=share_server_side_effect))
+    def test_show_server_not_found(self):
+        self.mock_object(db_api, 'share_server_get', mock.Mock(
+            side_effect=exception.ShareServerNotFound(share_server_id="foo")))
         request, ctxt = self._prepare_request('/show', use_admin_context=True)
-        self.mock_object(db_api, 'share_network_get', mock.Mock(
-            side_effect=share_net_side_effect))
+        self.mock_object(db_api, 'share_network_get')
         self.assertRaises(
             exc.HTTPNotFound, self.controller.show, request,
             fake_share_server_get_result['share_server']['id'])
@@ -462,11 +451,27 @@ class ShareServerAPITest(test.TestCase):
             ctxt, self.resource_name, 'show')
         db_api.share_server_get.assert_called_once_with(
             ctxt, fake_share_server_get_result['share_server']['id'])
-        if isinstance(share_net_side_effect, exception.ShareNetworkNotFound):
-            exp_share_net_id = (fake_share_server_get()
-                                .share_network_subnets[0]['share_network_id'])
-            db_api.share_network_get.assert_called_once_with(
-                ctxt, exp_share_net_id)
+        db_api.share_network_get.assert_not_called()
+
+    def test_show_share_network_deleted(self):
+        self.mock_object(db_api, 'share_server_get',
+                         mock.Mock(return_value=fake_share_server_get()))
+        request, ctxt = self._prepare_request('/show', use_admin_context=True)
+        self.mock_object(db_api, 'share_network_get', mock.Mock(
+            side_effect=exception.ShareNetworkNotFound(
+                share_network_id="foo")))
+
+        result = self.controller.show(
+            request, fake_share_server_get_result['share_server']['id'])
+
+        exp_share_net_id = (fake_share_server_get()
+                            .share_network_subnets[0]['share_network_id'])
+        db_api.share_network_get.assert_called_once_with(
+            ctxt, exp_share_net_id)
+        self.assertEqual('', result['share_server']['project_id'])
+        self.assertEqual('', result['share_server']['share_network_name'])
+        self.assertEqual(fake_share_server_get_result['share_server']['id'],
+                         result['share_server']['id'])
 
     def test_details(self):
         self.mock_object(db_api, 'share_server_get',
