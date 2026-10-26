@@ -6035,6 +6035,11 @@ class ShareManager(manager.SchedulerDependentManager):
     @add_hooks
     @utils.require_driver_initialized
     def delete_share_server(self, context, share_server):
+        # NOTE: This is cast with the user's context when a share network
+        # (subnet) is deleted, and the API soft-deletes the network right
+        # after. Non-admin share server lookups are scoped through live share
+        # networks, so elevate to keep finding the server we are deleting.
+        context = context.elevated()
 
         subnet_id = (share_server['share_network_subnet_ids'][0]
                      if share_server['share_network_subnet_ids'] else None)
