@@ -107,19 +107,28 @@ class ShareServerController(wsgi.Controller):
         context = req.environ['manila.context']
         try:
             server = db_api.share_server_get(context, id)
+        except exception.ShareServerNotFound as e:
+            raise exc.HTTPNotFound(explanation=e.msg)
+        try:
             share_network = db_api.share_network_get(
                 context, server['share_network_id'])
+        except exception.ShareNetworkNotFound:
+            # NOTE: The share network may already be deleted while the share
+            # server is still in 'deleting' state. Return the server with
+            # empty values, consistent with the index API.
+            LOG.debug("Unable to retrieve share network details for share "
+                      "server %(server)s, the network %(network)s was "
+                      "not found.",
+                      {'server': server['id'],
+                       'network': server['share_network_id']})
+            server.project_id = ''
+            server.share_network_name = ''
+        else:
             server.project_id = share_network['project_id']
             if share_network['name']:
                 server.share_network_name = share_network['name']
             else:
                 server.share_network_name = share_network['id']
-        except exception.ShareServerNotFound as e:
-            raise exc.HTTPNotFound(explanation=e.msg)
-        except exception.ShareNetworkNotFound:
-            msg = _("Share server could not be found. Its associated share "
-                    "network %s does not exist.") % server['share_network_id']
-            raise exc.HTTPNotFound(explanation=msg)
         return self._view_builder.build_share_server(req, server)
 
     @wsgi.Controller.authorize
