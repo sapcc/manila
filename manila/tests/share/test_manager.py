@@ -5424,6 +5424,8 @@ class ShareManagerTestCase(test.TestCase):
     def test_delete_share_server_server_not_found(self):
         share_server = db_utils.create_share_server()
         self.share_manager.driver.initialized = True
+        self.mock_object(self.context, 'elevated',
+                         mock.Mock(return_value=self.context))
 
         mock_server_get = self.mock_object(
             self.share_manager.db, 'share_server_get',
@@ -5440,10 +5442,34 @@ class ShareManagerTestCase(test.TestCase):
         mock_server_get.assert_called_once_with(
             self.context, share_server['id'])
 
+    def test_delete_share_server_user_context_share_network_deleted(self):
+        # The share network delete API casts delete_share_server with the
+        # user's context and soft-deletes the network right after, so the
+        # manager must not rely on the user's project-scoped view.
+        admin_ctxt = context.get_admin_context()
+        share_net = db_utils.create_share_network(project_id='fake_project')
+        subnet = db_utils.create_share_network_subnet(
+            id='fake_subnet_id', share_network_id=share_net['id'])
+        share_server = db_utils.create_share_server(
+            share_network_subnets=[subnet])
+        db.share_network_delete(admin_ctxt, share_net['id'])
+        user_ctxt = context.RequestContext('fake_user', 'fake_project',
+                                           is_admin=False)
+        self.mock_object(self.share_manager.driver, 'deallocate_network')
+        self.mock_object(self.share_manager.driver, 'teardown_server')
+
+        self.share_manager.delete_share_server(user_ctxt, share_server)
+
+        self.assertRaises(exception.ShareServerNotFound,
+                          db.share_server_get,
+                          admin_ctxt, share_server['id'])
+
     def test_delete_share_server_server_in_use(self):
         share_server = db_utils.create_share_server()
         share_server_shares = [db_utils.create_share()]
         self.share_manager.driver.initialized = True
+        self.mock_object(self.context, 'elevated',
+                         mock.Mock(return_value=self.context))
 
         mock_server_get = self.mock_object(
             self.share_manager.db, 'share_server_get',
@@ -5467,6 +5493,8 @@ class ShareManagerTestCase(test.TestCase):
     def test_delete_share_server_teardown_failure(self):
         share_server = db_utils.create_share_server()
         self.share_manager.driver.initialized = True
+        self.mock_object(self.context, 'elevated',
+                         mock.Mock(return_value=self.context))
 
         mock_server_get = self.mock_object(
             self.share_manager.db, 'share_server_get',
