@@ -4993,6 +4993,23 @@ class NetAppRestClient(object):
                           enable_tunneling=False)
 
     @na_utils.trace
+    def disable_vserver_web_services(self, vserver_name):
+        """Best-effort disable of System Manager and SAML on a Vserver."""
+        # These services have no public REST or ZAPI equivalent.
+        for service in ('sysmgr', 'saml'):
+            try:
+                self.send_request(
+                    '/private/cli/vserver/services/web', 'patch',
+                    query={'vserver': vserver_name, 'name': service},
+                    body={'enabled': 'false'}, enable_tunneling=False)
+            except (netapp_api.api.NaApiError, exception.NetAppException):
+                LOG.warning(
+                    "Failed to disable web service %(service)s on Vserver "
+                    "%(vserver)s; continuing share-server operations.",
+                    {'service': service, 'vserver': vserver_name},
+                    exc_info=True)
+
+    @na_utils.trace
     def create_vserver(self, vserver_name, root_volume_aggregate_name,
                        root_volume_name, aggregate_names, ipspace_name,
                        security_cert_expire_days, delete_retention_hours,

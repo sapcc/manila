@@ -1654,6 +1654,8 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
         mock_dest_client.create_vserver_dp_destination.assert_called_once_with(
             dp_dest_name, ['aggr1', 'aggr2'], None,
             mock_config.netapp_delete_retention_hours)
+        mock_dest_client.disable_vserver_web_services.assert_called_once_with(
+            dp_dest_name)
         mock_dest_client.create_vserver_peer.assert_called_once_with(
             dp_dest_name, 'src_vs', peer_cluster_name=fake.CLUSTER_NAME)
         mock_src_client.accept_vserver_peer.assert_called_once_with(

@@ -899,6 +899,7 @@ class DataMotionSession(object):
                 dp_dest_svm_name, aggregate_names, destination_ipspace,
                 dest_config.netapp_delete_retention_hours)
             svm_created = True
+            dest_client.disable_vserver_web_services(dp_dest_svm_name)
 
             # Step 3: explicitly peer the SVMs (skip if already peered).
             existing_peers = dest_client.get_vserver_peers(
