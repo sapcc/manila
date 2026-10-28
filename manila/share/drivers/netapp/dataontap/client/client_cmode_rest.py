@@ -1935,7 +1935,7 @@ class NetAppRestClient(object):
         self.send_request(f'/storage/volumes/{uuid}', 'patch', body=body)
 
     @na_utils.trace
-    def delete_volume(self, volume_name, force_delete):
+    def delete_volume(self, volume_name, force_delete=False):
         """Deletes a volume."""
         # Get volume UUID.
         volume = self._get_volume_by_args(vol_name=volume_name)

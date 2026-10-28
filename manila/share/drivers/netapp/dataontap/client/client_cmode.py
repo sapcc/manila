@@ -4388,7 +4388,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
         raise exception.NetAppException(msg % msg_args)
 
     @na_utils.trace
-    def delete_volume(self, volume_name, force_delete):
+    def delete_volume(self, volume_name, force_delete=False):
         """Deletes a volume."""
         if force_delete:
             if self.features.FORCE_DELETE:

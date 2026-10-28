@@ -5573,11 +5573,12 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.assertEqual(0, client_cmode.LOG.debug.call_count)
         self.assertEqual(11, client_cmode.LOG.warning.call_count)
 
-    def test_delete_volume(self):
+    @ddt.data({}, {'force_delete': False})
+    def test_delete_volume(self, kwargs):
 
         self.mock_object(self.client, 'send_request')
 
-        self.client.delete_volume(fake.SHARE_NAME, False)
+        self.client.delete_volume(fake.SHARE_NAME, **kwargs)
 
         volume_destroy_args = {'name': fake.SHARE_NAME}
 
