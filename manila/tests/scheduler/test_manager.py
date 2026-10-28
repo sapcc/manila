@@ -463,7 +463,9 @@ class SchedulerManagerTestCase(test.TestCase):
             db_update.assert_called_once_with(
                 self.context, 'fake_replica_id', expected_updates)
 
-    def test_create_share_server_replica_exception_path(self):
+    @mock.patch('manila.message.api.API.create')
+    def test_create_share_server_replica_exception_path(
+            self, _mock_message_create):
         """Test 'raisable' exceptions for create_share_server_replica."""
         db_update = self.mock_object(db, 'share_server_update')
         request_spec = {'share_server_replica_id': 'fake_replica_id'}
@@ -471,15 +473,23 @@ class SchedulerManagerTestCase(test.TestCase):
             'status': constants.STATUS_ERROR,
             'replica_state': constants.STATUS_ERROR,
         }
+        exc = exception.ShareServerReplicaCreationFailed(
+            share_server_replica_id='fake_replica_id', reason='backend error')
         with mock.patch.object(
                 self.manager.driver,
                 'schedule_create_share_server_replica',
-                mock.Mock(side_effect=exception.NotFound)):
+                mock.Mock(side_effect=exc)):
 
-            self.assertRaises(exception.NotFound,
+            self.assertRaises(exception.ShareServerReplicaCreationFailed,
                               self.manager.create_share_server_replica,
                               self.context,
                               request_spec=request_spec,
                               filter_properties={})
             db_update.assert_called_once_with(
                 self.context, 'fake_replica_id', expected_updates)
+            _mock_message_create.assert_called_once_with(
+                self.context,
+                message_field.Action.CREATE,
+                self.context.project_id,
+                resource_type=message_field.Resource.SHARE_SERVER_REPLICA,
+                resource_id='fake_replica_id', exception=exc)

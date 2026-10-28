@@ -1079,6 +1079,11 @@ class ShareServerReplicaExists(Invalid):
                 " on host %(host)s.")
 
 
+class ShareServerReplicaCreationFailed(ManilaException):
+    message = _("Share server replica %(share_server_replica_id)s "
+                "creation failed: %(reason)s")
+
+
 # Tegile Storage drivers
 class TegileAPIException(ShareBackendException):
     message = _("Unexpected response from Tegile IntelliFlash API: "
