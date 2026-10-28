@@ -1755,7 +1755,8 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             mock.call(f'/protocols/nfs/export-policies/{id}', 'delete'),
         ])
 
-    def test_delete_volume(self):
+    @ddt.data({}, {'force_delete': False}, {'force_delete': True})
+    def test_delete_volume(self, kwargs):
         """Deletes a volume."""
         volume = fake.VOLUME_ITEM_SIMPLE_RESPONSE_REST
 
@@ -1766,10 +1767,11 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
         # Get volume UUID.
         uuid = volume['uuid']
 
-        self.client.delete_volume("fake_volume_name", False)
+        self.client.delete_volume("fake_volume_name", **kwargs)
 
+        query = {"force": "true"} if kwargs.get('force_delete') else None
         mock_sr.assert_called_once_with(
-            f"/storage/volumes/{uuid}", "delete", query=None)
+            f"/storage/volumes/{uuid}", "delete", query=query)
 
     def test__unmount_volume(self):
         volume = fake.VOLUME_ITEM_SIMPLE_RESPONSE_REST
