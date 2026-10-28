@@ -344,6 +344,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                 ipspace_name,
                 self.configuration.netapp_delete_retention_hours,
                 self.configuration.netapp_enable_logical_space_reporting)
+            self._disable_vserver_web_services(vserver_name)
             # Set up port and broadcast domain for the current ipspace
             self._create_port_and_broadcast_domain(
                 ipspace_name, network_info[0])
@@ -365,6 +366,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
 
             security_services = network_info[0].get('security_services')
             try:
+                self._disable_vserver_web_services(vserver_name)
                 self._setup_network_for_vserver(
                     vserver_name, vserver_client, network_info, ipspace_name,
                     security_services=security_services, nfs_config=nfs_config)
@@ -385,6 +387,20 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                         for lif in lifs:
                             self._client.disable_network_interface(
                                 vserver_name, lif['interface-name'])
+
+    @na_utils.trace
+    def _disable_vserver_web_services(self, vserver_name):
+        try:
+            client = self._client
+            if self.configuration.netapp_use_legacy_client:
+                client = data_motion.get_client_for_backend(
+                    self._backend_name, force_rest_client=True)
+            client.disable_vserver_web_services(vserver_name)
+        except (netapp_api.NaApiError, exception.NetAppException):
+            LOG.warning(
+                "Failed to disable web services on Vserver %s; "
+                "continuing share-server operations.",
+                vserver_name, exc_info=True)
 
     @na_utils.trace
     def _create_barbican_kms_config_for_specified_vserver(self, vserver_name,
@@ -705,6 +721,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
     @na_utils.trace
     def _update_vserver(self, vserver, network_info):
         """Update a Vserver as needed."""
+        self._disable_vserver_web_services(vserver)
         self._client.modify_vserver(
             vserver_name=vserver,
             aggregate_names=self._find_matching_aggregates(),

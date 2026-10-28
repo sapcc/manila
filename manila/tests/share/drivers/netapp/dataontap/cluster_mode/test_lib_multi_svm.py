@@ -1710,6 +1710,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
     @ddt.unpack
     def test_create_vserver(self, existing_ipspace, nfs_config):
 
+        disable_web_services = self.mock_object(
+            self.library, '_disable_vserver_web_services')
         versions = ['fake_v1', 'fake_v2']
         self.library.configuration.netapp_enabled_share_protocols = versions
         self.library.configuration.netapp_cifs_aes_encryption = False
@@ -1794,9 +1796,12 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             fake.NETWORK_INFO['security_services'], vserver_client,
             vserver_name, False)
         self.library._get_flexgroup_aggr_set.assert_called_once_with()
+        disable_web_services.assert_called_once_with(vserver_name)
 
     @ddt.data(None, fake.IPSPACE)
     def test_create_vserver_dp_destination(self, existing_ipspace):
+        disable_web_services = self.mock_object(
+            self.library, '_disable_vserver_web_services')
         versions = ['fake_v1', 'fake_v2']
         self.library.configuration.netapp_enabled_share_protocols = versions
         ipspace_name = ('ipspace_'
@@ -1851,6 +1856,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.library._create_port_and_broadcast_domain.assert_called_once_with(
             ipspace_name, fake.NETWORK_INFO)
         self.library._get_flexgroup_aggr_set.assert_not_called()
+        disable_web_services.assert_called_once_with(vserver_name)
 
     def test_create_vserver_already_present(self):
 
@@ -1884,6 +1890,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                                                  network_exception,
                                                  existing_ipspace):
 
+        self.mock_object(self.library, '_disable_vserver_web_services')
         vserver_id = fake.NETWORK_INFO['server_id']
         vserver_name = fake.VSERVER_NAME_TEMPLATE % vserver_id
         vserver_client = mock.Mock()
@@ -1953,6 +1960,81 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                  for lif in fake.LIFS])
         self.assertFalse(vserver_client.enable_nfs.called)
         self.assertEqual(1, lib_multi_svm.LOG.warning.call_count)
+
+    @ddt.data(True, False)
+    def test_disable_vserver_web_services(self, use_legacy_client):
+        self.library.configuration.netapp_use_legacy_client = use_legacy_client
+        rest_client = mock.Mock()
+        get_client = self.mock_object(
+            data_motion, 'get_client_for_backend',
+            mock.Mock(return_value=rest_client))
+
+        self.library._disable_vserver_web_services(fake.VSERVER1)
+
+        if use_legacy_client:
+            get_client.assert_called_once_with(
+                self.library._backend_name, force_rest_client=True)
+            rest_client.disable_vserver_web_services.assert_called_once_with(
+                fake.VSERVER1)
+            self.client.disable_vserver_web_services.assert_not_called()
+        else:
+            get_client.assert_not_called()
+            self.client.disable_vserver_web_services.assert_called_once_with(
+                fake.VSERVER1)
+
+    @ddt.data(netapp_api.NaApiError, exception.NetAppException)
+    def test_disable_vserver_web_services_client_creation_failure(
+            self, error_type):
+        self.library.configuration.netapp_use_legacy_client = True
+        self.mock_object(
+            data_motion, 'get_client_for_backend',
+            mock.Mock(side_effect=error_type(message='REST unavailable')))
+
+        self.library._disable_vserver_web_services(fake.VSERVER1)
+
+        lib_multi_svm.LOG.warning.assert_called_once()
+
+    @ddt.data(fake.VSERVER1, fake.VSERVER2)
+    def test_ensure_share_server_disables_web_services(self, vserver):
+        self.library.configuration.netapp_use_legacy_client = False
+        share_server = {
+            'id': fake.SHARE_SERVER['id'],
+            'backend_details': {'vserver_name': vserver, 'nfs_config': '{}'},
+        }
+        self.mock_object(self.library, '_find_matching_aggregates')
+        self.mock_object(self.library, '_get_api_client')
+        self.mock_object(self.library, '_create_vserver_routes')
+        network_info = [{'security_services': []}]
+
+        self.library.ensure_share_server(None, share_server, network_info)
+        self.library.ensure_share_server(None, share_server, network_info)
+
+        self.assertEqual(
+            [mock.call(vserver), mock.call(vserver)],
+            self.client.disable_vserver_web_services.call_args_list)
+
+    def test_ensure_share_server_web_services_failure(self):
+        self.library.configuration.netapp_use_legacy_client = False
+        self.mock_object(
+            self.client, 'disable_vserver_web_services',
+            mock.Mock(side_effect=netapp_api.NaApiError(
+                code='403', message='Not authorized')))
+        share_server = {
+            'id': fake.SHARE_SERVER['id'],
+            'backend_details': {
+                'vserver_name': fake.VSERVER1, 'nfs_config': '{}'},
+        }
+        log_exception = self.mock_object(lib_base.LOG, 'exception')
+        self.mock_object(self.library, '_find_matching_aggregates')
+        self.mock_object(self.library, '_get_api_client')
+        self.mock_object(self.library, '_create_vserver_routes')
+
+        self.library.ensure_share_server(
+            None, share_server, [{'security_services': []}])
+
+        log_exception.assert_not_called()
+        lib_multi_svm.LOG.warning.assert_called_once()
+        self.client.modify_vserver.assert_called_once()
 
     def test__create_barbican_kms_config_for_specified_vserver(self):
 

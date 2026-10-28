@@ -1,0 +1,12 @@
+---
+features:
+  - |
+    The NetApp driver now disables the ``sysmgr`` and ``saml`` web services on
+    Manila-managed share-server Vservers during creation and when ensuring
+    existing share servers. This does not disable cluster-management web
+    services or the ONTAP REST API. This hardening is best-effort: API failures
+    are logged without interrupting normal share-server operations, and each
+    service is attempted independently. Both REST and legacy-client backends
+    use REST CLI passthrough access to ``vserver services web modify`` using
+    cluster credentials. Existing share servers retry this hardening on each
+    ensure operation.

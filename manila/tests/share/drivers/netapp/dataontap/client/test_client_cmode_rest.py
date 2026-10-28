@@ -5671,6 +5671,51 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
             mock.call('/network/ip/interfaces', 'post', body=body2)
         ])
 
+    def test_disable_vserver_web_services(self):
+        send_request = self.mock_object(self.client, 'send_request')
+
+        self.client.disable_vserver_web_services(fake.VSERVER_NAME)
+
+        self.assertEqual([
+            mock.call(
+                '/private/cli/vserver/services/web', 'patch',
+                query={'vserver': fake.VSERVER_NAME, 'name': service},
+                body={'enabled': 'false'}, enable_tunneling=False)
+            for service in ('sysmgr', 'saml')
+        ], send_request.call_args_list)
+
+    @ddt.data(
+        (0, netapp_api.api.NaApiError),
+        (1, netapp_api.api.NaApiError),
+        (0, exception.NetAppException),
+        (1, exception.NetAppException))
+    @ddt.unpack
+    def test_disable_vserver_web_services_failure(
+            self, failed_service, error_type):
+        error = error_type(message='Not authorized')
+        responses = [None, None]
+        responses[failed_service] = error
+        send_request = self.mock_object(
+            self.client, 'send_request',
+            mock.Mock(side_effect=responses))
+
+        self.client.disable_vserver_web_services(fake.VSERVER_NAME)
+
+        self.assertEqual(['sysmgr', 'saml'], [
+            call.kwargs['query']['name']
+            for call in send_request.call_args_list])
+        client_cmode_rest.LOG.warning.assert_called_once()
+
+    def test_disable_vserver_web_services_both_fail(self):
+        send_request = self.mock_object(
+            self.client, 'send_request',
+            self._mock_api_error(code='403', message='Not authorized'))
+
+        self.client.disable_vserver_web_services(fake.VSERVER_NAME)
+
+        self.assertEqual(2, send_request.call_count)
+        self.assertEqual(2, client_cmode_rest.LOG.warning.call_count)
+
     def test_create_vserver(self):
         mock = self.mock_object(self.client, '_create_vserver')
         self.mock_object(self.client, '_modify_security_cert',
