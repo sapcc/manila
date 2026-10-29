@@ -698,6 +698,8 @@ def service_get_all_share_sorted(context):
         ).join(
             models.ShareInstance,
             models.ShareInstance.share_id == models.Share.id,
+        ).filter(
+            models.ShareInstance.deleted == 'False',
         ).group_by(
             models.ShareInstance.host
         ).subquery()
@@ -2209,6 +2211,8 @@ def share_instance_sizes_sum_by_host(context, host):
         context, models.Share, func.sum(models.Share.size),
     ).join(
         models.ShareInstance.share,
+    ).filter(
+        models.ShareInstance.deleted == 'False',
     ).filter(or_(
         models.ShareInstance.host == host,
         models.ShareInstance.host.like("{0}#%".format(host)),
@@ -2733,6 +2737,8 @@ def _share_get_all_with_filters(context, project_id=None, share_server_id=None,
     ).join(
         models.ShareInstance,
         models.ShareInstance.share_id == models.Share.id
+    ).filter(
+        models.ShareInstance.deleted == 'False',
     )
 
     if share_group_id:
@@ -2788,6 +2794,8 @@ def share_get_all_expired(context):
     ).join(
         models.ShareInstance,
         models.ShareInstance.share_id == models.Share.id,
+    ).filter(
+        models.ShareInstance.deleted == 'False',
     )
     filters = {"is_soft_deleted": True}
     query = _process_share_filters(query, filters=filters)
@@ -3860,6 +3868,8 @@ def _snapshot_data_get_for_project(
         query = query.join(
             models.ShareInstance,
             models.ShareInstance.share_id == models.ShareSnapshot.share_id,
+        ).filter(
+            models.ShareInstance.deleted == 'False',
         ).filter_by(share_type_id=share_type_id)
     elif user_id:
         query = query.filter_by(user_id=user_id)

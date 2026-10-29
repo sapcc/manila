@@ -352,6 +352,7 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
             self.dm_session, 'wait_for_snapmirror_delete')
         mock_wait_for_snapmirror_release_vol = self.mock_object(
             self.dm_session, 'wait_for_snapmirror_release_vol')
+        self.mock_object(self.dm_session, 'wait_for_snapmirror_delete')
 
         self.dm_session.delete_snapmirror(self.fake_src_share,
                                           self.fake_dest_share)
@@ -416,6 +417,7 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
             self.dm_session, 'wait_for_snapmirror_delete')
         mock_wait_for_snapmirror_release_vol = self.mock_object(
             self.dm_session, 'wait_for_snapmirror_release_vol')
+        self.mock_object(self.dm_session, 'wait_for_snapmirror_delete')
 
         self.dm_session.delete_snapmirror(self.fake_src_share,
                                           self.fake_dest_share)
@@ -531,6 +533,7 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
             self.dm_session, 'wait_for_snapmirror_delete')
         mock_wait_for_snapmirror_release_vol = self.mock_object(
             self.dm_session, 'wait_for_snapmirror_release_vol')
+        self.mock_object(self.dm_session, 'wait_for_snapmirror_delete')
 
         self.dm_session.delete_snapmirror(self.fake_src_share,
                                           self.fake_dest_share,
@@ -560,6 +563,7 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
             self.dm_session, 'wait_for_snapmirror_delete')
         mock_wait_for_snapmirror_release_vol = self.mock_object(
             self.dm_session, 'wait_for_snapmirror_release_vol')
+        self.mock_object(self.dm_session, 'wait_for_snapmirror_delete')
 
         self.dm_session.delete_snapmirror(self.fake_src_share,
                                           self.fake_dest_share)
