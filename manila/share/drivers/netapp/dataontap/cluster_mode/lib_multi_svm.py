@@ -393,10 +393,9 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
         try:
             client = self._client
             if self.configuration.netapp_use_legacy_client:
-                client = data_motion.get_client_for_backend(
-                    self._backend_name, force_rest_client=True)
+                client = self._get_rest_client()
             client.disable_vserver_web_services(vserver_name)
-        except (netapp_api.NaApiError, exception.NetAppException):
+        except Exception:
             LOG.warning(
                 "Failed to disable web services on Vserver %s; "
                 "continuing share-server operations.",

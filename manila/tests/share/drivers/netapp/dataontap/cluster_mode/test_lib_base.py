@@ -228,6 +228,24 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.assertEqual(client1, client2)
         self.assertFalse(mock_client_constructor.called)
 
+    def test_get_rest_client(self):
+        self.library.configuration.netapp_use_legacy_client = True
+        legacy_constructor = self.mock_object(
+            client_cmode, 'NetAppCmodeClient')
+        rest_constructor = self.mock_object(
+            lib_base.client_cmode_rest, 'NetAppRestClient')
+
+        client1 = self.library._get_rest_client()
+        client2 = self.library._get_rest_client()
+
+        self.assertIs(client1, client2)
+        rest_constructor.assert_called_once()
+        self.assertIsNone(rest_constructor.call_args.kwargs['vserver'])
+        self.assertEqual(
+            self.library.configuration.netapp_server_hostname,
+            rest_constructor.call_args.kwargs['hostname'])
+        legacy_constructor.assert_not_called()
+
     def test_get_api_client_with_vserver(self):
 
         client_kwargs = fake.CLIENT_KWARGS.copy()

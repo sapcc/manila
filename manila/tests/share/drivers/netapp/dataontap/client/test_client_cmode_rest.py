@@ -5690,11 +5690,15 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
         (0, netapp_api.api.NaApiError),
         (1, netapp_api.api.NaApiError),
         (0, exception.NetAppException),
-        (1, exception.NetAppException))
+        (1, exception.NetAppException),
+        (0, RuntimeError),
+        (1, RuntimeError))
     @ddt.unpack
     def test_disable_vserver_web_services_failure(
             self, failed_service, error_type):
-        error = error_type(message='Not authorized')
+        error = (error_type('Not authorized')
+                 if error_type is RuntimeError
+                 else error_type(message='Not authorized'))
         responses = [None, None]
         responses[failed_service] = error
         send_request = self.mock_object(

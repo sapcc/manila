@@ -212,6 +212,7 @@ class NetAppCmodeFileStorageLibrary(object):
         self._licenses = []
         self._client = None
         self._clients = {}
+        self._rest_client = None
         self._backend_clients = {}
         self._ssc_stats = {}
         self._have_cluster_creds = None
@@ -298,8 +299,8 @@ class NetAppCmodeFileStorageLibrary(object):
     def _get_vserver(self, share_server=None):
         raise NotImplementedError()
 
-    def _get_client(self, config, vserver=None):
-        if config.netapp_use_legacy_client:
+    def _get_client(self, config, vserver=None, force_rest_client=False):
+        if config.netapp_use_legacy_client and not force_rest_client:
             client = client_cmode.NetAppCmodeClient(
                 transport_type=config.netapp_transport_type,
                 ssl_cert_path=config.netapp_ssl_cert_path,
@@ -345,6 +346,15 @@ class NetAppCmodeFileStorageLibrary(object):
                 client = self._get_client(self.configuration, vserver=vserver)
                 self._clients[vserver] = client
         return client
+
+    @na_utils.trace
+    def _get_rest_client(self):
+        """Get this backend's cluster-scoped REST client (thread-safe)."""
+        with self._clients_lock:
+            if not self._rest_client:
+                self._rest_client = self._get_client(
+                    self.configuration, force_rest_client=True)
+        return self._rest_client
 
     @na_utils.trace
     def _get_api_client_for_backend(self, backend_name, vserver=None):

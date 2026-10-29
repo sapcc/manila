@@ -5002,7 +5002,7 @@ class NetAppRestClient(object):
                     '/private/cli/vserver/services/web', 'patch',
                     query={'vserver': vserver_name, 'name': service},
                     body={'enabled': 'false'}, enable_tunneling=False)
-            except (netapp_api.api.NaApiError, exception.NetAppException):
+            except Exception:
                 LOG.warning(
                     "Failed to disable web service %(service)s on Vserver "
                     "%(vserver)s; continuing share-server operations.",

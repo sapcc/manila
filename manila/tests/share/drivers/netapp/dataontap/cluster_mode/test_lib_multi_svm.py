@@ -1706,12 +1706,22 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
     @ddt.data({'existing_ipspace': None,
                'nfs_config': fake.NFS_CONFIG_TCP_UDP_MAX},
-              {'existing_ipspace': fake.IPSPACE, 'nfs_config': None})
+              {'existing_ipspace': fake.IPSPACE, 'nfs_config': None},
+              {'existing_ipspace': None, 'nfs_config': None,
+               'web_services_error': True})
     @ddt.unpack
-    def test_create_vserver(self, existing_ipspace, nfs_config):
+    def test_create_vserver(self, existing_ipspace, nfs_config,
+                            web_services_error=False):
 
-        disable_web_services = self.mock_object(
-            self.library, '_disable_vserver_web_services')
+        if web_services_error:
+            self.library.configuration.netapp_use_legacy_client = True
+            get_rest_client = self.mock_object(
+                self.library, '_get_rest_client',
+                mock.Mock(side_effect=exception.BadConfigurationException(
+                    reason='missing backend stanza')))
+        else:
+            disable_web_services = self.mock_object(
+                self.library, '_disable_vserver_web_services')
         versions = ['fake_v1', 'fake_v2']
         self.library.configuration.netapp_enabled_share_protocols = versions
         self.library.configuration.netapp_cifs_aes_encryption = False
@@ -1796,7 +1806,12 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             fake.NETWORK_INFO['security_services'], vserver_client,
             vserver_name, False)
         self.library._get_flexgroup_aggr_set.assert_called_once_with()
-        disable_web_services.assert_called_once_with(vserver_name)
+        if web_services_error:
+            get_rest_client.assert_called_once_with()
+            lib_multi_svm.LOG.warning.assert_called_once()
+            self.library._client.delete_vserver.assert_not_called()
+        else:
+            disable_web_services.assert_called_once_with(vserver_name)
 
     @ddt.data(None, fake.IPSPACE)
     def test_create_vserver_dp_destination(self, existing_ipspace):
@@ -1966,14 +1981,16 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
         self.library.configuration.netapp_use_legacy_client = use_legacy_client
         rest_client = mock.Mock()
         get_client = self.mock_object(
-            data_motion, 'get_client_for_backend',
+            self.library, '_get_rest_client',
             mock.Mock(return_value=rest_client))
+        get_backend_client = self.mock_object(
+            data_motion, 'get_client_for_backend')
 
         self.library._disable_vserver_web_services(fake.VSERVER1)
 
+        get_backend_client.assert_not_called()
         if use_legacy_client:
-            get_client.assert_called_once_with(
-                self.library._backend_name, force_rest_client=True)
+            get_client.assert_called_once_with()
             rest_client.disable_vserver_web_services.assert_called_once_with(
                 fake.VSERVER1)
             self.client.disable_vserver_web_services.assert_not_called()
@@ -1982,13 +1999,16 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             self.client.disable_vserver_web_services.assert_called_once_with(
                 fake.VSERVER1)
 
-    @ddt.data(netapp_api.NaApiError, exception.NetAppException)
+    @ddt.data(netapp_api.NaApiError(message='REST unavailable'),
+              exception.NetAppException(message='REST unavailable'),
+              exception.BadConfigurationException(reason='missing stanza'),
+              RuntimeError('unexpected'))
     def test_disable_vserver_web_services_client_creation_failure(
-            self, error_type):
+            self, error):
         self.library.configuration.netapp_use_legacy_client = True
         self.mock_object(
-            data_motion, 'get_client_for_backend',
-            mock.Mock(side_effect=error_type(message='REST unavailable')))
+            self.library, '_get_rest_client',
+            mock.Mock(side_effect=error))
 
         self.library._disable_vserver_web_services(fake.VSERVER1)
 
