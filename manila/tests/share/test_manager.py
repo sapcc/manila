@@ -12030,6 +12030,29 @@ class ShareManagerTestCase(test.TestCase):
             resource_id=share_net_subnet['id'],
             detail=message_field.Detail.UPDATE_METADATA_SUCCESS)
 
+    def test_update_share_from_metadata_without_all_squash(self):
+        share = db_utils.create_share(status=constants.STATUS_AVAILABLE)
+        share_instance = share['instance']
+
+        self.mock_object(self.share_manager.db, 'share_get',
+                         mock.Mock(return_value=share))
+        self.mock_object(self.share_manager, '_get_share_instance',
+                         mock.Mock(return_value=share_instance))
+        self.mock_object(self.share_manager, '_get_share_server',
+                         mock.Mock(return_value=None))
+        mock_access = self.mock_object(
+            self.share_manager.access_helper, 'update_access_rules')
+        mock_driver = self.mock_object(
+            self.share_manager.driver, 'update_share_from_metadata')
+
+        metadata = {'cross_volume_dedupe': 'true'}
+        self.share_manager.update_share_from_metadata(
+            self.context, share['id'], metadata)
+
+        mock_access.assert_not_called()
+        mock_driver.assert_called_once_with(
+            self.context, share_instance, metadata, None)
+
     def test_restore_backup_respects_restore_to_target(self):
         target_share = db_utils.create_share(status=constants.STATUS_AVAILABLE)
         share = db_utils.create_share(status=constants.STATUS_AVAILABLE)

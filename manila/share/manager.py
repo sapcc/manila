@@ -8392,8 +8392,18 @@ class ShareManager(manager.SchedulerDependentManager):
         share_instance = self._get_share_instance(context, share)
         share_server = self._get_share_server(context, share_instance)
         try:
-            self.driver.update_share_from_metadata(context, share_instance,
-                                                   metadata, share_server)
+            # all_squash affects NFS export policy and requires re-applying
+            # access rules
+            if 'all_squash' in metadata:
+                self.access_helper.update_access_rules(
+                    context, share_instance['id'],
+                    share_server=share_server, force=True)
+
+            remaining = {k: v for k, v in metadata.items()
+                         if k != 'all_squash'}
+            if remaining:
+                self.driver.update_share_from_metadata(
+                    context, share_instance, remaining, share_server)
             self.message_api.create(
                 context,
                 message_field.Action.UPDATE_METADATA,
