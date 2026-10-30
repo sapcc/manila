@@ -195,6 +195,31 @@ class NetAppApiElementTransTests(test.TestCase):
         mock_requests_session.assert_called_once_with()
         mock_auth.assert_called_once_with()
 
+    def test__build_session_closes_previous_session(self):
+        """A rebuild must close the old session to avoid leaking sockets."""
+        napi = api.ZapiClient('localhost')
+        old_session = mock.Mock()
+        napi._session = old_session
+        new_session = mock.Mock()
+        self.mock_object(
+            requests, 'Session', mock.Mock(return_value=new_session))
+        self.mock_object(napi, '_create_basic_auth_handler',
+                         mock.Mock(return_value='fake_auth'))
+
+        napi._build_session()
+
+        old_session.close.assert_called_once_with()
+        self.assertEqual(new_session, napi._session)
+
+    def test__close_session_no_existing_session(self):
+        """Closing with no session yet is a safe no-op."""
+        napi = api.ZapiClient('localhost')
+        self.assertIsNone(napi._session)
+
+        napi._close_session()
+
+        self.assertIsNone(napi._session)
+
     def test__build_session_with_certificate_auth(self):
         """Tests whether build session works with """
         """valid certificate parameters"""

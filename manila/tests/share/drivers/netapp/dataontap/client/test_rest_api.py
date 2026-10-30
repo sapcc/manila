@@ -317,6 +317,30 @@ class NetAppRestApiServerTests(test.TestCase):
         mock_requests_session.assert_called_once_with()
         mock_auth.assert_called_once_with()
 
+    def test__build_session_closes_previous_session(self):
+        """A rebuild must close the old session to avoid leaking sockets."""
+        old_session = mock.Mock()
+        self.rest_client._session = old_session
+        new_session = mock.Mock()
+        self.mock_object(
+            requests, 'Session', mock.Mock(return_value=new_session))
+        self.mock_object(
+            self.rest_client, '_create_basic_auth_handler',
+            mock.Mock(return_value='fake_auth'))
+
+        self.rest_client._build_session(fake.FAKE_HTTP_HEADER)
+
+        old_session.close.assert_called_once_with()
+        self.assertEqual(new_session, self.rest_client._session)
+
+    def test__close_session_no_existing_session(self):
+        """Closing with no session yet is a safe no-op."""
+        self.rest_client._session = None
+
+        self.rest_client._close_session()
+
+        self.assertIsNone(self.rest_client._session)
+
     def test__build_session__certificate_auth(self):
         """Tests whether build session works with """
         """valid certificate parameters"""
