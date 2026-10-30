@@ -322,10 +322,29 @@ class DataMotionSession(object):
                           release=True, relationship_info_only=False):
         """Ensures all information about a SnapMirror relationship is removed.
 
-        1. Abort snapmirror
-        2. Quiesce snapmirror
-        3. Delete the snapmirror
-        3. Release snapmirror to clean up snapmirror metadata and snapshots
+        For synchronous (Sync/StrictSync) policies the teardown order is
+        critical to avoid a permanent deadlock that orphans the DP volume:
+
+        - abort_snapmirror_vol MUST NOT be called for sync policies: it
+          destroys the common base snapshot, causing snapmirror-destroy-iter
+          to silently no-op and leaving the relationship in a state where
+          quiesce/break/resync/delete all refuse each other.
+        - The release on the source MUST happen after the dest relationship
+          is deleted (not before), and only once the source entry has
+          transitioned to OutOfSync (~2 min); releasing while InSync triggers
+          auto-resync churn that blocks quiesce indefinitely.
+
+        Sync policy sequence:
+        1. Quiesce dest (no abort, no wait for quiesced)
+        2. Delete dest relationship
+        3. Wait for source entry to reach OutOfSync (~2 min)
+        4. Release source
+
+        Async policy sequence (unchanged):
+        1. Abort any ongoing transfers
+        2. Quiesce dest
+        3. Delete dest relationship (+ wait_for_snapmirror_delete poll)
+        4. Release source
         """
         dest_volume_name, dest_vserver, dest_backend = (
             self.get_backend_info_for_share(dest_share_obj))
@@ -335,67 +354,118 @@ class DataMotionSession(object):
         src_volume_name, src_vserver, src_backend = (
             self.get_backend_info_for_share(source_share_obj))
 
-        # 1. Abort any ongoing transfers
-        try:
-            dest_client.abort_snapmirror_vol(src_vserver,
-                                             src_volume_name,
-                                             dest_vserver,
-                                             dest_volume_name,
-                                             clear_checkpoint=False)
-        except netapp_api.NaApiError:
-            # Snapmirror is already deleted
-            pass
+        # Detect sync policy from replica metadata.
+        policy, is_sync_policy = self.get_policy_from_share_replica_metadata(
+            dest_share_obj)
 
-        # 2. Quiesce the snapmirror relationship
-        try:
-            dest_client.quiesce_snapmirror_vol(src_vserver,
-                                               src_volume_name,
-                                               dest_vserver,
-                                               dest_volume_name)
-        except netapp_api.NaApiError:
-            # Snapmirror is already deleted
-            pass
-
-        # 3. Delete SnapMirror Relationship and cleanup destination snapshots
-        try:
-            dest_client.delete_snapmirror_vol(src_vserver,
-                                              src_volume_name,
-                                              dest_vserver,
-                                              dest_volume_name)
-        except netapp_api.NaApiError as e:
-            with excutils.save_and_reraise_exception() as exc_context:
-                if (e.code == netapp_api.EOBJECTNOTFOUND or
-                        e.code == netapp_api.ESOURCE_IS_DIFFERENT or
-                        "(entry doesn't exist)" in e.message):
-                    LOG.info('No snapmirror relationship to delete')
-                    exc_context.reraise = False
-        else:
-            # delete_snapmirror_vol is async on ONTAP; wait until the
-            # relationship is confirmed gone on the destination before
-            # returning so that the caller can safely delete the volume.
-            dest_config = get_backend_configuration(dest_backend)
-            self.wait_for_snapmirror_delete(
-                dest_client, src_vserver, src_volume_name,
-                dest_vserver, dest_volume_name,
-                timeout=dest_config.netapp_snapmirror_release_timeout)
-
-        if release:
-            # If the source is unreachable, do not perform the release
+        if is_sync_policy:
+            # Sync path: quiesce (no abort), delete, wait source OutOfSync,
+            # then release. See docstring for the full rationale.
             try:
-                src_client = get_client_for_backend(src_backend,
-                                                    vserver_name=src_vserver)
-            except Exception:
-                src_client = None
+                dest_client.quiesce_snapmirror_vol(src_vserver,
+                                                   src_volume_name,
+                                                   dest_vserver,
+                                                   dest_volume_name)
+            except netapp_api.NaApiError:
+                pass
 
-            # 4. Cleanup SnapMirror relationship on source
-            if src_client:
-                src_config = get_backend_configuration(src_backend)
-                release_timeout = (
-                    src_config.netapp_snapmirror_release_timeout)
-                self.wait_for_snapmirror_release_vol(
-                    src_vserver, dest_vserver, src_volume_name,
-                    dest_volume_name, relationship_info_only, src_client,
-                    timeout=release_timeout)
+            try:
+                dest_client.delete_snapmirror_vol(src_vserver,
+                                                  src_volume_name,
+                                                  dest_vserver,
+                                                  dest_volume_name)
+            except netapp_api.NaApiError as e:
+                with excutils.save_and_reraise_exception() as exc_context:
+                    if (e.code == netapp_api.EOBJECTNOTFOUND or
+                            e.code == netapp_api.ESOURCE_IS_DIFFERENT or
+                            "(entry doesn't exist)" in e.message):
+                        LOG.info('No snapmirror relationship to delete')
+                        exc_context.reraise = False
+
+            if release:
+                try:
+                    src_client = get_client_for_backend(
+                        src_backend, vserver_name=src_vserver)
+                except Exception:
+                    LOG.warning('Skipping SnapMirror release for source '
+                                'volume %(volume)s: failed to get a client '
+                                'for backend %(backend)s.',
+                                {'volume': src_volume_name,
+                                 'backend': src_backend}, exc_info=True)
+                    src_client = None
+
+                if src_client:
+                    src_config = get_backend_configuration(src_backend)
+                    release_timeout = (
+                        src_config.netapp_snapmirror_release_timeout)
+                    self.wait_for_snapmirror_source_out_of_sync(
+                        src_vserver, dest_vserver, src_volume_name,
+                        dest_volume_name, relationship_info_only, src_client,
+                        timeout=release_timeout)
+        else:
+            # Async path: original sequence.
+            # 1. Abort any ongoing transfers
+            try:
+                dest_client.abort_snapmirror_vol(src_vserver,
+                                                 src_volume_name,
+                                                 dest_vserver,
+                                                 dest_volume_name,
+                                                 clear_checkpoint=False)
+            except netapp_api.NaApiError:
+                # Snapmirror is already deleted
+                pass
+
+            # 2. Quiesce the snapmirror relationship
+            try:
+                dest_client.quiesce_snapmirror_vol(src_vserver,
+                                                   src_volume_name,
+                                                   dest_vserver,
+                                                   dest_volume_name)
+            except netapp_api.NaApiError:
+                # Snapmirror is already deleted
+                pass
+
+            # 3. Delete SnapMirror Relationship and cleanup dest snapshots
+            try:
+                dest_client.delete_snapmirror_vol(src_vserver,
+                                                  src_volume_name,
+                                                  dest_vserver,
+                                                  dest_volume_name)
+            except netapp_api.NaApiError as e:
+                with excutils.save_and_reraise_exception() as exc_context:
+                    if (e.code == netapp_api.EOBJECTNOTFOUND or
+                            e.code == netapp_api.ESOURCE_IS_DIFFERENT or
+                            "(entry doesn't exist)" in e.message):
+                        LOG.info('No snapmirror relationship to delete')
+                        exc_context.reraise = False
+            else:
+                dest_config = get_backend_configuration(dest_backend)
+                self.wait_for_snapmirror_delete(
+                    dest_client, src_vserver, src_volume_name,
+                    dest_vserver, dest_volume_name,
+                    timeout=dest_config.netapp_snapmirror_release_timeout)
+
+            if release:
+                try:
+                    src_client = get_client_for_backend(
+                        src_backend, vserver_name=src_vserver)
+                except Exception:
+                    LOG.warning('Skipping SnapMirror release for source '
+                                'volume %(volume)s: failed to get a client '
+                                'for backend %(backend)s.',
+                                {'volume': src_volume_name,
+                                 'backend': src_backend}, exc_info=True)
+                    src_client = None
+
+                # 4. Cleanup SnapMirror relationship on source
+                if src_client:
+                    src_config = get_backend_configuration(src_backend)
+                    release_timeout = (
+                        src_config.netapp_snapmirror_release_timeout)
+                    self.wait_for_snapmirror_release_vol(
+                        src_vserver, dest_vserver, src_volume_name,
+                        dest_volume_name, relationship_info_only, src_client,
+                        timeout=release_timeout)
 
     def update_snapmirror(self, source_share_obj, dest_share_obj):
         """Schedule a snapmirror update to happen on the backend."""
@@ -1448,6 +1518,77 @@ class DataMotionSession(object):
                     "because a snapmirror initialize operation is still in "
                     "progress. Retries exhausted. Not retrying.") % msg_args
             raise exception.NetAppException(message=msg)
+
+    def wait_for_snapmirror_source_out_of_sync(
+            self, src_vserver, dest_vserver, src_volume_name,
+            dest_volume_name, relationship_info_only, src_client,
+            timeout=300):
+        """Wait for the source entry to reach OutOfSync then release it.
+
+        After deleting the dest SnapMirror relationship, the source endpoint
+        still holds a relationship record and base snapshots. The source entry
+        transitions from InSync to OutOfSync once ONTAP's background health
+        monitor detects the dest is gone (~2 min). Plain release_snapmirror_vol
+        succeeds once the entry is OutOfSync; releasing before that triggers
+        a 'Group Update failed' (13001) error from the sync engine.
+        """
+        # Start polling every 10 s and back off exponentially (×1.5 per
+        # retry) up to ~60 s between polls.  The OutOfSync transition takes
+        # ~2 min, so there is no benefit to hammering ONTAP every 10 s for
+        # the full wait; backing off reduces load while still catching the
+        # transition promptly once it occurs.
+        interval = 10
+        backoff_rate = 1.5
+        retries = int(timeout / interval or 1)
+        out_of_sync_statuses = ('out-of-sync', 'outofsync', 'broken-off',
+                                'idle')
+
+        @utils.retry(exception.NetAppException, interval=interval,
+                     retries=retries, backoff_rate=backoff_rate)
+        def release_when_out_of_sync():
+            dests = src_client.get_snapmirror_destinations(
+                source_vserver=src_vserver, dest_vserver=dest_vserver,
+                source_volume=src_volume_name, dest_volume=dest_volume_name)
+            if not dests:
+                LOG.debug('Source snapmirror destination entry already gone '
+                          'for volume %s.', src_volume_name)
+                return
+            status = dests[0].get('relationship-status', '')
+            if status.lower() not in out_of_sync_statuses:
+                msg = (_('Source snapmirror entry for volume %(vol)s is '
+                         '%(status)s, waiting for OutOfSync before '
+                         'release.') % {'vol': dest_volume_name,
+                                        'status': status})
+                raise exception.NetAppException(message=msg)
+            # Entry is OutOfSync: release it now.
+            try:
+                src_client.release_snapmirror_vol(
+                    src_vserver, src_volume_name, dest_vserver,
+                    dest_volume_name,
+                    relationship_info_only=relationship_info_only)
+            except netapp_api.NaApiError as e:
+                if (e.code == netapp_api.EOBJECTNOTFOUND or
+                        e.code == netapp_api.ESOURCE_IS_DIFFERENT or
+                        "(entry doesn't exist)" in e.message):
+                    LOG.debug('Snapmirror source entry already gone for '
+                              'volume %s.', src_volume_name)
+                else:
+                    raise
+            # Poll until the entry is gone after release.
+            dests = src_client.get_snapmirror_destinations(
+                source_vserver=src_vserver, dest_vserver=dest_vserver,
+                source_volume=src_volume_name, dest_volume=dest_volume_name)
+            if dests:
+                msg = (_('Snapmirror source entry for volume %s not yet '
+                         'released. Waiting.') % dest_volume_name)
+                raise exception.NetAppException(message=msg)
+
+        try:
+            release_when_out_of_sync()
+        except exception.NetAppException:
+            LOG.warning('Unable to release snapmirror source entry for '
+                        'volume %s within timeout. Base snapshots may '
+                        'remain on the source volume.', dest_volume_name)
 
     def wait_for_snapmirror_release_vol(self, src_vserver, dest_vserver,
                                         src_volume_name, dest_volume_name,
