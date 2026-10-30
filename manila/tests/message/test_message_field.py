@@ -43,6 +43,10 @@ class MessageFieldTest(test.TestCase):
                'content': 'No storage could be allocated for this share '
                           'request. Trying again with a different size or '
                           'share type may succeed.'},
+              {'id': '992',
+               'content': 'Share driver failed to create the share server '
+                          'replica. Please contact your administrator to '
+                          'check the storage backend logs for details.'},
               {'id': 'invalid', 'content': None})
     @ddt.unpack
     def test_translate_detail(self, id, content):
@@ -62,7 +66,10 @@ class MessageFieldTest(test.TestCase):
                   reason='fake reason'),
                'detail': '', 'expected': '002'},
               {'exception': None, 'detail': message_field.Detail.NO_VALID_HOST,
-               'expected': '002'})
+               'expected': '002'},
+              {'exception': exception.ShareServerReplicaCreationFailed(
+                  share_server_replica_id='rep1', reason='backend error'),
+               'detail': '', 'expected': '992'})
     @ddt.unpack
     def test_translate_detail_id(self, exception, detail, expected):
         result = message_field.translate_detail_id(exception, detail)

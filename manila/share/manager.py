@@ -3583,12 +3583,17 @@ class ShareManager(manager.SchedulerDependentManager):
             network_info_list = self._get_share_server_network_info_list(
                 context, new_share_server_replica)
 
-            model_update = self.driver.create_share_server_replica(
-                context,
-                new_share_server_replica,
-                share_server_replica_list,
-                share_network_details=network_info_list,
-            ) or {}
+            try:
+                model_update = self.driver.create_share_server_replica(
+                    context,
+                    new_share_server_replica,
+                    share_server_replica_list,
+                    share_network_details=network_info_list,
+                ) or {}
+            except Exception as e:
+                raise exception.ShareServerReplicaCreationFailed(
+                    share_server_replica_id=share_server_replica_id,
+                    reason=e) from e
 
             backend_details = model_update.pop('backend_details', None)
             if backend_details:

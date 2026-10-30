@@ -12328,16 +12328,19 @@ class ShareManagerTestCase(test.TestCase):
             mock.Mock(return_value=network_info_list))
         driver_create = self.mock_object(
             self.share_manager.driver, 'create_share_server_replica',
-            mock.Mock(side_effect=exception.ManilaException()))
+            mock.Mock(side_effect=exception.NetAppException(
+                "SMas NAS requires ONTAP 9.19.1 or later.")))
         deallocate_network = self.mock_object(
             self.share_manager.driver, 'deallocate_network')
         share_server_update = self.mock_object(
             self.share_manager.db, 'share_server_update')
 
-        self.assertRaises(
-            exception.ManilaException,
+        exc = self.assertRaises(
+            exception.ShareServerReplicaCreationFailed,
             self.share_manager.create_share_server_replica,
             self.context, replica['id'])
+        self.assertIn('SMas NAS requires ONTAP 9.19.1 or later.',
+                      str(exc))
 
         allocate_network.assert_called_once_with(
             mock.ANY,
