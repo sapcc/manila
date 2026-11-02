@@ -4511,8 +4511,69 @@ class NetAppRestClient(object):
 
     @na_utils.trace
     def configure_ldap(self, security_service, timeout=30, vserver_name=None):
-        """Configures LDAP on Vserver."""
-        self._create_ldap_client(security_service, vserver_name=vserver_name)
+        """Configures LDAP on Vserver.
+
+        Microsoft's October 2026 AD hardening (CONTAP-821088) makes domain
+        controllers reject unsigned, plaintext LDAP binds, which breaks NFS
+        name resolution. Try a secure client first (LDAPS + session signing)
+        and only fall back to plaintext if the secure create is rejected.
+        """
+        try:
+            self._create_ldap_client(security_service,
+                                     vserver_name=vserver_name, secure=True)
+        except netapp_api.api.NaApiError as e:
+            if not self._is_ldap_secure_rejection(e):
+                raise
+            LOG.warning("Secure LDAP client creation failed (%s); retrying "
+                        "without LDAPS/signing.", e.message)
+            self._delete_ldap_client(vserver_name=vserver_name)
+            self._create_ldap_client(security_service,
+                                     vserver_name=vserver_name, secure=False)
+
+    @staticmethod
+    def _build_ad_bind_dn(user, ad_domain):
+        """Build the AD bind DN, accepting either 'user' or 'user@domain'.
+
+        ONTAP wants a full 'user@domain' bind DN for AD LDAP. The security
+        service 'user' field may already carry the UPN suffix; appending the
+        domain again yields an invalid 'user@domain@domain'. Only append when
+        the value has no '@'.
+        """
+        if not user or '@' in user:
+            return user
+        return '%s@%s' % (user, ad_domain)
+
+    @staticmethod
+    def _is_ldap_secure_rejection(api_error):
+        """True if the error looks like the DC/SVM rejecting secure LDAP.
+
+        Decides whether to fall back to a plaintext LDAP client. Kept
+        deliberately narrow: only transport-security signatures match, so
+        unrelated failures (auth, bad DN, and crucially DNS/DC-unreachable
+        validation errors such as RESULT_ERROR_DNS_CANT_REACH_SERVER) still
+        re-raise instead of pointlessly retrying plaintext.
+
+        NOTE: the signature list is a heuristic. It has not been matched
+        against a live LDAPS/signing rejection (a reachable DC that refuses
+        the secure bind); if such a sample is captured later, widen this list
+        precisely rather than broadening it speculatively.
+        """
+        msg = (getattr(api_error, 'message', '') or '').lower()
+        signatures = ('ldaps', 'start_tls', 'start tls', 'session security',
+                      'signing', 'secure', 'tls', 'certificate')
+        return any(s in msg for s in signatures)
+
+    @na_utils.trace
+    def _delete_ldap_client(self, vserver_name=None):
+        """Delete the LDAP client config, tolerating 'not found'."""
+        svm_uuid = self._get_unique_svm_by_name(vserver_name)
+        try:
+            self.send_request(f'/name-services/ldap/{svm_uuid}', 'delete')
+        except netapp_api.api.NaApiError as e:
+            if e.code != netapp_api.EREST_ENTRY_NOT_FOUND:
+                LOG.warning("Could not delete LDAP client on %(svm)s: "
+                            "%(err)s", {'svm': vserver_name,
+                                        'err': e.message})
 
     @na_utils.trace
     def configure_active_directory(self, security_service,
@@ -4624,8 +4685,15 @@ class NetAppRestClient(object):
 
     @na_utils.trace
     def setup_security_services(self, security_services, vserver_client,
-                                vserver_name, aes_encryption, timeout=30):
-        """Setup SVM security services."""
+                                vserver_name, aes_encryption, timeout=30,
+                                ldap_client=None):
+        """Setup SVM security services.
+
+        ldap_client, when given, handles the LDAP security service instead of
+        vserver_client. The caller passes a forced-REST client there so secure
+        LDAP works on netapp_use_legacy_client (ZAPI) backends; AD and Kerberos
+        stay on the configured vserver_client.
+        """
         body = {
             'nsswitch.namemap': ['ldap', 'files'],
             'nsswitch.group': ['ldap', 'files'],
@@ -4639,9 +4707,9 @@ class NetAppRestClient(object):
 
         for security_service in security_services:
             if security_service['type'].lower() == 'ldap':
-                vserver_client.configure_ldap(security_service,
-                                              timeout=timeout,
-                                              vserver_name=vserver_name)
+                (ldap_client or vserver_client).configure_ldap(
+                    security_service, timeout=timeout,
+                    vserver_name=vserver_name)
 
             elif security_service['type'].lower() == 'active_directory':
                 vserver_client.configure_active_directory(security_service,
@@ -4660,35 +4728,50 @@ class NetAppRestClient(object):
                 raise exception.NetAppException(msg % security_service['type'])
 
     @na_utils.trace
-    def _create_ldap_client(self, security_service, vserver_name=None):
+    def _build_ldap_client_body(self, security_service, secure=True):
+        """Build the /name-services/ldap request body.
+
+        Shared by create (POST) and modify (PATCH). When secure is True the
+        client uses LDAPS on 636 with session signing and channel binding
+        (CONTAP-821088); otherwise plaintext 389 with no signing.
+        """
         ad_domain = security_service.get('domain')
         ldap_servers = security_service.get('server')
-        bind_dn = security_service.get('user')
         ldap_schema = 'RFC-2307'
+        bind_dn = security_service.get('user')
 
         if ad_domain:
             # RFC2307bis, for MS Active Directory LDAP server
             ldap_schema = 'MS-AD-BIS'
-            bind_dn = (security_service.get('user') + '@' + ad_domain)
-        else:
-            if not ldap_servers:
-                msg = _("LDAP client cannot be configured without 'server' "
-                        "or 'domain' parameters. Use 'server' for Linux/Unix "
-                        "LDAP servers or 'domain' for Active Directory LDAP "
-                        "server.")
-                LOG.exception(msg)
-                raise exception.NetAppException(msg)
-
-        if security_service.get('dns_ip'):
-            self.configure_dns(security_service)
+            bind_dn = self._build_ad_bind_dn(security_service.get('user'),
+                                             ad_domain)
+        elif not ldap_servers:
+            msg = _("LDAP client cannot be configured without 'server' "
+                    "or 'domain' parameters. Use 'server' for Linux/Unix "
+                    "LDAP servers or 'domain' for Active Directory LDAP "
+                    "server.")
+            LOG.exception(msg)
+            raise exception.NetAppException(msg)
 
         body = {
-            'port': '389',
             'schema': ldap_schema,
             'bind_dn': bind_dn,
             'bind_password': security_service.get('password'),
-            'svm.name': vserver_name
         }
+
+        if secure:
+            body.update({
+                'port': '636',
+                'ldaps_enabled': True,
+                'session_security': 'sign',
+                'try_channel_binding': True,
+            })
+        else:
+            body.update({
+                'port': '389',
+                'ldaps_enabled': False,
+                'session_security': 'none',
+            })
 
         if security_service.get('ou'):
             body['base_dn'] = security_service['ou']
@@ -4696,62 +4779,52 @@ class NetAppRestClient(object):
             # Active Directory LDAP server
             body['ad_domain'] = ad_domain
             if ldap_servers:
-                body['preferred_ad_servers'] = []
-                for server in ldap_servers.split(','):
-                    body['preferred_ad_servers'].append(server.strip())
+                body['preferred_ad_servers'] = [
+                    server.strip() for server in ldap_servers.split(',')]
         else:
-            body['servers'] = []
-            for server in ldap_servers.split(','):
-                body['servers'].append(server.strip())
+            body['servers'] = [
+                server.strip() for server in ldap_servers.split(',')]
+
+        return body
+
+    @na_utils.trace
+    def _create_ldap_client(self, security_service, vserver_name=None,
+                            secure=True):
+        # Build (and validate) the body before any side effect, so a bad
+        # security service fails without a half-applied DNS change.
+        body = self._build_ldap_client_body(security_service, secure=secure)
+
+        if security_service.get('dns_ip'):
+            self.configure_dns(security_service)
+
+        body['svm.name'] = vserver_name
 
         self.send_request('/name-services/ldap', 'post',
                           body=body)
 
     @na_utils.trace
     def modify_ldap(self, new_security_service, current_security_service):
-        """Modifies LDAP client on a Vserver."""
-        ad_domain = new_security_service.get('domain')
-        ldap_servers = new_security_service.get('server')
-        bind_dn = new_security_service.get('user')
-        ldap_schema = 'RFC-2307'
+        """Modifies LDAP client on a Vserver.
+
+        Mirrors configure_ldap's secure-first behaviour: try LDAPS + signing,
+        fall back to plaintext only if the secure patch is rejected.
+        """
         svm_uuid = self._get_unique_svm_by_name(self.vserver)
 
-        if ad_domain:
-            # RFC2307bis, for MS Active Directory LDAP server
-            ldap_schema = 'MS-AD-BIS'
-            bind_dn = (new_security_service.get('user') + '@' + ad_domain)
-        else:
-            if not ldap_servers:
-                msg = _("LDAP client cannot be configured without 'server' "
-                        "or 'domain' parameters. Use 'server' for Linux/Unix "
-                        "LDAP servers or 'domain' for Active Directory LDAP "
-                        "server.")
-                LOG.exception(msg)
-                raise exception.NetAppException(msg)
-
-        body = {
-            'port': '389',
-            'schema': ldap_schema,
-            'bind_dn': bind_dn,
-            'bind_password': new_security_service.get('password')
-        }
-
-        if new_security_service.get('ou'):
-            body['base_dn'] = new_security_service['ou']
-        if ad_domain:
-            # Active Directory LDAP server
-            body['ad_domain'] = ad_domain
-            if ldap_servers:
-                body['preferred_ad_servers'] = []
-                for server in ldap_servers.split(','):
-                    body['preferred_ad_servers'].append(server.strip())
-        else:
-            body['servers'] = []
-            for server in ldap_servers.split(','):
-                body['servers'].append(server.strip())
-
-        self.send_request(f'/name-services/ldap/{svm_uuid}', 'patch',
-                          body=body)
+        try:
+            body = self._build_ldap_client_body(new_security_service,
+                                                secure=True)
+            self.send_request(f'/name-services/ldap/{svm_uuid}', 'patch',
+                              body=body)
+        except netapp_api.api.NaApiError as e:
+            if not self._is_ldap_secure_rejection(e):
+                raise
+            LOG.warning("Secure LDAP modify failed (%s); retrying without "
+                        "LDAPS/signing.", e.message)
+            body = self._build_ldap_client_body(new_security_service,
+                                                secure=False)
+            self.send_request(f'/name-services/ldap/{svm_uuid}', 'patch',
+                              body=body)
 
     @na_utils.trace
     def update_kerberos_realm(self, security_service):

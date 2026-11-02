@@ -1757,7 +1757,15 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
 
     @na_utils.trace
     def setup_security_services(self, security_services, vserver_client,
-                                vserver_name, aes_encryption, timeout=30):
+                                vserver_name, aes_encryption, timeout=30,
+                                ldap_client=None):
+        """Setup SVM security services.
+
+        ldap_client, when given, handles the LDAP security service instead of
+        vserver_client. The caller passes a forced-REST client there so secure
+        LDAP (LDAPS + signing, CONTAP-821088) works on this ZAPI backend; AD
+        and Kerberos stay on vserver_client.
+        """
         api_args = {
             'name-mapping-switch': [
                 {'nmswitch': 'ldap'},
@@ -1778,8 +1786,13 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
 
         for security_service in security_services:
             if security_service['type'].lower() == 'ldap':
-                vserver_client.configure_ldap(security_service,
-                                              timeout=timeout)
+                if ldap_client:
+                    ldap_client.configure_ldap(security_service,
+                                               timeout=timeout,
+                                               vserver_name=vserver_name)
+                else:
+                    vserver_client.configure_ldap(security_service,
+                                                  timeout=timeout)
 
             elif security_service['type'].lower() == 'active_directory':
                 vserver_client.configure_active_directory(security_service,
