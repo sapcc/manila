@@ -1804,7 +1804,7 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             versions, nfs_config=nfs_config)
         self.library._client.setup_security_services.assert_called_once_with(
             fake.NETWORK_INFO['security_services'], vserver_client,
-            vserver_name, False)
+            vserver_name, False, ldap_client=None)
         self.library._get_flexgroup_aggr_set.assert_called_once_with()
         if web_services_error:
             get_rest_client.assert_called_once_with()
@@ -5502,7 +5502,8 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
         if curr_sec_service is None:
             mock_setup_sec_serv.assert_called_once_with(
-                [new_sec_service], fake_vserver_client, fake.VSERVER1, False)
+                [new_sec_service], fake_vserver_client, fake.VSERVER1, False,
+                ldap_client=None)
         else:
             mock_diff_keys.assert_called_once_with(curr_sec_service,
                                                    new_sec_service)
@@ -5514,6 +5515,92 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
                     mock_modify_ad.assert_called_once_with(
                         fake.VSERVER1, different_keys, new_sec_service,
                         curr_sec_service)
+
+    def test_update_share_server_security_service_ldap_uses_rest(self):
+        # Modifying an LDAP security service must route modify_ldap through a
+        # forced-REST client, not the (possibly ZAPI) vserver_client.
+        curr_sec_service = copy.deepcopy(fake.LDAP_LINUX_SECURITY_SERVICE)
+        new_sec_service = copy.deepcopy(fake.LDAP_AD_SECURITY_SERVICE)
+        fake_context = mock.Mock()
+        fake_net_info = copy.deepcopy(fake.NETWORK_INFO_LIST)
+        fake_vserver_client = mock.Mock()
+        fake_ldap_client = mock.Mock()
+
+        self.mock_object(
+            self.library, '_get_vserver',
+            mock.Mock(return_value=[fake.VSERVER1, fake_vserver_client]))
+        self.mock_object(
+            self.library, 'check_update_share_server_security_service',
+            mock.Mock(return_value=True))
+        self.mock_object(
+            self.library, '_get_different_keys_for_equal_ss_type',
+            mock.Mock(return_value=['user']))
+        mock_get_ldap_client = self.mock_object(
+            self.library, '_get_ldap_rest_client',
+            mock.Mock(return_value=fake_ldap_client))
+
+        self.library.update_share_server_security_service(
+            fake_context, fake.SHARE_SERVER, fake_net_info,
+            new_sec_service, current_security_service=curr_sec_service)
+
+        mock_get_ldap_client.assert_called_once_with(fake.VSERVER1)
+        fake_ldap_client.modify_ldap.assert_called_once_with(
+            new_sec_service, curr_sec_service)
+        fake_vserver_client.modify_ldap.assert_not_called()
+
+    def test_update_share_server_security_service_add_ldap_uses_rest(self):
+        # Adding an LDAP security service builds a forced-REST ldap_client and
+        # passes it to setup_security_services.
+        new_sec_service = copy.deepcopy(fake.LDAP_AD_SECURITY_SERVICE)
+        fake_context = mock.Mock()
+        fake_net_info = copy.deepcopy(fake.NETWORK_INFO_LIST)
+        fake_vserver_client = mock.Mock()
+        fake_ldap_client = mock.Mock()
+
+        self.mock_object(
+            self.library, '_get_vserver',
+            mock.Mock(return_value=[fake.VSERVER1, fake_vserver_client]))
+        self.mock_object(
+            self.library, 'check_update_share_server_security_service',
+            mock.Mock(return_value=True))
+        mock_setup = self.mock_object(
+            self.library._client, 'setup_security_services')
+        mock_get_ldap_client = self.mock_object(
+            self.library, '_get_ldap_rest_client',
+            mock.Mock(return_value=fake_ldap_client))
+
+        self.library.update_share_server_security_service(
+            fake_context, fake.SHARE_SERVER, fake_net_info,
+            new_sec_service, current_security_service=None)
+
+        mock_get_ldap_client.assert_called_once_with(fake.VSERVER1)
+        mock_setup.assert_called_once_with(
+            [new_sec_service], fake_vserver_client, fake.VSERVER1, False,
+            ldap_client=fake_ldap_client)
+
+    def test__get_ldap_rest_client_forces_rest(self):
+        fake_client = mock.Mock()
+        mock_get_client = self.mock_object(
+            self.library, '_get_client',
+            mock.Mock(return_value=fake_client))
+
+        result = self.library._get_ldap_rest_client(fake.VSERVER1)
+
+        self.assertEqual(fake_client, result)
+        mock_get_client.assert_called_once_with(
+            self.library.configuration, vserver=fake.VSERVER1,
+            force_rest_client=True)
+
+    @ddt.data(
+        ([fake.LDAP_AD_SECURITY_SERVICE, fake.CIFS_SECURITY_SERVICE], True),
+        ([fake.CIFS_SECURITY_SERVICE, fake.KERBEROS_SECURITY_SERVICE], False),
+        (['fake_ldap', 'fake_ad'], False),
+    )
+    @ddt.unpack
+    def test__security_services_contain_ldap(self, services, expected):
+        self.assertEqual(
+            expected,
+            self.library._security_services_contain_ldap(services))
 
     def test_update_share_server_security_service_check_error(self):
         curr_sec_service = copy.deepcopy(fake.CIFS_SECURITY_SERVICE)

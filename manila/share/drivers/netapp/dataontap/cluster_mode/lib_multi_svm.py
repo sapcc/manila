@@ -482,11 +482,25 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                 nfs_config=nfs_config)
 
         if security_services:
+            # Secure LDAP is REST-only; force a REST client for the LDAP
+            # service so it works on netapp_use_legacy_client backends. AD and
+            # Kerberos stay on the configured vserver_client.
+            ldap_client = None
+            if self._security_services_contain_ldap(security_services):
+                ldap_client = self._get_ldap_rest_client(vserver_name)
             self._client.setup_security_services(
                 security_services,
                 vserver_client,
                 vserver_name,
-                self.configuration.netapp_cifs_aes_encryption)
+                self.configuration.netapp_cifs_aes_encryption,
+                ldap_client=ldap_client)
+
+    @staticmethod
+    def _security_services_contain_ldap(security_services):
+        """True if any security service in the list is of type 'ldap'."""
+        return any(
+            isinstance(ss, dict) and ss.get('type', '').lower() == 'ldap'
+            for ss in security_services)
 
     def _get_valid_ipspace_name(self, network_id):
         """Get IPspace name according to network id."""
@@ -1296,6 +1310,18 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             share_server['host'], level='backend_name')
         return data_motion.get_client_for_backend(
             backend, vserver_name=vserver_name, force_rest_client=True)
+
+    def _get_ldap_rest_client(self, vserver_name):
+        """Forced-REST client for this backend, scoped to a vserver.
+
+        Secure LDAP (LDAPS + session signing, CONTAP-821088) is only
+        implemented in the REST client, so force REST even on
+        netapp_use_legacy_client backends. Built from this driver's own
+        configuration, so it works both during initial vserver setup (no
+        share server yet) and on a security-service update.
+        """
+        return self._get_client(self.configuration, vserver=vserver_name,
+                                force_rest_client=True)
 
     def _verify_smas_protected(self, share, share_server):
         """Read-back ONTAP smas_protection; raise unless protected."""
@@ -3012,11 +3038,15 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             raise exception.NetAppException(msg)
 
         if current_security_service is None:
+            ldap_client = None
+            if new_security_service['type'].lower() == 'ldap':
+                ldap_client = self._get_ldap_rest_client(vserver_name)
             self._client.setup_security_services(
                 [new_security_service],
                 vserver_client,
                 vserver_name,
-                self.configuration.netapp_cifs_aes_encryption)
+                self.configuration.netapp_cifs_aes_encryption,
+                ldap_client=ldap_client)
             LOG.info("A new security service configuration was added to share "
                      "server '%(share_server_id)s'",
                      {'share_server_id': share_server['id']})
@@ -3066,8 +3096,11 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                 vserver_name, different_keys, new_security_service,
                 current_security_service)
         else:
-            vserver_client.modify_ldap(new_security_service,
-                                       current_security_service)
+            # Secure LDAP (LDAPS + signing) is REST-only; force a REST client
+            # so this works on netapp_use_legacy_client (ZAPI) backends too.
+            ldap_client = self._get_ldap_rest_client(vserver_name)
+            ldap_client.modify_ldap(new_security_service,
+                                    current_security_service)
 
         LOG.info("Security service configuration was updated for share server "
                  "'%(share_server_id)s'",

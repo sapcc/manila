@@ -4637,7 +4637,10 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
 
         ad_domain = security_service.get('domain')
         body = {
-            'port': '389',
+            'port': '636',
+            'ldaps_enabled': True,
+            'session_security': 'sign',
+            'try_channel_binding': True,
             'schema': 'MS-AD-BIS',
             'bind_dn': (security_service.get('user') + '@' + ad_domain),
             'bind_password': security_service.get('password'),
@@ -4651,6 +4654,56 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
         mock_dns.assert_called_once_with(security_service)
         mock_sr.assert_called_once_with('/name-services/ldap', 'post',
                                         body=body)
+
+    def test__create_ldap_client_insecure(self):
+        mock_dns = self.mock_object(self.client, 'configure_dns')
+        mock_sr = self.mock_object(self.client, 'send_request')
+        security_service = {
+            'domain': 'fake_domain',
+            'user': 'fake_user',
+            'ou': 'fake_ou',
+            'dns_ip': 'fake_ip',
+            'password': 'fake_password'
+        }
+
+        ad_domain = security_service.get('domain')
+        body = {
+            'port': '389',
+            'ldaps_enabled': False,
+            'session_security': 'none',
+            'schema': 'MS-AD-BIS',
+            'bind_dn': (security_service.get('user') + '@' + ad_domain),
+            'bind_password': security_service.get('password'),
+            'svm.name': fake.VSERVER_NAME,
+            'base_dn': security_service.get('ou'),
+            'ad_domain': security_service.get('domain'),
+        }
+
+        self.client._create_ldap_client(security_service,
+                                        vserver_name=fake.VSERVER_NAME,
+                                        secure=False)
+        mock_dns.assert_called_once_with(security_service)
+        mock_sr.assert_called_once_with('/name-services/ldap', 'post',
+                                        body=body)
+
+    def test__create_ldap_client_ad_user_already_has_domain(self):
+        # The 'user' field may already carry the UPN suffix; the bind_dn must
+        # not end up as 'user@domain@domain'.
+        mock_dns = self.mock_object(self.client, 'configure_dns')
+        mock_sr = self.mock_object(self.client, 'send_request')
+        security_service = {
+            'domain': 'fake_domain',
+            'user': 'fake_user@fake_domain',
+            'ou': 'fake_ou',
+            'dns_ip': 'fake_ip',
+            'password': 'fake_password'
+        }
+
+        self.client._create_ldap_client(security_service,
+                                        vserver_name=fake.VSERVER_NAME)
+        mock_dns.assert_called_once_with(security_service)
+        __, __, kwargs = mock_sr.mock_calls[0]
+        self.assertEqual('fake_user@fake_domain', kwargs['body']['bind_dn'])
 
     def test__create_ldap_client_ad_with_preferred_servers(self):
         mock_dns = self.mock_object(self.client, 'configure_dns')
@@ -4666,7 +4719,10 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
 
         ad_domain = security_service.get('domain')
         body = {
-            'port': '389',
+            'port': '636',
+            'ldaps_enabled': True,
+            'session_security': 'sign',
+            'try_channel_binding': True,
             'schema': 'MS-AD-BIS',
             'bind_dn': (security_service.get('user') + '@' + ad_domain),
             'bind_password': security_service.get('password'),
@@ -4693,7 +4749,10 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
         }
 
         body = {
-            'port': '389',
+            'port': '636',
+            'ldaps_enabled': True,
+            'session_security': 'sign',
+            'try_channel_binding': True,
             'schema': 'RFC-2307',
             'bind_dn': security_service.get('user'),
             'bind_password': security_service.get('password'),
@@ -4875,7 +4934,10 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
 
         ad_domain = security_service.get('domain')
         body = {
-            'port': '389',
+            'port': '636',
+            'ldaps_enabled': True,
+            'session_security': 'sign',
+            'try_channel_binding': True,
             'schema': 'MS-AD-BIS',
             'bind_dn': (security_service.get('user') + '@' + ad_domain),
             'bind_password': security_service.get('password'),
@@ -4905,7 +4967,10 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
 
         ad_domain = security_service.get('domain')
         body = {
-            'port': '389',
+            'port': '636',
+            'ldaps_enabled': True,
+            'session_security': 'sign',
+            'try_channel_binding': True,
             'schema': 'MS-AD-BIS',
             'bind_dn': (security_service.get('user') + '@' + ad_domain),
             'bind_password': security_service.get('password'),
@@ -4933,7 +4998,10 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
         }
 
         body = {
-            'port': '389',
+            'port': '636',
+            'ldaps_enabled': True,
+            'session_security': 'sign',
+            'try_channel_binding': True,
             'schema': 'RFC-2307',
             'bind_dn': security_service.get('user'),
             'bind_password': security_service.get('password'),
@@ -7366,7 +7434,46 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
         self.client.configure_ldap(fake.LDAP_AD_SECURITY_SERVICE, 30,
                                    fake.VSERVER_NAME)
         mock_ldap.assert_called_once_with(fake.LDAP_AD_SECURITY_SERVICE,
-                                          vserver_name=fake.VSERVER_NAME)
+                                          vserver_name=fake.VSERVER_NAME,
+                                          secure=True)
+
+    def test_configure_ldap_falls_back_to_insecure(self):
+        # Secure create is rejected -> delete half-made client, retry insecure.
+        mock_create = self.mock_object(
+            self.client, '_create_ldap_client',
+            mock.Mock(side_effect=[
+                netapp_api.api.NaApiError(
+                    code=netapp_api.api.EAPIERROR,
+                    message='LDAPS bind failed: session security'),
+                None]))
+        mock_delete = self.mock_object(self.client, '_delete_ldap_client')
+
+        self.client.configure_ldap(fake.LDAP_AD_SECURITY_SERVICE, 30,
+                                   fake.VSERVER_NAME)
+
+        mock_create.assert_has_calls([
+            mock.call(fake.LDAP_AD_SECURITY_SERVICE,
+                      vserver_name=fake.VSERVER_NAME, secure=True),
+            mock.call(fake.LDAP_AD_SECURITY_SERVICE,
+                      vserver_name=fake.VSERVER_NAME, secure=False)])
+        mock_delete.assert_called_once_with(vserver_name=fake.VSERVER_NAME)
+
+    def test_configure_ldap_unrelated_error_reraises(self):
+        # A non-security failure must NOT trigger the insecure fallback.
+        mock_create = self.mock_object(
+            self.client, '_create_ldap_client',
+            mock.Mock(side_effect=netapp_api.api.NaApiError(
+                code=netapp_api.api.EAPIERROR, message='bad base_dn')))
+        mock_delete = self.mock_object(self.client, '_delete_ldap_client')
+
+        self.assertRaises(netapp_api.api.NaApiError,
+                          self.client.configure_ldap,
+                          fake.LDAP_AD_SECURITY_SERVICE, 30,
+                          fake.VSERVER_NAME)
+        mock_create.assert_called_once_with(fake.LDAP_AD_SECURITY_SERVICE,
+                                            vserver_name=fake.VSERVER_NAME,
+                                            secure=True)
+        mock_delete.assert_not_called()
 
     def test_configure_active_directory_error(self):
         self.mock_object(self.client, 'configure_dns')
