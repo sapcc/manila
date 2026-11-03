@@ -4898,6 +4898,7 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
         mock_request = self.mock_object(self.client, 'send_request',
                                         mock.Mock(return_value=fake_response))
         self.mock_object(self.client, 'configure_ldap')
+        self.mock_object(self.client, 'configure_certificates')
         self.mock_object(self.client, 'configure_active_directory')
         self.mock_object(self.client, 'configure_cifs_options')
         self.mock_object(self.client, 'create_kerberos_realm')
@@ -7429,6 +7430,44 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
                           fake.KERBEROS_SECURITY_SERVICE,
                           fake.VSERVER_NAME)
 
+    def test_configure_certificates(self):
+        self.client.zapi_client = mock.Mock()
+        self.client.zapi_client._cert_pem_paths = ['/fake/ca.pem']
+        mock_cert = mock.Mock()
+        mock_cert.public_bytes.return_value = b'FAKE-PEM'
+        mock_sr = self.mock_object(self.client, 'send_request')
+
+        with mock.patch('os.path.exists', mock.Mock(return_value=True)), \
+                mock.patch('builtins.open',
+                           mock.mock_open(read_data='FAKE-PEM')), \
+                mock.patch('cryptography.x509.load_pem_x509_certificate',
+                           mock.Mock(return_value=mock_cert)):
+            self.client.configure_certificates(vserver_name=fake.VSERVER_NAME)
+
+        mock_sr.assert_called_once_with(
+            '/security/certificates', 'post',
+            body={'public_certificate': 'FAKE-PEM',
+                  'type': 'server_ca',
+                  'svm.name': fake.VSERVER_NAME})
+
+    def test_configure_certificates_duplicate_tolerated(self):
+        self.client.zapi_client = mock.Mock()
+        self.client.zapi_client._cert_pem_paths = ['/fake/ca.pem']
+        mock_cert = mock.Mock()
+        mock_cert.public_bytes.return_value = b'FAKE-PEM'
+        self.mock_object(
+            self.client, 'send_request',
+            mock.Mock(side_effect=netapp_api.api.NaApiError(
+                code=netapp_api.EREST_DUPLICATE_ENTRY, message='exists')))
+
+        with mock.patch('os.path.exists', mock.Mock(return_value=True)), \
+                mock.patch('builtins.open',
+                           mock.mock_open(read_data='FAKE-PEM')), \
+                mock.patch('cryptography.x509.load_pem_x509_certificate',
+                           mock.Mock(return_value=mock_cert)):
+            # Duplicate must not raise.
+            self.client.configure_certificates(vserver_name=fake.VSERVER_NAME)
+
     def test_configure_ldap(self):
         mock_ldap = self.mock_object(self.client, '_create_ldap_client')
         self.client.configure_ldap(fake.LDAP_AD_SECURITY_SERVICE, 30,
@@ -7438,13 +7477,12 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
                                           secure=True)
 
     def test_configure_ldap_falls_back_to_insecure(self):
-        # Secure create is rejected -> delete half-made client, retry insecure.
+        # Secure create fails (e.g. AD without an LDAPS/636 listener) -> delete
+        # the half-made client, recreate insecure.
         mock_create = self.mock_object(
             self.client, '_create_ldap_client',
             mock.Mock(side_effect=[
-                netapp_api.api.NaApiError(
-                    code=netapp_api.api.EAPIERROR,
-                    message='LDAPS bind failed: session security'),
+                netapp_api.api.NaApiError(message='Unable to start LDAPS'),
                 None]))
         mock_delete = self.mock_object(self.client, '_delete_ldap_client')
 
@@ -7458,22 +7496,19 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
                       vserver_name=fake.VSERVER_NAME, secure=False)])
         mock_delete.assert_called_once_with(vserver_name=fake.VSERVER_NAME)
 
-    def test_configure_ldap_unrelated_error_reraises(self):
-        # A non-security failure must NOT trigger the insecure fallback.
-        mock_create = self.mock_object(
+    def test_configure_ldap_insecure_also_fails_raises(self):
+        # A genuine misconfig fails both attempts; the second error surfaces.
+        self.mock_object(
             self.client, '_create_ldap_client',
-            mock.Mock(side_effect=netapp_api.api.NaApiError(
-                code=netapp_api.api.EAPIERROR, message='bad base_dn')))
-        mock_delete = self.mock_object(self.client, '_delete_ldap_client')
+            mock.Mock(side_effect=[
+                netapp_api.api.NaApiError(message='secure fail'),
+                netapp_api.api.NaApiError(message='plaintext fail too')]))
+        self.mock_object(self.client, '_delete_ldap_client')
 
         self.assertRaises(netapp_api.api.NaApiError,
                           self.client.configure_ldap,
                           fake.LDAP_AD_SECURITY_SERVICE, 30,
                           fake.VSERVER_NAME)
-        mock_create.assert_called_once_with(fake.LDAP_AD_SECURITY_SERVICE,
-                                            vserver_name=fake.VSERVER_NAME,
-                                            secure=True)
-        mock_delete.assert_not_called()
 
     def test_configure_active_directory_error(self):
         self.mock_object(self.client, 'configure_dns')

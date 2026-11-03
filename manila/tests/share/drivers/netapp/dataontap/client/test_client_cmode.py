@@ -2505,6 +2505,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         self.mock_object(self.client, 'send_request')
         self.mock_object(self.vserver_client, 'configure_ldap')
+        self.mock_object(self.vserver_client, 'configure_certificates')
 
         self.client.setup_security_services([fake.LDAP_LINUX_SECURITY_SERVICE],
                                             self.vserver_client,
@@ -2524,6 +2525,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
         }
         self.client.send_request.assert_has_calls([
             mock.call('vserver-modify', vserver_modify_args)])
+        self.vserver_client.configure_certificates.assert_called_once_with(
+            vserver_name=fake.VSERVER_NAME)
         self.vserver_client.configure_ldap.assert_has_calls([
             mock.call(fake.LDAP_LINUX_SECURITY_SERVICE, timeout=30)])
 
@@ -2531,6 +2534,7 @@ class NetAppClientCmodeTestCase(test.TestCase):
 
         self.mock_object(self.client, 'send_request')
         self.mock_object(self.vserver_client, 'configure_active_directory')
+        self.mock_object(self.vserver_client, 'configure_certificates')
 
         self.client.setup_security_services([fake.CIFS_SECURITY_SERVICE],
                                             self.vserver_client,
@@ -2550,6 +2554,8 @@ class NetAppClientCmodeTestCase(test.TestCase):
         }
         self.client.send_request.assert_has_calls([
             mock.call('vserver-modify', vserver_modify_args)])
+        self.vserver_client.configure_certificates.assert_called_once_with(
+            vserver_name=fake.VSERVER_NAME)
         self.vserver_client.configure_active_directory.assert_has_calls([
             mock.call(fake.CIFS_SECURITY_SERVICE, fake.VSERVER_NAME, False)])
 

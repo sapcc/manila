@@ -16,6 +16,7 @@ import copy
 from datetime import datetime
 from http import client as http_client
 import math
+import os
 import re
 import time
 
@@ -4511,19 +4512,16 @@ class NetAppRestClient(object):
 
     @na_utils.trace
     def configure_ldap(self, security_service, timeout=30, vserver_name=None):
-        """Configures LDAP on Vserver.
+        """Configure a secure (LDAPS + signing) LDAP client on the Vserver.
 
-        Microsoft's October 2026 AD hardening (CONTAP-821088) makes domain
-        controllers reject unsigned, plaintext LDAP binds, which breaks NFS
-        name resolution. Try a secure client first (LDAPS + session signing)
-        and only fall back to plaintext if the secure create is rejected.
+        Fall back to plaintext if the secure create fails (e.g. AD without an
+        LDAPS listener). A genuine misconfig fails the plaintext retry too and
+        surfaces to the caller.
         """
         try:
             self._create_ldap_client(security_service,
                                      vserver_name=vserver_name, secure=True)
         except netapp_api.api.NaApiError as e:
-            if not self._is_ldap_secure_rejection(e):
-                raise
             LOG.warning("Secure LDAP client creation failed (%s); retrying "
                         "without LDAPS/signing.", e.message)
             self._delete_ldap_client(vserver_name=vserver_name)
@@ -4532,36 +4530,10 @@ class NetAppRestClient(object):
 
     @staticmethod
     def _build_ad_bind_dn(user, ad_domain):
-        """Build the AD bind DN, accepting either 'user' or 'user@domain'.
-
-        ONTAP wants a full 'user@domain' bind DN for AD LDAP. The security
-        service 'user' field may already carry the UPN suffix; appending the
-        domain again yields an invalid 'user@domain@domain'. Only append when
-        the value has no '@'.
-        """
+        """Return user@ad_domain, not duplicating an already-present suffix."""
         if not user or '@' in user:
             return user
         return '%s@%s' % (user, ad_domain)
-
-    @staticmethod
-    def _is_ldap_secure_rejection(api_error):
-        """True if the error looks like the DC/SVM rejecting secure LDAP.
-
-        Decides whether to fall back to a plaintext LDAP client. Kept
-        deliberately narrow: only transport-security signatures match, so
-        unrelated failures (auth, bad DN, and crucially DNS/DC-unreachable
-        validation errors such as RESULT_ERROR_DNS_CANT_REACH_SERVER) still
-        re-raise instead of pointlessly retrying plaintext.
-
-        NOTE: the signature list is a heuristic. It has not been matched
-        against a live LDAPS/signing rejection (a reachable DC that refuses
-        the secure bind); if such a sample is captured later, widen this list
-        precisely rather than broadening it speculatively.
-        """
-        msg = (getattr(api_error, 'message', '') or '').lower()
-        signatures = ('ldaps', 'start_tls', 'start tls', 'session security',
-                      'signing', 'secure', 'tls', 'certificate')
-        return any(s in msg for s in signatures)
 
     @na_utils.trace
     def _delete_ldap_client(self, vserver_name=None):
@@ -4574,6 +4546,38 @@ class NetAppRestClient(object):
                 LOG.warning("Could not delete LDAP client on %(svm)s: "
                             "%(err)s", {'svm': vserver_name,
                                         'err': e.message})
+
+    @na_utils.trace
+    def configure_certificates(self, vserver_name=None):
+        """Install the configured server-CA certs on the SVM (REST)."""
+        from cryptography.hazmat.primitives.serialization import Encoding
+        from cryptography import x509
+
+        for cert_pem_path in self.zapi_client._cert_pem_paths:
+            if not os.path.exists(cert_pem_path):
+                raise exception.NetAppException(_("Certificate is missing."))
+            try:
+                with open(cert_pem_path, 'r', encoding='utf-8') as f:
+                    cert_x509 = x509.load_pem_x509_certificate(
+                        bytes(f.read(), encoding='utf-8'))
+            except UnicodeDecodeError as e:
+                if e.reason != 'invalid start byte':
+                    raise
+                with open(cert_pem_path, 'rb') as f:
+                    cert_x509 = x509.load_der_x509_certificate(f.read())
+
+            body = {
+                'public_certificate': cert_x509.public_bytes(
+                    Encoding.PEM).decode('utf-8'),
+                'type': 'server_ca',
+                'svm.name': vserver_name or self.vserver,
+            }
+            try:
+                self.send_request('/security/certificates', 'post', body=body)
+            except netapp_api.api.NaApiError as e:
+                if e.code != netapp_api.EREST_DUPLICATE_ENTRY:
+                    raise exception.NetAppException(
+                        _("Failed to install certificate. %s") % e.message)
 
     @na_utils.trace
     def configure_active_directory(self, security_service,
@@ -4689,10 +4693,7 @@ class NetAppRestClient(object):
                                 ldap_client=None):
         """Setup SVM security services.
 
-        ldap_client, when given, handles the LDAP security service instead of
-        vserver_client. The caller passes a forced-REST client there so secure
-        LDAP works on netapp_use_legacy_client (ZAPI) backends; AD and Kerberos
-        stay on the configured vserver_client.
+        ldap_client, when given, handles the LDAP service (see commit message).
         """
         body = {
             'nsswitch.namemap': ['ldap', 'files'],
@@ -4704,6 +4705,14 @@ class NetAppRestClient(object):
         svm_uuid = self._get_unique_svm_by_name(vserver_name)
 
         self.send_request(f'/svm/svms/{svm_uuid}', 'patch', body=body)
+
+        # AD (CIFS LDAPS channel) and LDAP (LDAPS client) both need the
+        # server-CA cert on the SVM; install it once up front, before either.
+        # Prefer the forced-REST ldap_client so cert install is REST-native.
+        if any(ss['type'].lower() in ('ldap', 'active_directory')
+               for ss in security_services):
+            (ldap_client or vserver_client).configure_certificates(
+                vserver_name=vserver_name)
 
         for security_service in security_services:
             if security_service['type'].lower() == 'ldap':
@@ -4729,12 +4738,7 @@ class NetAppRestClient(object):
 
     @na_utils.trace
     def _build_ldap_client_body(self, security_service, secure=True):
-        """Build the /name-services/ldap request body.
-
-        Shared by create (POST) and modify (PATCH). When secure is True the
-        client uses LDAPS on 636 with session signing and channel binding
-        (CONTAP-821088); otherwise plaintext 389 with no signing.
-        """
+        """Build the /name-services/ldap body (secure: LDAPS 636, else 389)."""
         ad_domain = security_service.get('domain')
         ldap_servers = security_service.get('server')
         ldap_schema = 'RFC-2307'
@@ -4804,11 +4808,7 @@ class NetAppRestClient(object):
 
     @na_utils.trace
     def modify_ldap(self, new_security_service, current_security_service):
-        """Modifies LDAP client on a Vserver.
-
-        Mirrors configure_ldap's secure-first behaviour: try LDAPS + signing,
-        fall back to plaintext only if the secure patch is rejected.
-        """
+        """Modify the LDAP client (secure-first, as in configure_ldap)."""
         svm_uuid = self._get_unique_svm_by_name(self.vserver)
 
         try:
@@ -4817,8 +4817,6 @@ class NetAppRestClient(object):
             self.send_request(f'/name-services/ldap/{svm_uuid}', 'patch',
                               body=body)
         except netapp_api.api.NaApiError as e:
-            if not self._is_ldap_secure_rejection(e):
-                raise
             LOG.warning("Secure LDAP modify failed (%s); retrying without "
                         "LDAPS/signing.", e.message)
             body = self._build_ldap_client_body(new_security_service,

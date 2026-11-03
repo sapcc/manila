@@ -1761,10 +1761,7 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                                 ldap_client=None):
         """Setup SVM security services.
 
-        ldap_client, when given, handles the LDAP security service instead of
-        vserver_client. The caller passes a forced-REST client there so secure
-        LDAP (LDAPS + signing, CONTAP-821088) works on this ZAPI backend; AD
-        and Kerberos stay on vserver_client.
+        ldap_client, when given, handles the LDAP service (see commit message).
         """
         api_args = {
             'name-mapping-switch': [
@@ -1783,6 +1780,14 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             if (security_service.get('dns_ip') and
                     security_service.get('domain')):
                 vserver_client.configure_dns(security_service)
+
+        # AD (CIFS LDAPS channel) and LDAP (LDAPS client) both need the
+        # server-CA cert on the SVM; install it once up front, before either.
+        # Prefer the forced-REST ldap_client so cert install is REST-native.
+        if any(ss['type'].lower() in ('ldap', 'active_directory')
+               for ss in security_services):
+            (ldap_client or vserver_client).configure_certificates(
+                vserver_name=vserver_name)
 
         for security_service in security_services:
             if security_service['type'].lower() == 'ldap':
@@ -2078,7 +2083,6 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
     def configure_active_directory(self, security_service,
                                    vserver_name, aes_encryption):
         """Configures AD on Vserver."""
-        self.configure_certificates()
         self.configure_cifs_aes_encryption(aes_encryption)
         # below order is important:
         # having a preferred dc is a prerequisite for setting the options
@@ -2514,7 +2518,9 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             LOG.warning(msg, msg_args)
 
     @na_utils.trace
-    def configure_certificates(self):
+    def configure_certificates(self, vserver_name=None):
+        # vserver_name is accepted for signature parity with the REST client;
+        # this ZAPI connection is already scoped to the target vserver.
         from cryptography.hazmat.primitives.serialization import Encoding
         from cryptography import x509
 
