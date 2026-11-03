@@ -482,9 +482,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                 nfs_config=nfs_config)
 
         if security_services:
-            # Secure LDAP is REST-only; force a REST client for the LDAP
-            # service so it works on netapp_use_legacy_client backends. AD and
-            # Kerberos stay on the configured vserver_client.
+            # LDAP goes through a forced-REST client (see commit message).
             ldap_client = None
             if self._security_services_contain_ldap(security_services):
                 ldap_client = self._get_ldap_rest_client(vserver_name)
@@ -497,10 +495,17 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
 
     @staticmethod
     def _security_services_contain_ldap(security_services):
-        """True if any security service in the list is of type 'ldap'."""
-        return any(
-            isinstance(ss, dict) and ss.get('type', '').lower() == 'ldap'
-            for ss in security_services)
+        """True if any security service is of type 'ldap'.
+
+        Subscript access (not isinstance) so runtime DB objects match too.
+        """
+        for ss in security_services:
+            try:
+                if ss['type'].lower() == 'ldap':
+                    return True
+            except (TypeError, KeyError, AttributeError):
+                continue
+        return False
 
     def _get_valid_ipspace_name(self, network_id):
         """Get IPspace name according to network id."""
@@ -1312,14 +1317,7 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             backend, vserver_name=vserver_name, force_rest_client=True)
 
     def _get_ldap_rest_client(self, vserver_name):
-        """Forced-REST client for this backend, scoped to a vserver.
-
-        Secure LDAP (LDAPS + session signing, CONTAP-821088) is only
-        implemented in the REST client, so force REST even on
-        netapp_use_legacy_client backends. Built from this driver's own
-        configuration, so it works both during initial vserver setup (no
-        share server yet) and on a security-service update.
-        """
+        """Forced-REST client for LDAP setup (see commit message)."""
         return self._get_client(self.configuration, vserver=vserver_name,
                                 force_rest_client=True)
 

@@ -5602,6 +5602,19 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
             expected,
             self.library._security_services_contain_ldap(services))
 
+    def test__security_services_contain_ldap_dict_like_object(self):
+        # At runtime security services are DB model objects, not plain dicts;
+        # detection must work by subscript, not isinstance(dict).
+        class _SecSvc(dict):
+            pass
+
+        ldap_ss = _SecSvc(fake.LDAP_AD_SECURITY_SERVICE)
+        ad_ss = _SecSvc(fake.CIFS_SECURITY_SERVICE)
+        self.assertTrue(
+            self.library._security_services_contain_ldap([ad_ss, ldap_ss]))
+        self.assertFalse(
+            self.library._security_services_contain_ldap([ad_ss]))
+
     def test_update_share_server_security_service_check_error(self):
         curr_sec_service = copy.deepcopy(fake.CIFS_SECURITY_SERVICE)
         new_sec_service = copy.deepcopy(fake.CIFS_SECURITY_SERVICE_2)
