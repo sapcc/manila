@@ -103,6 +103,7 @@ class BaseClient(object):
         self._trace = trace
         self._api_trace_pattern = api_trace_pattern
         self._refresh_conn = True
+        self._session = None
         if ssl_cert_path is not None:
             self._ssl_verify = ssl_cert_path
         else:
@@ -239,6 +240,11 @@ class BaseClient(object):
 
     def _build_session(self):
         """Builds a session in the client."""
+        # Close any existing session before replacing it; overwriting
+        # self._session without closing the old one orphans its connection
+        # pool and leaks sockets.
+        self._close_session()
+
         self._session = requests.Session()
 
         max_retries = Retry(total=5, connect=5, read=2, backoff_factor=1)
@@ -254,6 +260,16 @@ class BaseClient(object):
         headers = self._build_headers()
 
         self._session.headers = headers
+
+    def _close_session(self):
+        """Closes the current session, releasing its connection pool."""
+        if self._session is not None:
+            try:
+                self._session.close()
+            except Exception:
+                LOG.warning("Failed to close NetApp client session cleanly.",
+                            exc_info=True)
+            self._session = None
 
     def _build_headers(self):
         """Adds the necessary headers to the session."""

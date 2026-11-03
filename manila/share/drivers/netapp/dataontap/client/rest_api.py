@@ -94,6 +94,7 @@ class RestNaServer(object):
         self._trace = trace
         self._api_trace_pattern = api_trace_pattern
         self._timeout = None
+        self._session = None
 
         if not ssl_cert_verify:
             self._ssl_verify = False
@@ -216,6 +217,11 @@ class RestNaServer(object):
 
     def _build_session(self, headers):
         """Builds a session in the client."""
+        # Close any existing session before replacing it; overwriting
+        # self._session without closing the old one orphans its connection
+        # pool and leaks sockets.
+        self._close_session()
+
         self._session = requests.Session()
 
         # NOTE(felipe_rodrigues): request resilient of temporary network
@@ -231,6 +237,16 @@ class RestNaServer(object):
             self._session.auth = self._create_basic_auth_handler()
             self._session.verify = self._ssl_verify
         self._session.headers = headers
+
+    def _close_session(self):
+        """Closes the current session, releasing its connection pool."""
+        if self._session is not None:
+            try:
+                self._session.close()
+            except Exception:
+                LOG.warning("Failed to close NetApp client session cleanly.",
+                            exc_info=True)
+            self._session = None
 
     def _build_headers(self, enable_tunneling):
         """Build and return headers for a REST request."""
