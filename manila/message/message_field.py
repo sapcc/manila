@@ -43,6 +43,7 @@ class Action(object):
     RESTORE_BACKUP = ('028', _('restore share backup'))
     RESYNC = ('029', _('resync'))
     FAILOVER = ('030', _('failover'))
+    UPDATE_DNS_RECORD = ('990', _('update dns record'))
     ALL = (
         ALLOCATE_HOST,
         CREATE,
@@ -60,6 +61,7 @@ class Action(object):
         RESTORE_BACKUP,
         RESYNC,
         FAILOVER,
+        UPDATE_DNS_RECORD,
     )
 
 
@@ -237,6 +239,24 @@ class Detail(object):
         _("Share driver failed to process the unplanned failover for the "
           "share server replica. Please delete this share server replica "
           "and create a new one to recover."))
+    DNS_ZONE_NOT_FOUND = (
+        '990',
+        _("The Designate zone for the requested 'dns_domain' was not found, "
+          "or it is not owned by the share's project or the Manila service "
+          "project. The IP-based export locations remain usable. Create the "
+          "zone or correct the 'dns_domain' metadata, then re-apply the "
+          "'dns_name' and 'dns_domain' metadata to retry."))
+    DNS_NAME_IN_USE = (
+        '991',
+        _("The requested DNS name already exists in Designate and is not "
+          "managed by this share. The IP-based export locations remain "
+          "usable. Choose a different 'dns_name'."))
+    DNS_RECORD_UPDATE_FAILED = (
+        '992',
+        _("Failed to create or update the DNS record for the share in "
+          "Designate. The IP-based export locations remain usable. "
+          "Re-apply the 'dns_name' and 'dns_domain' metadata to retry, or "
+          "contact the administrator."))
 
     ALL = (
         UNKNOWN_ERROR,
@@ -282,11 +302,16 @@ class Detail(object):
         DRIVER_FAILED_REVERTING_TO_SNAPSHOT,
         RESYNC_FAILED_RECREATE_REPLICA,
         FAILOVER_FAILED_RECREATE_REPLICA,
+        DNS_ZONE_NOT_FOUND,
+        DNS_NAME_IN_USE,
+        DNS_RECORD_UPDATE_FAILED,
     )
 
     # Exception and detail mappings
     EXCEPTION_DETAIL_MAPPINGS = {
         NO_VALID_HOST: ['NoValidHost'],
+        DNS_ZONE_NOT_FOUND: ['DNSZoneNotFound'],
+        DNS_NAME_IN_USE: ['DNSNameInUse'],
     }
 
     # Use special code for each filter rather then categorize all as

@@ -262,6 +262,13 @@ SHARE_NETWORK_STATUSES = (
 )
 
 REPLICA_STATE_ACTIVE = 'active'
+
+# Share metadata keys that publish the share under a DNS name.
+DNS_METADATA_KEYS = ('dns_name', 'dns_domain')
+# Export location metadata keys used internally for the DNS export
+# location; they are not exposed as plain export location metadata.
+DNS_EXPORT_LOCATION_METADATA_KEYS = (
+    'dns_name', 'dns_domain', 'dns_recordset_id', 'dns_demoted')
 REPLICA_STATE_IN_SYNC = 'in_sync'
 REPLICA_STATE_OUT_OF_SYNC = 'out_of_sync'
 

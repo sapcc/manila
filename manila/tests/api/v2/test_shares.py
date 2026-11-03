@@ -2417,6 +2417,8 @@ class ShareAPITest(test.TestCase):
 
     def test_create_metadata(self):
         id = 'fake_share_id'
+        self.mock_object(shares.db, 'share_metadata_get',
+                         mock.Mock(return_value={}))
         body = {'metadata': {'key1': 'val1', 'key2': 'val2'}}
         mock_validate = self.mock_object(
             self.controller, '_validate_metadata_for_update',
@@ -2437,6 +2439,8 @@ class ShareAPITest(test.TestCase):
 
     def test_update_all_metadata(self):
         id = 'fake_share_id'
+        self.mock_object(shares.db, 'share_metadata_get',
+                         mock.Mock(return_value={}))
         body = {'metadata': {'key1': 'val1', 'key2': 'val2'}}
         mock_validate = self.mock_object(
             self.controller, '_validate_metadata_for_update',
@@ -2456,11 +2460,134 @@ class ShareAPITest(test.TestCase):
     def test_delete_metadata(self):
         mock_delete = self.mock_object(
             self.controller, '_delete_metadata', mock.Mock())
+        mock_update = self.mock_object(
+            self.controller.share_api, 'update_share_from_metadata',
+            mock.Mock())
 
         req = fakes.HTTPRequest.blank(
             '/v2/shares/%s/metadata/fake_key' % id)
         self.controller.delete_metadata(req, id, 'fake_key')
         mock_delete.assert_called_once_with(req, id, 'fake_key')
+        self.assertFalse(mock_update.called)
+
+    @ddt.data('dns_name', 'dns_domain')
+    def test_delete_metadata_dns_key_removes_pair(self, key):
+        share_id = 'fake_share_id'
+        previous = {'dns_name': 'share', 'dns_domain': 'example.com.',
+                    'foo': 'bar'}
+        share = {'id': share_id, 'status': constants.STATUS_AVAILABLE,
+                 'task_state': None, 'share_proto': 'NFS'}
+        self.mock_object(shares.db, 'share_metadata_get',
+                         mock.Mock(return_value=previous))
+        self.mock_object(self.controller.share_api, 'get',
+                         mock.Mock(return_value=share))
+        mock_delete = self.mock_object(
+            self.controller, '_delete_metadata', mock.Mock())
+        mock_update = self.mock_object(
+            self.controller.share_api, 'update_share_from_metadata',
+            mock.Mock())
+        req = fakes.HTTPRequest.blank(
+            '/v2/shares/%s/metadata/%s' % (share_id, key))
+
+        self.controller.delete_metadata(req, share_id, key)
+
+        other = 'dns_domain' if key == 'dns_name' else 'dns_name'
+        mock_delete.assert_has_calls([mock.call(req, share_id, key),
+                                      mock.call(req, share_id, other)])
+        mock_update.assert_called_once_with(
+            req.environ['manila.context'], share_id, {'foo': 'bar'},
+            previous_metadata=previous)
+
+    def test_delete_metadata_dns_key_share_busy(self):
+        share_id = 'fake_share_id'
+        previous = {'dns_name': 'share', 'dns_domain': 'example.com.'}
+        share = {'id': share_id, 'status': constants.STATUS_ERROR,
+                 'task_state': None, 'share_proto': 'NFS'}
+        self.mock_object(shares.db, 'share_metadata_get',
+                         mock.Mock(return_value=previous))
+        self.mock_object(self.controller.share_api, 'get',
+                         mock.Mock(return_value=share))
+        mock_delete = self.mock_object(
+            self.controller, '_delete_metadata', mock.Mock())
+        req = fakes.HTTPRequest.blank(
+            '/v2/shares/%s/metadata/dns_name' % share_id)
+
+        self.assertRaises(webob.exc.HTTPBadRequest,
+                          self.controller.delete_metadata,
+                          req, share_id, 'dns_name')
+        self.assertFalse(mock_delete.called)
+
+    def _setup_dns_validation(self, current, share=None):
+        share = share or {'id': 'fake_share_id',
+                          'status': constants.STATUS_AVAILABLE,
+                          'task_state': None, 'share_proto': 'NFS'}
+        self.mock_object(shares.db, 'share_metadata_get',
+                         mock.Mock(return_value=current))
+        self.mock_object(self.controller.share_api, 'get',
+                         mock.Mock(return_value=share))
+        return self.mock_object(self.controller.share_api,
+                                'validate_dns_metadata')
+
+    def test_validate_metadata_for_update_dns_changed(self):
+        mock_validate = self._setup_dns_validation({'foo': 'bar'})
+        req = fakes.HTTPRequest.blank('/v2/shares/fake_share_id/metadata')
+        metadata = {'dns_name': 'share', 'dns_domain': 'example.com.'}
+
+        result = self.controller._validate_metadata_for_update(
+            req, 'fake_share_id', metadata, delete=False)
+
+        self.assertEqual({'foo': 'bar', 'dns_name': 'share',
+                          'dns_domain': 'example.com.'}, result)
+        mock_validate.assert_called_once_with(
+            req.environ['manila.context'], result, 'NFS',
+            share=self.controller.share_api.get.return_value)
+
+    def test_validate_metadata_for_update_dns_unchanged(self):
+        current = {'dns_name': 'share', 'dns_domain': 'example.com.'}
+        mock_validate = self._setup_dns_validation(current)
+        req = fakes.HTTPRequest.blank('/v2/shares/fake_share_id/metadata')
+
+        self.controller._validate_metadata_for_update(
+            req, 'fake_share_id', {'foo': 'bar'}, delete=False)
+
+        self.assertFalse(mock_validate.called)
+
+    @ddt.data((exception.InvalidInput(reason='bad'),
+               webob.exc.HTTPBadRequest),
+              (exception.InvalidShare(reason='busy'),
+               webob.exc.HTTPBadRequest),
+              (exception.DNSNameInUse(fqdn='share.example.com.'),
+               webob.exc.HTTPConflict))
+    @ddt.unpack
+    def test_validate_metadata_for_update_dns_errors(self, error, http_exc):
+        mock_validate = self._setup_dns_validation({})
+        mock_validate.side_effect = error
+        req = fakes.HTTPRequest.blank('/v2/shares/fake_share_id/metadata')
+        metadata = {'dns_name': 'share', 'dns_domain': 'example.com.'}
+
+        self.assertRaises(http_exc,
+                          self.controller._validate_metadata_for_update,
+                          req, 'fake_share_id', metadata)
+
+    def test_update_all_metadata_passes_previous_metadata(self):
+        share_id = 'fake_share_id'
+        previous = {'old': 'value'}
+        body = {'metadata': {'key1': 'val1'}}
+        self.mock_object(shares.db, 'share_metadata_get',
+                         mock.Mock(return_value=previous))
+        self.mock_object(self.controller, '_validate_metadata_for_update',
+                         mock.Mock(return_value=body['metadata']))
+        self.mock_object(self.controller, '_update_all_metadata',
+                         mock.Mock(return_value=body))
+        mock_update = self.mock_object(
+            self.controller.share_api, 'update_share_from_metadata')
+        req = fakes.HTTPRequest.blank('/v2/shares/%s/metadata' % share_id)
+
+        self.controller.update_all_metadata(req, share_id, body)
+
+        mock_update.assert_called_once_with(
+            req.environ['manila.context'], share_id, body['metadata'],
+            previous_metadata=previous)
 
 
 def _fake_access_get(self, ctxt, access_id):

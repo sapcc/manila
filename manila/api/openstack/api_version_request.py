@@ -213,6 +213,8 @@ REST_API_VERSION_HISTORY = """
     * 2.93 - Added support for filtering services by 'ensuring'.
     * 2.94 - Added QoS type and specs APIs.
     * 2.95 - Added Share Replica Metadata to Metadata API
+    * 2.96 - Added dns_name and dns_domain fields to export location API
+             responses when the share has DNS metadata set.
     * 2.100 - Added Share Server Replica APIs.
 """
 
