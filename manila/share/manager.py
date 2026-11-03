@@ -3030,6 +3030,9 @@ class ShareManager(manager.SchedulerDependentManager):
                              for s in replica_snapshots]
         share_server = self._get_share_server(context, share_replica)
         share_replica = self._get_share_instance_dict(context, share_replica)
+        share_replica["metadata"] = (
+            self.db.share_replica_metadata_get(context, share_replica_id) or {}
+        )
 
         try:
             self.access_helper.update_access_rules(
