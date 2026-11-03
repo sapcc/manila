@@ -1794,6 +1794,10 @@ class ShareManagerTestCase(test.TestCase):
                          mock.Mock(return_value=replica))
         self.mock_object(db, 'share_replicas_get_available_active_replica',
                          mock.Mock(return_value=active_replica))
+        self.mock_object(db, 'share_snapshot_instance_get_all_with_filters',
+                         mock.Mock(return_value=[]))
+        self.mock_object(db, 'share_replica_metadata_get',
+                         mock.Mock(return_value={}))
         self.mock_object(self.share_manager, '_get_share_server')
         self.mock_object(self.share_manager.access_helper,
                          'update_access_rules')
@@ -1839,6 +1843,8 @@ class ShareManagerTestCase(test.TestCase):
         self.mock_object(
             db, 'share_snapshot_instance_get_all_with_filters',
             mock.Mock(return_value=[]))
+        self.mock_object(db, 'share_replica_metadata_get',
+                         mock.Mock(return_value={}))
         mock_snap_instance_delete = self.mock_object(
             db, 'share_snapshot_instance_delete')
         mock_replica_update_call = self.mock_object(db, 'share_replica_update')
@@ -1873,6 +1879,8 @@ class ShareManagerTestCase(test.TestCase):
         mock_snapshot_get_call = self.mock_object(
             db, 'share_snapshot_instance_get_all_with_filters',
             mock.Mock(return_value=[]))
+        self.mock_object(db, 'share_replica_metadata_get',
+                         mock.Mock(return_value={}))
         mock_replica_update_call = self.mock_object(db, 'share_replica_update')
         mock_replica_delete_call = self.mock_object(db, 'share_replica_delete')
         self.mock_object(
@@ -1912,6 +1920,8 @@ class ShareManagerTestCase(test.TestCase):
         self.mock_object(
             db, 'share_snapshot_instance_get_all_with_filters',
             mock.Mock(return_value=snapshots))
+        self.mock_object(db, 'share_replica_metadata_get',
+                         mock.Mock(return_value={}))
         mock_snapshot_instance_delete_call = self.mock_object(
             db, 'share_snapshot_instance_delete')
         mock_replica_update_call = self.mock_object(db, 'share_replica_update')
@@ -1960,12 +1970,15 @@ class ShareManagerTestCase(test.TestCase):
             db, 'share_snapshot_instance_delete')
         mock_replica_update_call = self.mock_object(db, 'share_replica_update')
         mock_replica_delete_call = self.mock_object(db, 'share_replica_delete')
+        self.mock_object(db, 'share_replica_metadata_get',
+                         mock.Mock(return_value={}))
         self.mock_object(
             self.share_manager.access_helper, 'update_access_rules')
         mock_drv_delete_replica_call = self.mock_object(
             self.share_manager.driver, 'delete_replica')
 
-        self.share_manager.delete_share_replica(self.context, replica)
+        self.share_manager.delete_share_replica(
+            self.context, replica['id'], share_id=replica['share_id'])
 
         self.assertFalse(mock_replica_update_call.called)
         self.assertTrue(mock_replica_delete_call.called)
