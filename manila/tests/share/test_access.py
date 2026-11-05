@@ -302,6 +302,24 @@ class ShareInstanceAccessTestCase(test.TestCase):
             ])
         self.assertFalse(self.access_helper._update_access_rules.called)
 
+    def test_update_access_rules_force(self):
+        share = db_utils.create_share(status=constants.STATUS_AVAILABLE)
+        share_instance = share['instance']
+        db_utils.create_access(share_id=share['id'],
+                               state=constants.STATUS_ACTIVE)
+        self.mock_object(access.LOG, 'debug')
+        self.mock_object(self.access_helper, '_update_access_rules')
+        self.mock_object(
+            self.access_helper, 'get_and_update_share_instance_access_rules',
+            mock.Mock(side_effect=self.access_helper.
+                      get_and_update_share_instance_access_rules))
+
+        self.access_helper.update_access_rules(
+            self.context, share_instance['id'], force=True)
+
+        self.access_helper._update_access_rules.assert_called_once_with(
+            self.context, share_instance['id'], share_server=None)
+
     @ddt.data(True, False)
     def test_update_access_rules_delete_all_rules(self, delete_all_rules):
         share = db_utils.create_share(status=constants.STATUS_AVAILABLE)
