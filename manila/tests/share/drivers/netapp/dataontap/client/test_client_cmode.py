@@ -2830,6 +2830,21 @@ class NetAppClientCmodeTestCase(test.TestCase):
             mock.call('ldap-client-create', ldap_client_create_args),
             mock.call('ldap-config-create', ldap_config_create_args)])
 
+    def test__create_ldap_client_ad_no_password_binds_as_cifs(self):
+        # AD-domain LDAP without a password binds as the SVM's CIFS server;
+        # bind-as-cifs-server is set explicitly and no bind-password is sent.
+        self.mock_object(self.client, 'send_request')
+        self.mock_object(self.client, 'configure_dns')
+        sec_service = copy.deepcopy(fake.LDAP_AD_SECURITY_SERVICE)
+        sec_service['password'] = None
+
+        self.client._create_ldap_client(sec_service)
+
+        __, args, __ = self.client.send_request.mock_calls[0]
+        api_args = args[1]
+        self.assertEqual('true', api_args['bind-as-cifs-server'])
+        self.assertNotIn('bind-password', api_args)
+
     def test__create_ldap_client_ad_with_preferred_servers(self):
         self.client.features.add_feature('LDAP_LDAP_SERVERS')
         self.mock_object(self.client, 'send_request')

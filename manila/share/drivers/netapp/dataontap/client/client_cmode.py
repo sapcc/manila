@@ -1947,6 +1947,12 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
             'bind-password': security_service.get('password'),
         }
 
+        # No password: bind as the SVM's CIFS server (AD join), set
+        # explicitly rather than relying on ONTAP's default.
+        if ad_domain and not security_service.get('password'):
+            api_args['bind-as-cifs-server'] = 'true'
+            del api_args['bind-password']
+
         if security_service.get('ou'):
             api_args['base-dn'] = security_service['ou']
         if ad_domain:
