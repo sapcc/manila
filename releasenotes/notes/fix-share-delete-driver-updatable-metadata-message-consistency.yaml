@@ -1,0 +1,11 @@
+---
+fixes:
+  - |
+    Deleting a share metadata key listed in ``driver_updatable_metadata``
+    now notifies the share driver to reset the corresponding setting to its
+    default state, matching the behavior expected when a share is created
+    without any metadata. The same fix applies to share network subnet
+    metadata keys listed in ``driver_updatable_subnet_metadata``. Drivers
+    receive ``{key: None}`` as the signal to perform the reset.
+    Previously, the delete was only applied to the Manila database and the
+    driver was never notified.
