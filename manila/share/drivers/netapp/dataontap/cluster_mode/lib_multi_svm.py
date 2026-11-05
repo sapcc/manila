@@ -487,11 +487,25 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
             if self._security_services_contain_ldap(security_services):
                 ldap_client = self._get_ldap_rest_client(vserver_name)
             self._client.setup_security_services(
-                security_services,
+                self._order_security_services(security_services),
                 vserver_client,
                 vserver_name,
                 self.configuration.netapp_cifs_aes_encryption,
                 ldap_client=ldap_client)
+
+    @staticmethod
+    def _order_security_services(security_services):
+        """Return security services with active_directory first.
+
+        An AD-domain LDAP bind needs the SVM domain-joined first, and the
+        DB list order is not guaranteed.
+        """
+        def _rank(ss):
+            try:
+                return 0 if ss['type'].lower() == 'active_directory' else 1
+            except (TypeError, KeyError, AttributeError):
+                return 1
+        return sorted(security_services, key=_rank)
 
     @staticmethod
     def _security_services_contain_ldap(security_services):
@@ -2994,6 +3008,9 @@ class NetAppCmodeMultiSVMFileStorageLibrary(
                         "server.")
                 LOG.error(msg)
                 return False
+            if ad_domain:
+                # AD-domain LDAP binds via the SVM's AD join, not a password.
+                mandatory_params['ldap'] = ['user']
 
         if ss_type == 'active_directory':
             server = security_service.get('server')

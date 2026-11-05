@@ -4705,6 +4705,26 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
         __, __, kwargs = mock_sr.mock_calls[0]
         self.assertEqual('fake_user@fake_domain', kwargs['body']['bind_dn'])
 
+    def test__create_ldap_client_ad_no_password_binds_as_cifs(self):
+        # AD-domain LDAP without a password binds as the SVM's CIFS server;
+        # bind_as_cifs_server is set explicitly and no bind_password is sent.
+        mock_dns = self.mock_object(self.client, 'configure_dns')
+        mock_sr = self.mock_object(self.client, 'send_request')
+        security_service = {
+            'domain': 'fake_domain',
+            'user': 'fake_user',
+            'ou': 'fake_ou',
+            'dns_ip': 'fake_ip',
+            'password': None,
+        }
+
+        self.client._create_ldap_client(security_service,
+                                        vserver_name=fake.VSERVER_NAME)
+        mock_dns.assert_called_once_with(security_service)
+        __, __, kwargs = mock_sr.mock_calls[0]
+        self.assertTrue(kwargs['body']['bind_as_cifs_server'])
+        self.assertNotIn('bind_password', kwargs['body'])
+
     def test__create_ldap_client_ad_with_preferred_servers(self):
         mock_dns = self.mock_object(self.client, 'configure_dns')
         mock_sr = self.mock_object(self.client, 'send_request')

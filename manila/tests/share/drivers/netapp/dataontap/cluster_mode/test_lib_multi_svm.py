@@ -5656,6 +5656,52 @@ class NetAppFileStorageLibraryTestCase(test.TestCase):
 
         self.assertEqual(expected, result)
 
+    @ddt.data(None, '')
+    def test_is_security_service_valid_ldap_ad_no_password(self, password):
+        # AD-domain LDAP binds via the SVM's AD join (bind-as-cifs-server),
+        # so a missing password must still validate.
+        security_service = copy.deepcopy(fake.LDAP_AD_SECURITY_SERVICE)
+        security_service['password'] = password
+
+        self.assertTrue(
+            self.library._is_security_service_valid(security_service))
+
+    def test_is_security_service_valid_ldap_ad_no_user(self):
+        # user is still mandatory even for AD-domain LDAP (it is the bind_dn).
+        security_service = copy.deepcopy(fake.LDAP_AD_SECURITY_SERVICE)
+        security_service['user'] = None
+
+        self.assertFalse(
+            self.library._is_security_service_valid(security_service))
+
+    def test_is_security_service_valid_ldap_server_only_needs_password(self):
+        # Server-only (Unix) LDAP does a credential bind: password stays
+        # mandatory, unlike the AD-domain case.
+        security_service = copy.deepcopy(fake.LDAP_LINUX_SECURITY_SERVICE)
+        security_service['password'] = None
+
+        self.assertFalse(
+            self.library._is_security_service_valid(security_service))
+
+    def test_order_security_services_ad_before_ldap(self):
+        # The DB list has no guaranteed order; AD must be applied before LDAP
+        # so the SVM is domain-joined before the LDAP client binds as CIFS.
+        ldap_ss = fake.LDAP_AD_SECURITY_SERVICE
+        ad_ss = fake.CIFS_SECURITY_SERVICE
+
+        ordered = self.library._order_security_services([ldap_ss, ad_ss])
+
+        self.assertEqual([ad_ss, ldap_ss], ordered)
+
+    def test_order_security_services_stable_without_ad(self):
+        # No AD service: relative order is preserved.
+        ldap_ss = fake.LDAP_AD_SECURITY_SERVICE
+        krb_ss = fake.KERBEROS_SECURITY_SERVICE
+
+        ordered = self.library._order_security_services([ldap_ss, krb_ss])
+
+        self.assertEqual([ldap_ss, krb_ss], ordered)
+
     @ddt.data(
         {'new': fake.LDAP_AD_SECURITY_SERVICE,
          'current': fake.LDAP_LINUX_SECURITY_SERVICE,
