@@ -4763,6 +4763,12 @@ class NetAppRestClient(object):
             'bind_password': security_service.get('password'),
         }
 
+        # No password: bind as the SVM's CIFS server (AD join), set
+        # explicitly rather than relying on ONTAP's default.
+        if ad_domain and not security_service.get('password'):
+            body['bind_as_cifs_server'] = True
+            body.pop('bind_password')
+
         if secure:
             body.update({
                 'port': '636',
