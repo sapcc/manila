@@ -879,6 +879,62 @@ class ShareDatabaseAPITestCase(test.TestCase):
         self.assertEqual(1, len(result))
         self.assertEqual(shares[2]['id'], result[0]['id'])
 
+    def test_share_get_all_expired_excludes_deleted_instances(self):
+        now_time = timeutils.utcnow()
+        past_time = now_time - datetime.timedelta(seconds=3600)
+
+        share = db_utils.create_share(
+            status=constants.STATUS_AVAILABLE,
+            is_soft_deleted=True,
+            scheduled_to_be_deleted_at=past_time,
+            host='host1',
+        )
+
+        replica = db_utils.create_share_replica(
+            share_id=share['id'],
+            host='host1',
+            replica_state=constants.REPLICA_STATE_IN_SYNC,
+        )
+        db_api.share_instance_delete(self.ctxt, replica['id'])
+
+        result = db_api.share_get_all_expired(self.ctxt)
+
+        share_ids = [s['id'] for s in result]
+        self.assertEqual(1, share_ids.count(share['id']),
+                         "Deleted instance caused duplicate share in results")
+
+    def test_share_instance_sizes_sum_by_host_excludes_deleted(self):
+        share = db_utils.create_share(size=10, host='hostA')
+
+        replica = db_utils.create_share_replica(
+            share_id=share['id'],
+            host='hostA',
+            replica_state=constants.REPLICA_STATE_IN_SYNC,
+        )
+        db_api.share_instance_delete(self.ctxt, replica['id'])
+
+        total = db_api.share_instance_sizes_sum_by_host(self.ctxt, 'hostA')
+
+        self.assertEqual(10, total)
+
+    def test_share_get_all_with_filters_excludes_deleted_instances(self):
+        share = db_utils.create_share(
+            status=constants.STATUS_AVAILABLE,
+            host='hostB',
+        )
+        replica = db_utils.create_share_replica(
+            share_id=share['id'],
+            host='hostB',
+            replica_state=constants.REPLICA_STATE_IN_SYNC,
+        )
+        db_api.share_instance_delete(self.ctxt, replica['id'])
+
+        result = db_api.share_get_all(self.ctxt)
+
+        share_ids = [s['id'] for s in result]
+        self.assertEqual(1, share_ids.count(share['id']),
+                         "Deleted instance caused duplicate share in listing")
+
     @ddt.data(
         ({'status': constants.STATUS_AVAILABLE}, 'status',
          [constants.STATUS_AVAILABLE, constants.STATUS_ERROR]),
@@ -2400,6 +2456,37 @@ class ShareSnapshotDatabaseAPITestCase(test.TestCase):
         self.assertEqual(
             should_be, db_api.share_snapshot_metadata_get(
                 self.ctxt, share_snapshot_id=self.snapshot_1['id']))
+
+    def test_snapshot_data_get_for_project_excludes_deleted_instances(self):
+        share_type = db_utils.create_share_type()
+        share = db_utils.create_share(
+            size=7,
+            host='snap_host',
+            share_type_id=share_type['id'],
+        )
+        db_utils.create_snapshot(
+            share_id=share['id'],
+            size=7,
+        )
+
+        replica = db_utils.create_share_replica(
+            share_id=share['id'],
+            host='snap_host',
+            replica_state=constants.REPLICA_STATE_IN_SYNC,
+            share_type_id=share_type['id'],
+        )
+        db_api.share_instance_delete(self.ctxt, replica['id'])
+
+        with db_api.context_manager.reader.using(self.ctxt):
+            count, size = db_api._snapshot_data_get_for_project(
+                self.ctxt, 'fake', None,
+                share_type_id=share_type['id'],
+            )
+
+        self.assertEqual(1, count,
+                         "Deleted instance inflated snapshot count")
+        self.assertEqual(7, size,
+                         "Deleted instance inflated snapshot size total")
 
 
 class ShareExportLocationsDatabaseAPITestCase(test.TestCase):
