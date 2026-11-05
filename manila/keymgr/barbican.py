@@ -88,8 +88,8 @@ class BarbicanSecretACL(barbican_key_manager.BarbicanKeyManager):
         # session of barbican user to get its user_id. Grant ACL to barbican
         # user that it will be used for the key_ref handover process.
         try:
-            user_barbican_client, base_url = self._get_barbican_client(context)
-            secret_ref = self._create_secret_ref(base_url, secret_ref)
+            user_barbican_client = self._get_barbican_client(context)
+            secret_ref = self._create_secret_ref(secret_ref)
         except Exception as e:
             LOG.error("Failed to create barbican client. Error: %s", e)
             raise exception.ManilaBarbicanACLError()
