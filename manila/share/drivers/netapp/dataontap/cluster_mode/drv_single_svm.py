@@ -235,11 +235,13 @@ class NetAppCmodeSingleSvmShareDriver(driver.ShareDriver):
 
     def migration_complete(self, context, source_share, destination_share,
                            source_snapshots, snapshot_mappings,
-                           share_server=None, destination_share_server=None):
+                           share_server=None, destination_share_server=None,
+                           replica_list=None):
         return self.library.migration_complete(
             context, source_share, destination_share,
             source_snapshots, snapshot_mappings, share_server=share_server,
-            destination_share_server=destination_share_server)
+            destination_share_server=destination_share_server,
+            replica_list=replica_list)
 
     def create_share_group_snapshot(self, context, snap_dict,
                                     share_server=None):
