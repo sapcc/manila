@@ -497,13 +497,7 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
         )
 
     def test_delete_snapmirror_sync_policy(self):
-        """Sync policy: no abort, uses wait_for_snapmirror_source_out_of_sync.
-
-        Verify that for StrictSync policy: abort is not called, quiesce and
-        delete are called, wait_for_snapmirror_delete is skipped, and the
-        new wait_for_snapmirror_source_out_of_sync is used for source release
-        instead of wait_for_snapmirror_release_vol.
-        """
+        """Sync policy: no abort, wait for quiesced/delete, out_of_sync src."""
         mock_src_client = mock.Mock()
         mock_dest_client = mock.Mock()
         self.mock_object(data_motion, 'get_client_for_backend',
@@ -511,44 +505,118 @@ class NetAppCDOTDataMotionSessionTestCase(test.TestCase):
                                                 mock_src_client]))
         mock_backend_config = na_fakes.create_configuration()
         mock_backend_config.netapp_snapmirror_release_timeout = 30
+        mock_backend_config.netapp_snapmirror_quiesce_timeout = 30
         self.mock_object(data_motion, 'get_backend_configuration',
                          mock.Mock(return_value=mock_backend_config))
+        mock_wait_quiesced = self.mock_object(
+            self.dm_session, 'wait_for_snapmirror_quiesced')
         mock_wait_src_oos = self.mock_object(
-            self.dm_session, 'wait_for_snapmirror_source_out_of_sync')
+            self.dm_session, 'wait_for_snapmirror_out_of_sync_then_release')
         mock_wait_delete = self.mock_object(
             self.dm_session, 'wait_for_snapmirror_delete')
         mock_wait_release = self.mock_object(
             self.dm_session, 'wait_for_snapmirror_release_vol')
 
-        # Set StrictSync policy on dest replica metadata
         self.fake_dest_share['metadata'] = {
             'replication_policy': 'StrictSync'}
 
         self.dm_session.delete_snapmirror(self.fake_src_share,
                                           self.fake_dest_share)
 
-        # abort MUST NOT be called for sync policies
         mock_dest_client.abort_snapmirror_vol.assert_not_called()
-        # quiesce IS called (no wait between quiesce and delete)
         mock_dest_client.quiesce_snapmirror_vol.assert_called_once_with(
             mock.ANY, self.fake_src_vol_name, mock.ANY,
             self.fake_dest_vol_name
         )
-        # delete IS called
+        mock_wait_quiesced.assert_called_once_with(
+            mock_dest_client, mock.ANY, self.fake_src_vol_name,
+            mock.ANY, self.fake_dest_vol_name,
+            timeout=30
+        )
         mock_dest_client.delete_snapmirror_vol.assert_called_once_with(
             mock.ANY, self.fake_src_vol_name, mock.ANY,
             self.fake_dest_vol_name
         )
-        # wait_for_snapmirror_delete NOT called (sync path skips it)
-        mock_wait_delete.assert_not_called()
-        # source release via wait_for_snapmirror_source_out_of_sync
+        mock_wait_delete.assert_called_once_with(
+            mock_dest_client, mock.ANY, self.fake_src_vol_name,
+            mock.ANY, self.fake_dest_vol_name,
+            timeout=30
+        )
         mock_wait_src_oos.assert_called_once_with(
             self.source_vserver, self.dest_vserver, self.fake_src_vol_name,
             self.fake_dest_vol_name, False, mock_src_client,
             timeout=30
         )
-        # old release helper NOT called for sync
         mock_wait_release.assert_not_called()
+
+    def test_delete_snapmirror_sync_policy_quiesce_fails(self):
+        """Sync: a real quiesce failure aborts teardown and re-raises."""
+        mock_dest_client = mock.Mock()
+        mock_dest_client.quiesce_snapmirror_vol.side_effect = (
+            netapp_api.NaApiError(code=netapp_api.EAPINOTFOUND))
+        self.mock_object(data_motion, 'get_client_for_backend',
+                         mock.Mock(side_effect=[mock_dest_client]))
+        mock_wait_quiesced = self.mock_object(
+            self.dm_session, 'wait_for_snapmirror_quiesced')
+
+        self.fake_dest_share['metadata'] = {
+            'replication_policy': 'StrictSync'}
+
+        self.assertRaises(
+            netapp_api.NaApiError,
+            self.dm_session.delete_snapmirror,
+            self.fake_src_share, self.fake_dest_share)
+
+        # downstream steps must not run on a failed quiesce
+        mock_wait_quiesced.assert_not_called()
+        mock_dest_client.delete_snapmirror_vol.assert_not_called()
+        # never abort for sync policies
+        mock_dest_client.abort_snapmirror_vol.assert_not_called()
+
+    def test_wait_for_snapmirror_quiesced(self):
+        """Returns once the dest entry reports a quiesced status."""
+        mock_dest_client = mock.Mock()
+        mock_dest_client.get_snapmirrors.return_value = [
+            {'relationship-status': 'quiesced',
+             'mirror-state': 'snapmirrored'}]
+
+        self.dm_session.wait_for_snapmirror_quiesced(
+            mock_dest_client, self.source_vserver, self.fake_src_vol_name,
+            self.dest_vserver, self.fake_dest_vol_name, timeout=30)
+
+        mock_dest_client.get_snapmirrors.assert_called_once_with(
+            source_vserver=self.source_vserver, dest_vserver=self.dest_vserver,
+            source_volume=self.fake_src_vol_name,
+            dest_volume=self.fake_dest_vol_name,
+            desired_attributes=['relationship-status', 'mirror-state'])
+
+    def test_wait_for_snapmirror_quiesced_already_gone(self):
+        """Returns immediately when no dest entry exists."""
+        mock_dest_client = mock.Mock()
+        mock_dest_client.get_snapmirrors.return_value = []
+
+        self.dm_session.wait_for_snapmirror_quiesced(
+            mock_dest_client, self.source_vserver, self.fake_src_vol_name,
+            self.dest_vserver, self.fake_dest_vol_name, timeout=30)
+
+        mock_dest_client.get_snapmirrors.assert_called_once()
+
+    def test_wait_for_snapmirror_quiesced_timeout_no_abort(self):
+        """Raises on timeout but never aborts if the entry stays unquiesced."""
+        mock_dest_client = mock.Mock()
+        mock_dest_client.get_snapmirrors.return_value = [
+            {'relationship-status': 'transferring',
+             'mirror-state': 'snapmirrored'}]
+        # timeout=5 with interval=5 => a single attempt, no real sleeping.
+
+        self.assertRaises(
+            exception.NetAppException,
+            self.dm_session.wait_for_snapmirror_quiesced,
+            mock_dest_client, self.source_vserver, self.fake_src_vol_name,
+            self.dest_vserver, self.fake_dest_vol_name, timeout=5)
+
+        # critically, the sync path must not abort on timeout
+        mock_dest_client.abort_snapmirror_vol.assert_not_called()
 
     def test_delete_snapmirror_svm_error_deleting(self):
         """Ensure delete succeeds when the snapmirror does not exist."""

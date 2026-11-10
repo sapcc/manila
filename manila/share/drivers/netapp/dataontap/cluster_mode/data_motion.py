@@ -335,7 +335,7 @@ class DataMotionSession(object):
           auto-resync churn that blocks quiesce indefinitely.
 
         Sync policy sequence:
-        1. Quiesce dest (no abort, no wait for quiesced)
+        1. Quiesce dest (no abort)
         2. Delete dest relationship
         3. Wait for source entry to reach OutOfSync (~2 min)
         4. Release source
@@ -343,13 +343,14 @@ class DataMotionSession(object):
         Async policy sequence (unchanged):
         1. Abort any ongoing transfers
         2. Quiesce dest
-        3. Delete dest relationship (+ wait_for_snapmirror_delete poll)
+        3. Delete dest relationship
         4. Release source
         """
         dest_volume_name, dest_vserver, dest_backend = (
             self.get_backend_info_for_share(dest_share_obj))
         dest_client = get_client_for_backend(dest_backend,
                                              vserver_name=dest_vserver)
+        dest_config = get_backend_configuration(dest_backend)
 
         src_volume_name, src_vserver, src_backend = (
             self.get_backend_info_for_share(source_share_obj))
@@ -359,15 +360,27 @@ class DataMotionSession(object):
             dest_share_obj)
 
         if is_sync_policy:
-            # Sync path: quiesce (no abort), delete, wait source OutOfSync,
-            # then release. See docstring for the full rationale.
+            # Sync path: quiesce (no abort), wait quiesced, delete, wait
+            # source OutOfSync, then release. See docstring for the full
+            # rationale.
             try:
                 dest_client.quiesce_snapmirror_vol(src_vserver,
                                                    src_volume_name,
                                                    dest_vserver,
                                                    dest_volume_name)
-            except netapp_api.NaApiError:
-                pass
+            except netapp_api.NaApiError as e:
+                with excutils.save_and_reraise_exception() as exc_context:
+                    if (e.code == netapp_api.EOBJECTNOTFOUND or
+                            e.code == netapp_api.ESOURCE_IS_DIFFERENT or
+                            "(entry doesn't exist)" in e.message):
+                        LOG.info('No snapmirror relationship to quiesce for '
+                                 'volume %s.', dest_volume_name)
+                        exc_context.reraise = False
+            else:
+                self.wait_for_snapmirror_quiesced(
+                    dest_client, src_vserver, src_volume_name, dest_vserver,
+                    dest_volume_name,
+                    timeout=dest_config.netapp_snapmirror_quiesce_timeout)
 
             try:
                 dest_client.delete_snapmirror_vol(src_vserver,
@@ -381,6 +394,11 @@ class DataMotionSession(object):
                             "(entry doesn't exist)" in e.message):
                         LOG.info('No snapmirror relationship to delete')
                         exc_context.reraise = False
+            else:
+                self.wait_for_snapmirror_delete(
+                    dest_client, src_vserver, src_volume_name,
+                    dest_vserver, dest_volume_name,
+                    timeout=dest_config.netapp_snapmirror_release_timeout)
 
             if release:
                 try:
@@ -398,7 +416,7 @@ class DataMotionSession(object):
                     src_config = get_backend_configuration(src_backend)
                     release_timeout = (
                         src_config.netapp_snapmirror_release_timeout)
-                    self.wait_for_snapmirror_source_out_of_sync(
+                    self.wait_for_snapmirror_out_of_sync_then_release(
                         src_vserver, dest_vserver, src_volume_name,
                         dest_volume_name, relationship_info_only, src_client,
                         timeout=release_timeout)
@@ -439,7 +457,6 @@ class DataMotionSession(object):
                         LOG.info('No snapmirror relationship to delete')
                         exc_context.reraise = False
             else:
-                dest_config = get_backend_configuration(dest_backend)
                 self.wait_for_snapmirror_delete(
                     dest_client, src_vserver, src_volume_name,
                     dest_vserver, dest_volume_name,
@@ -1519,7 +1536,7 @@ class DataMotionSession(object):
                     "progress. Retries exhausted. Not retrying.") % msg_args
             raise exception.NetAppException(message=msg)
 
-    def wait_for_snapmirror_source_out_of_sync(
+    def wait_for_snapmirror_out_of_sync_then_release(
             self, src_vserver, dest_vserver, src_volume_name,
             dest_volume_name, relationship_info_only, src_client,
             timeout=300):
@@ -1532,19 +1549,13 @@ class DataMotionSession(object):
         succeeds once the entry is OutOfSync; releasing before that triggers
         a 'Group Update failed' (13001) error from the sync engine.
         """
-        # Start polling every 10 s and back off exponentially (×1.5 per
-        # retry) up to ~60 s between polls.  The OutOfSync transition takes
-        # ~2 min, so there is no benefit to hammering ONTAP every 10 s for
-        # the full wait; backing off reduces load while still catching the
-        # transition promptly once it occurs.
         interval = 10
-        backoff_rate = 1.5
-        retries = int(timeout / interval or 1)
+        retries = (timeout // interval or 1)
         out_of_sync_statuses = ('out-of-sync', 'outofsync', 'broken-off',
                                 'idle')
 
         @utils.retry(exception.NetAppException, interval=interval,
-                     retries=retries, backoff_rate=backoff_rate)
+                     retries=retries, backoff_rate=1)
         def release_when_out_of_sync():
             dests = src_client.get_snapmirror_destinations(
                 source_vserver=src_vserver, dest_vserver=dest_vserver,
@@ -1557,7 +1568,7 @@ class DataMotionSession(object):
             if status.lower() not in out_of_sync_statuses:
                 msg = (_('Source snapmirror entry for volume %(vol)s is '
                          '%(status)s, waiting for OutOfSync before '
-                         'release.') % {'vol': dest_volume_name,
+                         'release.') % {'vol': src_volume_name,
                                         'status': status})
                 raise exception.NetAppException(message=msg)
             # Entry is OutOfSync: release it now.
@@ -1580,7 +1591,7 @@ class DataMotionSession(object):
                 source_volume=src_volume_name, dest_volume=dest_volume_name)
             if dests:
                 msg = (_('Snapmirror source entry for volume %s not yet '
-                         'released. Waiting.') % dest_volume_name)
+                         'released. Waiting.') % src_volume_name)
                 raise exception.NetAppException(message=msg)
 
         try:
@@ -1588,7 +1599,47 @@ class DataMotionSession(object):
         except exception.NetAppException:
             LOG.warning('Unable to release snapmirror source entry for '
                         'volume %s within timeout. Base snapshots may '
-                        'remain on the source volume.', dest_volume_name)
+                        'remain on the source volume.', src_volume_name)
+
+    def wait_for_snapmirror_quiesced(self, dest_client, src_vserver,
+                                     src_volume_name, dest_vserver,
+                                     dest_volume_name, timeout=300):
+        """Wait until the dest SnapMirror entry reaches quiesced/paused.
+
+        :raises NetAppException: if the entry does not reach the
+            quiesced/paused state within the timeout.
+        """
+        interval = 5
+        retries = int(timeout / interval) or 1
+
+        @utils.retry(retry_param=exception.ReplicationException,
+                     interval=interval,
+                     retries=retries,
+                     backoff_rate=1)
+        def check_quiesced():
+            snapmirror = dest_client.get_snapmirrors(
+                source_vserver=src_vserver, dest_vserver=dest_vserver,
+                source_volume=src_volume_name, dest_volume=dest_volume_name,
+                desired_attributes=['relationship-status', 'mirror-state'])
+            if not snapmirror:
+                return
+            if snapmirror[0].get('relationship-status') not in ['quiesced',
+                                                                'paused']:
+                raise exception.ReplicationException(
+                    reason="Snapmirror relationship is not quiesced.")
+
+        try:
+            check_quiesced()
+        except exception.ReplicationException:
+            msg = _(
+                "Snapmirror relationship from %(src)s to %(dest)s did not"
+                "reach the quiesced state within %(timeout)s seconds."
+            ) % {
+                "src": src_volume_name,
+                "dest": dest_volume_name,
+                "timeout": timeout,
+            }
+            raise exception.NetAppException(message=msg)
 
     def wait_for_snapmirror_release_vol(self, src_vserver, dest_vserver,
                                         src_volume_name, dest_volume_name,
