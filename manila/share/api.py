@@ -37,6 +37,7 @@ from manila import context as manila_context
 from manila import coordination
 from manila.data import rpcapi as data_rpcapi
 from manila.db import base
+from manila.dns import designate as dns_designate
 from manila import exception
 from manila.i18n import _
 from manila import policy
@@ -130,6 +131,12 @@ def locked_share_server_update_allocations_operation(operation):
         return locked_share_server_allocations_operation(*args, **kwargs)
 
     return wrapped
+
+
+def get_dns_pair(metadata):
+    """Return the (dns_name, dns_domain) pair of a metadata dict."""
+    metadata = metadata or {}
+    return tuple(metadata.get(key) for key in constants.DNS_METADATA_KEYS)
 
 
 class API(base.Base):
@@ -328,6 +335,7 @@ class API(base.Base):
         """Create new share."""
 
         api_common.check_metadata_properties(metadata)
+        self.validate_dns_metadata(context, metadata, share_proto)
 
         if snapshot_id is not None:
             snapshot = self.get_snapshot(context, snapshot_id)
@@ -616,20 +624,89 @@ class API(base.Base):
             metadata_from_share_type.update(user_metadata)
         return metadata_from_share_type
 
-    def update_share_from_metadata(self, context, share_id, metadata):
-        driver_keys = getattr(CONF, 'driver_updatable_metadata', [])
-        if not driver_keys:
+    def validate_dns_metadata(self, context, metadata, share_proto,
+                              share=None):
+        """Validate and normalize 'dns_name'/'dns_domain' metadata in place.
+
+        :param share_proto: protocol of the share; DNS names are only
+            supported for NFS shares.
+        :param share: the existing share for a metadata update. Its state is
+            checked and it is excluded from the uniqueness check.
+        :raises: InvalidInput, InvalidShare, DNSNameInUse
+        """
+        if not metadata:
+            return
+        dns_name, dns_domain = get_dns_pair(metadata)
+        if not dns_name and not dns_domain:
+            return
+        dns_name, dns_domain = dns_designate.validate_dns_metadata_values(
+            dns_name, dns_domain)
+        metadata['dns_name'] = dns_name
+        metadata['dns_domain'] = dns_domain
+
+        if (share_proto or '').upper() != 'NFS':
+            raise exception.InvalidInput(
+                reason=_("DNS metadata ('dns_name', 'dns_domain') is only "
+                         "supported for NFS shares."))
+        if share is not None:
+            self.check_share_ready_for_dns_update(share)
+        self._check_dns_name_available(
+            context, dns_name, dns_domain,
+            exclude_share_id=share['id'] if share is not None else None)
+
+    @staticmethod
+    def check_share_ready_for_dns_update(share):
+        """DNS metadata may only change on an idle, available share."""
+        if (share['status'] != constants.STATUS_AVAILABLE
+                or share.get('task_state') in constants.BUSY_TASK_STATES):
+            raise exception.InvalidShare(
+                reason=_("DNS metadata can only be updated when the share "
+                         "is in 'available' status and not busy. Current "
+                         "status: '%(status)s', task_state: "
+                         "'%(task_state)s'.")
+                % {'status': share['status'],
+                   'task_state': share.get('task_state')})
+
+    def _check_dns_name_available(self, context, dns_name, dns_domain,
+                                  exclude_share_id=None):
+        """Reject a DNS name that another share already uses."""
+        filters = {'metadata': {'dns_name': dns_name,
+                                'dns_domain': dns_domain}}
+        shares = self.db.share_get_all(context.elevated(), filters=filters)
+        for share in shares:
+            if share['id'] != exclude_share_id:
+                raise exception.DNSNameInUse(
+                    fqdn=dns_designate.make_fqdn(dns_name, dns_domain))
+
+    def update_share_from_metadata(self, context, share_id, metadata,
+                                   previous_metadata=None):
+        """Push driver-relevant and DNS metadata changes to the backend.
+
+        :param previous_metadata: the share metadata before this update.
+            When given, the DNS state is only re-synchronized if the
+            'dns_name'/'dns_domain' pair changed; when omitted, any DNS
+            key present in ``metadata`` triggers a re-synchronization.
+        """
+        driver_keys = set(getattr(CONF, 'driver_updatable_metadata', []))
+        driver_metadata = {k: v for k, v in metadata.items()
+                           if k in driver_keys}
+
+        if previous_metadata is None:
+            dns_changed = any(metadata.get(k)
+                              for k in constants.DNS_METADATA_KEYS)
+        else:
+            dns_changed = (get_dns_pair(previous_metadata)
+                           != get_dns_pair(metadata))
+
+        if not driver_metadata and not dns_changed:
             return
 
-        driver_metadata = {}
-        for k, v in metadata.items():
-            if k in driver_keys:
-                driver_metadata.update({k: v})
-
-        if driver_metadata:
-            share = self.get(context, share_id)
-            self.share_rpcapi.update_share_from_metadata(context, share,
-                                                         driver_metadata)
+        share = self.get(context, share_id)
+        payload = dict(driver_metadata)
+        if dns_changed:
+            payload.update({k: metadata.get(k)
+                            for k in constants.DNS_METADATA_KEYS})
+        self.share_rpcapi.update_share_from_metadata(context, share, payload)
 
     def update_share_network_subnet_from_metadata(self, context,
                                                   share_network_id,

@@ -142,6 +142,10 @@ class Conflict(ManilaException):
     code = 409
 
 
+class DNSNameInUse(Conflict):
+    message = _("DNS name '%(fqdn)s' is already in use.")
+
+
 class Invalid(ManilaException):
     message = _("Unacceptable parameters.")
     code = 400
@@ -207,6 +211,12 @@ class NotFound(ManilaException):
     message = _("Resource could not be found.")
     code = 404
     safe = True
+
+
+class DNSZoneNotFound(NotFound):
+    message = _("Designate zone for domain '%(dns_domain)s' was not found or "
+                "is not owned by project '%(project_id)s' or the Manila "
+                "service project.")
 
 
 class MessageNotFound(NotFound):

@@ -30,6 +30,7 @@ import manila.data.helper
 import manila.data.manager
 import manila.db.api
 import manila.db.base
+import manila.dns.designate
 import manila.exception
 import manila.image
 import manila.image.glance
@@ -214,6 +215,8 @@ _opts = [
      list(itertools.chain(manila.image.glance.glance_opts))),
     (manila.quota.QUOTA_GROUP,
      list(itertools.chain(manila.quota.quota_opts))),
+    (manila.dns.designate.DESIGNATE_GROUP,
+     list(itertools.chain(manila.dns.designate.designate_opts))),
 ]
 
 _opts.extend(manila.network.neutron.api.list_opts())
@@ -221,6 +224,7 @@ _opts.extend(manila.compute.nova.list_opts())
 _opts.extend(manila.image.glance.list_opts())
 _opts.extend(manila.keymgr.barbican.list_opts())
 _opts.extend(manila.volume.cinder.list_opts())
+_opts.extend(manila.dns.designate.list_opts())
 
 
 def list_opts():

@@ -552,6 +552,69 @@ class ShareManagerTestCase(test.TestCase):
             self.context, share_instance['id'],
             {'status': constants.STATUS_AVAILABLE})
 
+    def test_create_share_instance_reconciles_dns(self):
+        share_type = db_utils.create_share_type()
+        share = db_utils.create_share(share_type_id=share_type['id'])
+        mock_reconcile = self.mock_object(self.share_manager,
+                                          '_reconcile_dns')
+
+        self.share_manager.create_share_instance(
+            self.context, share.instance['id'])
+
+        mock_reconcile.assert_called_once()
+        self.assertEqual(share.instance['id'],
+                         mock_reconcile.call_args[0][1])
+
+    def test__ensure_share_reconciles_dns(self):
+        share_instance = {'id': 'fake_id', 'share_server': 'fake_server'}
+        self.mock_object(self.share_manager.driver, 'ensure_share',
+                         mock.Mock(return_value=[{'path': 'fake/path'}]))
+        self.mock_object(self.share_manager.db, 'export_locations_update')
+        self.mock_object(self.share_manager.db, 'share_instance_update')
+        mock_reconcile = self.mock_object(self.share_manager,
+                                          '_reconcile_dns')
+
+        self.share_manager._ensure_share(self.context, share_instance)
+
+        mock_reconcile.assert_called_once_with(
+            self.context, 'fake_id', share_instance=share_instance)
+
+    def test__ensure_share_without_export_locations_skips_dns(self):
+        share_instance = {'id': 'fake_id', 'share_server': 'fake_server'}
+        self.mock_object(self.share_manager.driver, 'ensure_share',
+                         mock.Mock(return_value=None))
+        self.mock_object(self.share_manager.db, 'share_instance_update')
+        mock_reconcile = self.mock_object(self.share_manager,
+                                          '_reconcile_dns')
+
+        self.share_manager._ensure_share(self.context, share_instance)
+
+        self.assertFalse(mock_reconcile.called)
+
+    def test_delete_share_instance_releases_dns(self):
+        share_net = db_utils.create_share_network()
+        share_srv = db_utils.create_share_server(
+            host=self.share_manager.host)
+        share_type = db_utils.create_share_type()
+        share = db_utils.create_share(share_network_id=share_net['id'],
+                                      share_server_id=share_srv['id'],
+                                      share_type_id=share_type['id'])
+        db_utils.create_share(share_network_id=share_net['id'],
+                              share_server_id=share_srv['id'])
+        self.share_manager.driver = mock.Mock()
+        self.mock_object(self.share_manager.access_helper,
+                         'update_access_rules')
+        mock_release = self.mock_object(
+            self.share_manager, '_release_dns_on_instance_delete')
+
+        self.share_manager.delete_share_instance(self.context,
+                                                 share.instance['id'])
+
+        mock_release.assert_called_once()
+        args = mock_release.call_args[0]
+        self.assertEqual(share['id'], args[1]['id'])
+        self.assertEqual(share.instance['id'], args[2]['id'])
+
     def test_init_host_with_no_shares(self):
         self.mock_object(self.share_manager.db,
                          'share_instance_get_all_by_host',
@@ -13486,3 +13549,434 @@ class HookWrapperTestCase(test.TestCase):
         for mock_hook in self.hooks:
             self.assertFalse(mock_hook.execute_pre_hook.called)
             self.assertFalse(mock_hook.execute_post_hook.called)
+
+
+@ddt.ddt
+class ShareManagerDNSTestCase(test.TestCase):
+    """Tests for the DNS export location / Designate reconciliation."""
+
+    def setUp(self):
+        super(ShareManagerDNSTestCase, self).setUp()
+        self.flags(share_driver='manila.tests.fake_driver.FakeShareDriver')
+        self.share_manager = importutils.import_object(
+            "manila.share.manager.ShareManager")
+        self.context = context.get_admin_context()
+        self.dns_api = mock.Mock(enabled=True)
+        self.dns_api.ensure_record.return_value = 'rs-1'
+        self.dns_api.delete_record.return_value = True
+        self.share_manager.dns_api = self.dns_api
+        self.share_manager.message_api = mock.Mock()
+
+        self.instance = {'id': 'inst-1', 'share_id': 'share-1',
+                         'project_id': 'proj-1', 'share_proto': 'NFS',
+                         'replica_state': None}
+        self.metadata = {}
+        self.rows = []
+        self.mock_object(
+            self.share_manager.db, 'share_instance_get',
+            mock.Mock(side_effect=lambda *a, **kw: self.instance))
+        self.mock_object(
+            self.share_manager.db, 'share_metadata_get',
+            mock.Mock(side_effect=lambda *a, **kw: self.metadata))
+        self.mock_object(
+            self.share_manager.db,
+            'export_location_get_all_by_share_instance_id',
+            mock.Mock(side_effect=lambda *a, **kw: self.rows))
+        self.mock_el_update = self.mock_object(
+            self.share_manager.db, 'export_locations_update')
+
+    @staticmethod
+    def _row(path, preferred=False, is_admin_only=False, **meta):
+        # The DB returns metadata values as strings.
+        el_metadata = {'preferred': str(preferred)}
+        el_metadata.update(meta)
+        return {'path': path, 'is_admin_only': is_admin_only,
+                'el_metadata': el_metadata}
+
+    def _dns_row(self, name='share', domain='example.com.',
+                 mountpoint='/vol', recordset_id='rs-1'):
+        meta = {'dns_name': name, 'dns_domain': domain}
+        if recordset_id:
+            meta['dns_recordset_id'] = recordset_id
+        return self._row('%s.%s:%s' % (name, domain.rstrip('.'), mountpoint),
+                         preferred=True, **meta)
+
+    def _set_dns(self, name='share', domain='example.com.'):
+        self.metadata = {'dns_name': name, 'dns_domain': domain}
+
+    def _written(self):
+        self.mock_el_update.assert_called_once()
+        args, kwargs = self.mock_el_update.call_args
+        self.assertEqual((self.context, 'inst-1'), args[:2])
+        self.assertTrue(kwargs.get('delete'))
+        return {loc['path']: loc for loc in args[2]}
+
+    def _assert_no_designate_calls(self):
+        self.assertFalse(self.dns_api.ensure_record.called)
+        self.assertFalse(self.dns_api.delete_record.called)
+
+    def test_nothing_to_do_without_dns_metadata(self):
+        self.rows = [self._row('10.0.0.1:/vol', preferred=True)]
+
+        self.share_manager._reconcile_dns(self.context, 'inst-1')
+
+        self._assert_no_designate_calls()
+        self.assertFalse(self.mock_el_update.called)
+
+    def test_publishes_dns_name(self):
+        self._set_dns()
+        self.rows = [
+            self._row('10.0.0.1:/vol', preferred=True),
+            self._row('10.0.0.2:/vol'),
+            self._row('192.168.0.1:/vol', preferred=True,
+                      is_admin_only=True),
+        ]
+
+        self.share_manager._reconcile_dns(self.context, 'inst-1')
+
+        self.dns_api.ensure_record.assert_called_once_with(
+            self.context, 'proj-1', 'share', 'example.com.', ['10.0.0.1'],
+            recordset_id=None)
+        written = self._written()
+        dns = written['share.example.com:/vol']
+        self.assertFalse(dns['is_admin_only'])
+        self.assertEqual(
+            {'preferred': True, 'dns_name': 'share',
+             'dns_domain': 'example.com.', 'dns_recordset_id': 'rs-1'},
+            dns['metadata'])
+        self.assertEqual({'preferred': False, 'dns_demoted': True},
+                         written['10.0.0.1:/vol']['metadata'])
+        self.assertEqual({'preferred': 'False'},
+                         written['10.0.0.2:/vol']['metadata'])
+        self.assertEqual({'preferred': 'True'},
+                         written['192.168.0.1:/vol']['metadata'])
+        self.assertFalse(self.share_manager.message_api.create.called)
+
+    def test_is_idempotent(self):
+        self._set_dns()
+        self.rows = [
+            self._row('10.0.0.1:/vol', preferred=False, dns_demoted='True'),
+            self._dns_row(),
+        ]
+
+        self.share_manager._reconcile_dns(self.context, 'inst-1')
+
+        self.dns_api.ensure_record.assert_called_once_with(
+            self.context, 'proj-1', 'share', 'example.com.', ['10.0.0.1'],
+            recordset_id='rs-1')
+        self.assertFalse(self.dns_api.delete_record.called)
+        self.assertFalse(self.mock_el_update.called)
+
+    def test_rebuilds_after_driver_rewrote_export_locations(self):
+        """ensure_shares/migration wrote plain IP locations with a new IP."""
+        self._set_dns()
+        self.rows = [self._row('10.0.0.5:/vol', preferred=True)]
+
+        self.share_manager._reconcile_dns(self.context, 'inst-1')
+
+        self.dns_api.ensure_record.assert_called_once_with(
+            self.context, 'proj-1', 'share', 'example.com.', ['10.0.0.5'],
+            recordset_id=None)
+        written = self._written()
+        self.assertIn('share.example.com:/vol', written)
+        self.assertEqual({'preferred': False, 'dns_demoted': True},
+                         written['10.0.0.5:/vol']['metadata'])
+
+    def test_unpublishes_when_metadata_removed(self):
+        self.rows = [
+            self._row('10.0.0.1:/vol', preferred=False, dns_demoted='True'),
+            self._row('10.0.0.2:/vol'),
+            self._dns_row(),
+        ]
+
+        self.share_manager._reconcile_dns(self.context, 'inst-1')
+
+        self.dns_api.delete_record.assert_called_once_with(
+            self.context, 'proj-1', 'share', 'example.com.',
+            recordset_id='rs-1')
+        self.assertFalse(self.dns_api.ensure_record.called)
+        written = self._written()
+        self.assertEqual(['10.0.0.1:/vol', '10.0.0.2:/vol'],
+                         sorted(written))
+        self.assertEqual({'preferred': True},
+                         written['10.0.0.1:/vol']['metadata'])
+        self.assertEqual({'preferred': 'False'},
+                         written['10.0.0.2:/vol']['metadata'])
+
+    def test_renames(self):
+        self._set_dns('new-name', 'example.com.')
+        self.rows = [
+            self._row('10.0.0.1:/vol', preferred=False, dns_demoted='True'),
+            self._dns_row(),
+        ]
+        self.dns_api.ensure_record.return_value = 'rs-2'
+
+        self.share_manager._reconcile_dns(self.context, 'inst-1')
+
+        self.dns_api.delete_record.assert_called_once_with(
+            self.context, 'proj-1', 'share', 'example.com.',
+            recordset_id='rs-1')
+        self.dns_api.ensure_record.assert_called_once_with(
+            self.context, 'proj-1', 'new-name', 'example.com.',
+            ['10.0.0.1'], recordset_id=None)
+        written = self._written()
+        self.assertEqual(['10.0.0.1:/vol', 'new-name.example.com:/vol'],
+                         sorted(written))
+        self.assertEqual(
+            'rs-2',
+            written['new-name.example.com:/vol']['metadata'][
+                'dns_recordset_id'])
+
+    @ddt.data(
+        (exception.DNSNameInUse(fqdn='share.example.com.'),
+         message_field.Detail.DNS_NAME_IN_USE),
+        (exception.DNSZoneNotFound(dns_domain='example.com.',
+                                   project_id='proj-1'),
+         message_field.Detail.DNS_ZONE_NOT_FOUND),
+        (RuntimeError('designate down'),
+         message_field.Detail.DNS_RECORD_UPDATE_FAILED),
+    )
+    @ddt.unpack
+    def test_failure_on_first_publication(self, error, detail):
+        self._set_dns()
+        self.rows = [self._row('10.0.0.1:/vol', preferred=True)]
+        self.dns_api.ensure_record.side_effect = error
+
+        self.share_manager._reconcile_dns(self.context, 'inst-1')
+
+        self.share_manager.message_api.create.assert_called_once_with(
+            self.context, message_field.Action.UPDATE_DNS_RECORD, 'proj-1',
+            resource_type=message_field.Resource.SHARE,
+            resource_id='share-1', detail=detail)
+        # No DNS path is exposed and the IP locations are left untouched.
+        self.assertFalse(self.mock_el_update.called)
+
+    def test_failure_keeps_existing_dns_location(self):
+        self._set_dns()
+        self.rows = [
+            self._row('10.0.0.1:/vol', preferred=False, dns_demoted='True'),
+            self._dns_row(),
+        ]
+        self.dns_api.ensure_record.side_effect = RuntimeError('down')
+
+        self.share_manager._reconcile_dns(self.context, 'inst-1')
+
+        self.assertTrue(self.share_manager.message_api.create.called)
+        self.assertFalse(self.mock_el_update.called)
+
+    def test_failure_after_rename_drops_old_dns_location(self):
+        self._set_dns('new-name', 'example.com.')
+        self.rows = [
+            self._row('10.0.0.1:/vol', preferred=False, dns_demoted='True'),
+            self._dns_row(),
+        ]
+        self.dns_api.ensure_record.side_effect = RuntimeError('down')
+
+        self.share_manager._reconcile_dns(self.context, 'inst-1')
+
+        self.dns_api.delete_record.assert_called_once()
+        written = self._written()
+        self.assertEqual(['10.0.0.1:/vol'], list(written))
+        self.assertEqual({'preferred': True},
+                         written['10.0.0.1:/vol']['metadata'])
+
+    def test_secondary_replica_drops_dns_location(self):
+        self._set_dns()
+        self.instance['replica_state'] = constants.REPLICA_STATE_OUT_OF_SYNC
+        self.rows = [
+            self._row('10.0.0.1:/vol', preferred=False, dns_demoted='True'),
+            self._dns_row(),
+        ]
+
+        self.share_manager._reconcile_dns(self.context, 'inst-1')
+
+        self._assert_no_designate_calls()
+        written = self._written()
+        self.assertEqual(['10.0.0.1:/vol'], list(written))
+        self.assertEqual({'preferred': True},
+                         written['10.0.0.1:/vol']['metadata'])
+
+    def test_active_replica_publishes(self):
+        self._set_dns()
+        self.instance['replica_state'] = constants.REPLICA_STATE_ACTIVE
+        self.rows = [self._row('10.0.0.1:/vol', preferred=True)]
+
+        self.share_manager._reconcile_dns(self.context, 'inst-1')
+
+        self.dns_api.ensure_record.assert_called_once()
+        self.assertIn('share.example.com:/vol', self._written())
+
+    def test_non_nfs_share_is_ignored(self):
+        self._set_dns()
+        self.instance['share_proto'] = 'CIFS'
+        self.rows = [self._row('10.0.0.1:/vol', preferred=True)]
+
+        self.share_manager._reconcile_dns(self.context, 'inst-1')
+
+        self._assert_no_designate_calls()
+        self.assertFalse(self.mock_el_update.called)
+
+    def test_disabled_designate_still_adds_dns_location(self):
+        self.dns_api.enabled = False
+        self._set_dns()
+        self.rows = [self._row('10.0.0.1:/vol', preferred=True)]
+
+        self.share_manager._reconcile_dns(self.context, 'inst-1')
+
+        self._assert_no_designate_calls()
+        dns = self._written()['share.example.com:/vol']
+        self.assertEqual(
+            {'preferred': True, 'dns_name': 'share',
+             'dns_domain': 'example.com.'},
+            dns['metadata'])
+
+    def test_uses_all_ips_when_none_preferred(self):
+        self._set_dns()
+        self.rows = [
+            self._row('10.0.0.1:/vol'),
+            self._row('10.0.0.2:/vol'),
+            self._row('10.0.0.3:/vol', is_admin_only=True),
+        ]
+
+        self.share_manager._reconcile_dns(self.context, 'inst-1')
+
+        self.dns_api.ensure_record.assert_called_once_with(
+            self.context, 'proj-1', 'share', 'example.com.',
+            ['10.0.0.1', '10.0.0.2'], recordset_id=None)
+        written = self._written()
+        self.assertIn('share.example.com:/vol', written)
+        self.assertEqual({'preferred': 'False'},
+                         written['10.0.0.1:/vol']['metadata'])
+
+    def test_ipv6_only_is_not_published(self):
+        self._set_dns()
+        self.rows = [self._row('[fd00::1]:/vol', preferred=True)]
+
+        self.share_manager._reconcile_dns(self.context, 'inst-1')
+
+        self._assert_no_designate_calls()
+        self.assertFalse(self.mock_el_update.called)
+
+    def test_no_export_locations_yet(self):
+        self._set_dns()
+        self.rows = []
+
+        self.share_manager._reconcile_dns(self.context, 'inst-1')
+
+        self._assert_no_designate_calls()
+        self.assertFalse(self.mock_el_update.called)
+
+    @ddt.data(('10.0.0.1:/vol', ('10.0.0.1', '/vol')),
+              ('[fd00::1]:/vol/x', ('fd00::1', '/vol/x')),
+              ('host.example.com:/v', ('host.example.com', '/v')),
+              ('/vol', (None, None)),
+              ('10.0.0.1:vol', (None, None)),
+              ('', (None, None)),
+              (None, (None, None)))
+    @ddt.unpack
+    def test_split_nfs_export_path(self, path, expected):
+        self.assertEqual(expected,
+                         self.share_manager._split_nfs_export_path(path))
+
+    def test_reconcile_never_raises(self):
+        self.share_manager.db.share_instance_get.side_effect = RuntimeError(
+            'db down')
+
+        self.share_manager._reconcile_dns(self.context, 'inst-1')
+
+    def test_release_dns_on_last_instance_delete(self):
+        self._set_dns()
+        self.rows = [self._dns_row()]
+        self.mock_object(self.share_manager.db,
+                         'share_instance_get_all_by_share',
+                         mock.Mock(return_value=[{'id': 'inst-1'}]))
+
+        self.share_manager._release_dns_on_instance_delete(
+            self.context, {'id': 'share-1', 'project_id': 'proj-1'},
+            {'id': 'inst-1'})
+
+        self.dns_api.delete_record.assert_called_once_with(
+            self.context, 'proj-1', 'share', 'example.com.',
+            recordset_id='rs-1')
+
+    def test_release_dns_skipped_with_remaining_instances(self):
+        self._set_dns()
+        self.mock_object(self.share_manager.db,
+                         'share_instance_get_all_by_share',
+                         mock.Mock(return_value=[{'id': 'inst-1'},
+                                                 {'id': 'inst-2'}]))
+
+        self.share_manager._release_dns_on_instance_delete(
+            self.context, {'id': 'share-1', 'project_id': 'proj-1'},
+            {'id': 'inst-1'})
+
+        self.assertFalse(self.dns_api.delete_record.called)
+
+    def test_release_dns_skipped_without_metadata(self):
+        self.share_manager._release_dns_on_instance_delete(
+            self.context, {'id': 'share-1', 'project_id': 'proj-1'},
+            {'id': 'inst-1'})
+
+        self.assertFalse(self.dns_api.delete_record.called)
+
+    def _setup_update_share_from_metadata(self):
+        share = {'id': 'share-1', 'project_id': 'proj-1'}
+        self.mock_object(self.share_manager.db, 'share_get',
+                         mock.Mock(return_value=share))
+        self.mock_object(self.share_manager, '_get_share_instance',
+                         mock.Mock(return_value=self.instance))
+        self.mock_object(self.share_manager, '_get_share_server',
+                         mock.Mock(return_value='fake_server'))
+        self.mock_object(self.share_manager.driver,
+                         'update_share_from_metadata')
+        self.mock_object(self.share_manager, '_reconcile_dns')
+
+    def test_update_share_from_metadata_splits_driver_and_dns_keys(self):
+        self._setup_update_share_from_metadata()
+        metadata = {'snapshot_policy': 'daily', 'dns_name': 'share',
+                    'dns_domain': 'example.com.'}
+
+        self.share_manager.update_share_from_metadata(
+            self.context, 'share-1', metadata)
+
+        (self.share_manager.driver.update_share_from_metadata.
+         assert_called_once_with(self.context, self.instance,
+                                 {'snapshot_policy': 'daily'},
+                                 'fake_server'))
+        self.share_manager.message_api.create.assert_called_once_with(
+            self.context, message_field.Action.UPDATE_METADATA, 'proj-1',
+            resource_type=message_field.Resource.SHARE,
+            resource_id='share-1',
+            detail=message_field.Detail.UPDATE_METADATA_SUCCESS)
+        self.share_manager._reconcile_dns.assert_called_once_with(
+            self.context, 'inst-1', share_instance=self.instance)
+
+    def test_update_share_from_metadata_dns_only_skips_driver(self):
+        self._setup_update_share_from_metadata()
+
+        self.share_manager.update_share_from_metadata(
+            self.context, 'share-1',
+            {'dns_name': None, 'dns_domain': None})
+
+        self.assertFalse(
+            self.share_manager.driver.update_share_from_metadata.called)
+        self.assertFalse(self.share_manager.message_api.create.called)
+        self.share_manager._reconcile_dns.assert_called_once_with(
+            self.context, 'inst-1', share_instance=self.instance)
+
+    def test_update_share_from_metadata_driver_failure_still_reconciles(
+            self):
+        self._setup_update_share_from_metadata()
+        self.share_manager.driver.update_share_from_metadata.side_effect = (
+            RuntimeError('driver failed'))
+
+        self.share_manager.update_share_from_metadata(
+            self.context, 'share-1', {'snapshot_policy': 'daily'})
+
+        self.share_manager.message_api.create.assert_called_once_with(
+            self.context, message_field.Action.UPDATE_METADATA, 'proj-1',
+            resource_type=message_field.Resource.SHARE,
+            resource_id='share-1',
+            detail=message_field.Detail.UPDATE_METADATA_FAILURE)
+        self.share_manager._reconcile_dns.assert_called_once_with(
+            self.context, 'inst-1', share_instance=self.instance)

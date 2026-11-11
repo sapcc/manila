@@ -286,6 +286,48 @@ class ShareExportLocationsAPITest(test.TestCase):
             req.environ['manila.context'], 'share_export_location',
             'update_admin_only_metadata')
 
+    @ddt.data('dns_name', 'dns_domain', 'dns_recordset_id', 'dns_demoted')
+    def test_validate_metadata_for_update_reserved_dns_key(self, key):
+        index_result = self.controller.index(self.req, self.share['id'])
+        el_id = index_result['export_locations'][0]['id']
+        req = fakes.HTTPRequest.blank(
+            '/v2/shares/%s/export_locations/%s/metadata' % (
+                self.share_instance_id, el_id),
+            version="2.87", use_admin_context=True)
+
+        self.assertRaises(exc.HTTPBadRequest,
+                          self.controller._validate_metadata_for_update,
+                          req, el_id, {key: 'value'})
+
+    def test_validate_metadata_for_update_dns_export_location(self):
+        index_result = self.controller.index(self.req, self.share['id'])
+        el_id = index_result['export_locations'][0]['id']
+        self.mock_object(export_locations.db_api,
+                         'export_location_metadata_get',
+                         mock.Mock(return_value={'dns_name': 'share'}))
+        req = fakes.HTTPRequest.blank(
+            '/v2/shares/%s/export_locations/%s/metadata' % (
+                self.share_instance_id, el_id),
+            version="2.87", use_admin_context=True)
+
+        self.assertRaises(exc.HTTPBadRequest,
+                          self.controller._validate_metadata_for_update,
+                          req, el_id, {'foo': 'bar'})
+
+    def test_delete_metadata_reserved_dns_key(self):
+        index_result = self.controller.index(self.req, self.share['id'])
+        el_id = index_result['export_locations'][0]['id']
+        mock_delete = self.mock_object(self.controller, '_delete_metadata')
+        req = fakes.HTTPRequest.blank(
+            '/v2/shares/%s/export_locations/%s/metadata/dns_name' % (
+                self.share_instance_id, el_id),
+            version="2.87", use_admin_context=True)
+
+        self.assertRaises(exc.HTTPBadRequest,
+                          self.controller.delete_metadata,
+                          req, self.share['id'], el_id, 'dns_name')
+        self.assertFalse(mock_delete.called)
+
     def test_create_metadata(self):
         index_result = self.controller.index(self.req, self.share['id'])
         el_id = index_result['export_locations'][0]['id']

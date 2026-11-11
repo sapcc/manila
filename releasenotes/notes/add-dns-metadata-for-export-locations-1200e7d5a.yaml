@@ -1,0 +1,62 @@
+---
+features:
+  - |
+    Add DNS metadata support for NFS shares. When an NFS share has the
+    ``dns_name`` and ``dns_domain`` metadata keys set (for example
+    ``{'dns_name': 'my-pet-share', 'dns_domain': 'manila.example.com.'}``),
+    Manila automatically:
+
+    - Creates an A record ``<dns_name>.<dns_domain>`` in OpenStack Designate
+      pointing to the IP address(es) of the preferred export location(s).
+    - Adds an extra, preferred export location with the DNS path alongside
+      the existing IP-based export locations, so clients can mount by name
+      instead of IP. Starting with API microversion 2.96 (change it) the 
+      export location carries ``dns_name`` and ``dns_domain`` attributes.
+
+    This solves the problem of NFS clients needing to update mount
+    configurations when a share is recreated and gets a different IP: the
+    client mounts the DNS name, and the new share gets the same ``dns_name``
+    and ``dns_domain`` metadata.
+
+    The DNS state is reconciled from the database whenever export locations
+    change (share creation, ``ensure_shares`` on service restart, share
+    migration, share server migration, share network allocation updates,
+    replica promotion) and whenever the DNS metadata is added, changed or
+    removed. Deleting either ``dns_name`` or ``dns_domain`` through the
+    metadata API removes both keys and unpublishes the DNS name.
+
+    The Designate integration is configured in the ``[designate]`` section
+    (``enabled``, auth options, ``region_name``, ``endpoint_type``, ``ttl``,
+    ``all_projects``). The zone for ``dns_domain`` has to be owned by the
+    project that owns the share or by the Manila service project. Without
+    ``[designate] enabled = True`` only the DNS export location is created
+    and the DNS record is expected to be managed outside of Manila.
+
+    Validation: ``dns_name`` must be a single RFC 1035 label, both values are
+    lower-cased, ``dns_domain`` gets a trailing dot, DNS metadata is only
+    accepted for NFS shares, a ``dns_name``/``dns_domain`` pair can be used
+    by one share at a time (HTTP 409 otherwise), and DNS metadata can only be
+    changed on an available share that is not busy.
+
+    Failures to create or update the DNS record do not fail the share
+    operation. The IP-based export locations stay usable, a user message
+    (action ``update dns record``) describes the problem, and re-applying
+    the DNS metadata retries the operation.
+
+security:
+  - |
+    There is no RBAC mechanism in Designate equivalent to Neutron's
+    device_owner protection for ports. Any user with access to the
+    Designate zone can modify or delete the A records created by Manila.
+
+    - Manila remembers the id of the recordset it created and only updates
+      or deletes that recordset. Records created outside of Manila under the
+      same name make the share's DNS publication fail with a user message
+      instead of being taken over.
+    - Manila is not notified of external Designate changes, so the DNS
+      export location in Manila's database will remain even after the
+      record is deleted in Designate, leading to a stale path until the DNS
+      metadata is re-applied.
+    - Users can only publish names in zones owned by their own project or by
+      the Manila service project. When the service project owns a shared
+      zone, restrict write access to it to the Manila service account only.
