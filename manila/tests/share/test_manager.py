@@ -1944,7 +1944,13 @@ class ShareManagerTestCase(test.TestCase):
         self.assertTrue(mock_drv_delete_replica_call.called)
         self.assertEqual(2, mock_snapshot_instance_delete_call.call_count)
 
-    def test_delete_share_replica(self):
+    @ddt.data((False, False, False), (False, True, False),
+              (False, False, True), (False, True, True),
+              (True, False, False), (True, True, False),
+              (True, False, True), (True, True, True))
+    @ddt.unpack
+    def test_delete_share_replica(self, force, access_missing,
+                                  replica_missing):
         replica = fake_replica()
         active_replica = fake_replica(id='current_active_replica')
         snapshots = [
@@ -1966,25 +1972,124 @@ class ShareManagerTestCase(test.TestCase):
         self.mock_object(self.share_manager, '_get_share_server',
                          mock.Mock(return_value=None))
         mock_info_log = self.mock_object(manager.LOG, 'info')
+        mock_warning_log = self.mock_object(manager.LOG, 'warning')
+        mock_exception_log = self.mock_object(manager.LOG, 'exception')
         mock_snapshot_instance_delete_call = self.mock_object(
             db, 'share_snapshot_instance_delete')
         mock_replica_update_call = self.mock_object(db, 'share_replica_update')
         mock_replica_delete_call = self.mock_object(db, 'share_replica_delete')
         self.mock_object(db, 'share_replica_metadata_get',
                          mock.Mock(return_value={}))
-        self.mock_object(
+        mock_access_update = self.mock_object(
             self.share_manager.access_helper, 'update_access_rules')
         mock_drv_delete_replica_call = self.mock_object(
             self.share_manager.driver, 'delete_replica')
+        if access_missing:
+            mock_access_update.side_effect = exception.ShareResourceNotFound(
+                share_id=replica['id'])
+        if replica_missing:
+            mock_drv_delete_replica_call.side_effect = (
+                exception.ShareResourceNotFound(share_id=replica['id']))
 
         self.share_manager.delete_share_replica(
-            self.context, replica['id'], share_id=replica['share_id'])
+            self.context, replica['id'], share_id=replica['share_id'],
+            force=force)
 
-        self.assertFalse(mock_replica_update_call.called)
-        self.assertTrue(mock_replica_delete_call.called)
+        mock_replica_update_call.assert_not_called()
+        mock_replica_delete_call.assert_called_once_with(
+            mock.ANY, replica['id'])
         self.assertTrue(mock_info_log.called)
-        self.assertTrue(mock_drv_delete_replica_call.called)
+        mock_access_update.assert_called_once_with(
+            mock.ANY, replica['id'], delete_all_rules=True, share_server=None)
+        mock_drv_delete_replica_call.assert_called_once_with(
+            mock.ANY, mock.ANY, mock.ANY, mock.ANY, share_server=None)
+        self.assertEqual(int(access_missing) + int(replica_missing),
+                         mock_warning_log.call_count)
+        mock_exception_log.assert_not_called()
+        self.share_manager.message_api.create.assert_not_called()
+        mock_snapshot_instance_delete_call.assert_has_calls([
+            mock.call(mock.ANY, snapshot['id']) for snapshot in snapshots])
         self.assertEqual(2, mock_snapshot_instance_delete_call.call_count)
+
+    @ddt.data(('missing', None, False, True),
+              ('missing', 'missing', False, True),
+              ('error', None, True, True),
+              ('error', 'error', True, True),
+              ('error', 'missing', True, True),
+              (None, 'missing', False, True),
+              (None, None, False, True),
+              ('missing', 'error', False, False),
+              ('error', None, False, False))
+    @ddt.unpack
+    def test_delete_share_replica_access_mappings(
+            self, access_error, delete_error, force, deletion_succeeds):
+        share = db_utils.create_share(
+            status=constants.STATUS_AVAILABLE,
+            replica_state=constants.REPLICA_STATE_ACTIVE,
+            replication_type=constants.REPLICATION_TYPE_READABLE)
+        replica = db_utils.create_share_replica(
+            share_id=share['id'], host=self.host,
+            status=constants.STATUS_DELETING,
+            replica_state=constants.REPLICA_STATE_IN_SYNC)
+        rule = db_utils.create_access(
+            share_id=share['id'], state=constants.ACCESS_STATE_ACTIVE,
+            metadata={'key': 'value'})
+        errors = {
+            None: None,
+            'missing': exception.ShareResourceNotFound(share_id=replica['id']),
+            'error': exception.ManilaException(),
+        }
+        self.mock_object(self.share_manager, '_get_share_server',
+                         mock.Mock(return_value=None))
+        self.mock_object(self.share_manager.driver, 'update_access',
+                         mock.Mock(side_effect=errors[access_error],
+                                   return_value={}))
+        mock_driver_delete = self.mock_object(
+            self.share_manager.driver, 'delete_replica',
+            mock.Mock(side_effect=errors[delete_error]))
+        self.mock_object(quota.QUOTAS, 'reserve',
+                         mock.Mock(return_value='reservation'))
+        self.mock_object(quota.QUOTAS, 'commit')
+
+        if deletion_succeeds:
+            self.share_manager.delete_share_replica(
+                self.context, replica['id'], share_id=share['id'],
+                force=force)
+
+            self.assertRaises(exception.ShareReplicaNotFound,
+                              db.share_replica_get,
+                              self.context, replica['id'])
+            self.assertEqual([], db.share_access_get_all_for_instance(
+                self.context, replica['id']))
+            remaining_rule = db.share_access_get(self.context, rule['id'])
+            self.assertEqual(constants.ACCESS_STATE_ACTIVE,
+                             remaining_rule['state'])
+            self.assertEqual(1, len(remaining_rule.instance_mappings))
+            self.assertEqual(share.instance['id'],
+                             remaining_rule.instance_mappings[0][
+                                 'share_instance_id'])
+            self.assertEqual(
+                {'key': 'value'},
+                {item['key']: item['value'] for item in
+                 remaining_rule['share_access_rules_metadata']})
+            mock_driver_delete.assert_called_once()
+        else:
+            self.assertRaises(
+                exception.ManilaException,
+                self.share_manager.delete_share_replica,
+                self.context, replica['id'], share_id=share['id'],
+                force=force)
+
+            self.assertIsNotNone(db.share_replica_get(
+                self.context, replica['id']))
+            mappings = db.share_access_get_all_for_instance(
+                self.context, replica['id'])
+            self.assertEqual(1, len(mappings))
+            self.assertEqual(rule['id'], mappings[0]['access_id'])
+            if access_error == 'error':
+                mock_driver_delete.assert_not_called()
+            else:
+                mock_driver_delete.assert_called_once()
 
     def test_promote_share_replica_no_active_replica(self):
         replica = fake_replica()

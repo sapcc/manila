@@ -1,0 +1,10 @@
+---
+fixes:
+  - |
+    Share replica deletion now treats a backend resource reported as missing
+    during access rule cleanup or driver deletion as already deleted. These
+    cases no longer require a forced deletion. Other backend errors retain
+    their existing failure behavior.
+    Deletion also removes any remaining database access mappings for the
+    deleted replica, including when access rule cleanup fails during a
+    forced deletion, while preserving access rules for surviving replicas.

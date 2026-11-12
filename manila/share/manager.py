@@ -3032,6 +3032,9 @@ class ShareManager(manager.SchedulerDependentManager):
                 delete_all_rules=True,
                 share_server=share_server
             )
+        except exception.ShareResourceNotFound:
+            LOG.warning("Share replica %s does not exist in the "
+                        "backend.", share_replica_id)
         except Exception as excep:
             with excutils.save_and_reraise_exception() as exc_context:
                 # Set status to 'error' from 'deleting' since
@@ -3057,6 +3060,9 @@ class ShareManager(manager.SchedulerDependentManager):
             self.driver.delete_replica(
                 context, replica_list, replica_snapshots, share_replica,
                 share_server=share_server)
+        except exception.ShareResourceNotFound:
+            LOG.warning("Share replica %s does not exist in the "
+                        "backend.", share_replica_id)
         except Exception as excep:
             with excutils.save_and_reraise_exception() as exc_context:
                 if force:
@@ -3079,6 +3085,11 @@ class ShareManager(manager.SchedulerDependentManager):
                     resource_type=message_field.Resource.SHARE_REPLICA,
                     resource_id=share_replica['id'],
                     exception=excep)
+
+        rules = self.access_helper.get_share_instance_access_rules(
+            context, share_instance_id=share_replica_id)
+        self.access_helper.delete_share_instance_access_rules(
+            context, rules, share_instance_id=share_replica_id)
 
         for replica_snapshot in replica_snapshots:
             self.db.share_snapshot_instance_delete(
