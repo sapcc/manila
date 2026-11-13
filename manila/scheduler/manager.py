@@ -373,7 +373,8 @@ class SchedulerManager(manager.Manager):
         except Exception as exc:
             with excutils.save_and_reraise_exception():
                 self._set_share_server_replica_error_state(
-                    context, 'create_share_server_replica', exc, request_spec)
+                    context, 'create_share_server_replica', exc, request_spec,
+                    message_field.Action.CREATE)
 
     @periodic_task.periodic_task(spacing=CONF.message_reap_interval,
                                  run_immediately=True)

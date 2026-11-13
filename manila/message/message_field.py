@@ -192,6 +192,11 @@ class Detail(object):
 
     # SCI: Keep the SCI CUSTOM MESSAGE at the end of list and count backwards
 
+    SHARE_SERVER_REPLICA_CREATION_FAILED = (
+        '992',
+        _("Share driver failed to create the share server replica. "
+          "Please contact your administrator to check the storage "
+          "backend logs for details."))
     CIFS_SERVER_CERTIFICATE_ERROR = (
         '993',
         _("Share Driver failed to setup the CIFS server due to a TLS/SSL "
@@ -282,11 +287,15 @@ class Detail(object):
         DRIVER_FAILED_REVERTING_TO_SNAPSHOT,
         RESYNC_FAILED_RECREATE_REPLICA,
         FAILOVER_FAILED_RECREATE_REPLICA,
+        SHARE_SERVER_REPLICA_CREATION_FAILED,
     )
 
     # Exception and detail mappings
     EXCEPTION_DETAIL_MAPPINGS = {
         NO_VALID_HOST: ['NoValidHost'],
+        SHARE_SERVER_REPLICA_CREATION_FAILED: [
+            'ShareServerReplicaCreationFailed',
+        ],
     }
 
     # Use special code for each filter rather then categorize all as
