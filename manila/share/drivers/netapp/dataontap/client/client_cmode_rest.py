@@ -4950,13 +4950,18 @@ class NetAppRestClient(object):
                 self.set_preferred_dc(new_security_service, svm_uuid)
 
     @na_utils.trace
-    def configure_cifs_aes_encryption(self, vserver_name, aes_encryption):
+    def configure_cifs_aes_encryption(self, vserver_name, aes_encryption,
+                                      secure=True):
         try:
             svm_uuid = self._get_unique_svm_by_name(vserver_name)
             body = {
                 'security.advertised_kdc_encryptions': (
                     ['aes-128', 'aes-256'] if aes_encryption else
                     ['des', 'rc4']),
+                # Keep signing even in the insecure fallback; only LDAPS is
+                # dropped. Mirrors the ZAPI client.
+                'security.session_security': 'sign',
+                'security.use_ldaps': secure,
             }
 
             self.send_request(

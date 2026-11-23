@@ -2580,12 +2580,12 @@ class NetAppCmodeClient(client_base.NetAppBaseClient):
                     'true' if aes_encryption else 'false'),
             }
 
+        # Keep signing even in the insecure fallback; only LDAPS is dropped.
+        api_args['session-security-for-ad-ldap'] = 'sign'
         if not secure:
             api_args['use-ldaps-for-ad-ldap'] = 'false'
-            api_args['session-security-for-ad-ldap'] = 'none'
         else:
             api_args['use-ldaps-for-ad-ldap'] = 'true'
-            api_args['session-security-for-ad-ldap'] = 'sign'
 
         try:
             self.send_request('cifs-security-modify', api_args)

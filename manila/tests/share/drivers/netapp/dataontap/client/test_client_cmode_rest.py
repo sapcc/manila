@@ -5146,6 +5146,8 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
 
         body = {
             'security.advertised_kdc_encryptions': ['aes-128', 'aes-256'],
+            'security.session_security': 'sign',
+            'security.use_ldaps': True,
         }
         self.client.send_request.assert_called_once_with(
             f'/protocols/cifs/services/{fake.FAKE_UUID}',
@@ -5162,10 +5164,27 @@ class NetAppRestCmodeClientTestCase(test.TestCase):
 
         body = {
             'security.advertised_kdc_encryptions': ['des', 'rc4'],
+            'security.session_security': 'sign',
+            'security.use_ldaps': True,
         }
         self.client.send_request.assert_called_once_with(
             f'/protocols/cifs/services/{fake.FAKE_UUID}',
             'patch', body=body)
+
+    def test_configure_cifs_aes_encryption_insecure_keeps_signing(self):
+        # Insecure fallback (secure=False) drops only LDAPS, keeps signing
+        # (Kerberos, no cert) -- patched DCs reject unsigned binds (SU628).
+        self.mock_object(self.client, 'send_request')
+        self.mock_object(self.client, '_get_unique_svm_by_name',
+                         mock.Mock(return_value=fake.FAKE_UUID))
+
+        self.client.configure_cifs_aes_encryption(
+            fake.VSERVER_NAME, True, secure=False)
+
+        __, __, kwargs = self.client.send_request.mock_calls[0]
+        body = kwargs['body']
+        self.assertEqual('sign', body['security.session_security'])
+        self.assertFalse(body['security.use_ldaps'])
 
     def test_set_preferred_dc(self):
         fake_ss = copy.deepcopy(fake.LDAP_AD_SECURITY_SERVICE_WITH_SERVER)
