@@ -3449,6 +3449,23 @@ class NetAppClientCmodeTestCase(test.TestCase):
         self.client.send_request.assert_called_with(
             'cifs-security-modify', configure_cifs_aes_encryption_args)
 
+    @ddt.data(True, False)
+    def test_configure_cifs_aes_encryption_insecure_keeps_signing(
+            self, secure):
+        # The insecure fallback (secure=False) must drop only LDAPS and KEEP
+        # session-security 'sign' -- 'sign' needs no server cert and patched
+        # DCs reject unsigned binds (NetApp SU628). Only use-ldaps toggles.
+        self.client.features.add_feature('AES_ENCRYPTION_TYPES')
+        self.mock_object(self.client, 'send_request')
+
+        self.client.configure_cifs_aes_encryption(True, secure=secure)
+
+        __, args, __ = self.client.send_request.mock_calls[0]
+        api_args = args[1]
+        self.assertEqual('sign', api_args['session-security-for-ad-ldap'])
+        self.assertEqual('true' if secure else 'false',
+                         api_args['use-ldaps-for-ad-ldap'])
+
     @ddt.data(
         {
             'server': '',
